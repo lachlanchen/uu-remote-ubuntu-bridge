@@ -9,6 +9,8 @@ downloads="$work_dir/downloads"
 runtime="$work_dir/runtime"
 source_dir="$work_dir/FreeRDP"
 build_dir="$work_dir/build"
+build_recipe="$output_dir/.build-recipe"
+build_checksums="$output_dir/.build-sha256"
 
 freerdp_commit='6b107f0aadbabc47941c5a5b893b88c01792af6d'
 sdl_url='https://ci.freerdp.com/job/freerdp-nightly-windows/arch=win64,label=vs2017/2038/artifact/install/bin/sdl-freerdp.exe'
@@ -69,6 +71,15 @@ for command in cmake curl git ninja sha256sum tar \
 done
 
 mkdir -p "$downloads" "$output_dir"
+recipe_id="$freerdp_commit:$(sha256sum "${BASH_SOURCE[0]}" | awk '{print $1}')"
+if [[ -f "$build_recipe" && -f "$build_checksums" ]] && \
+   [[ "$(<"$build_recipe")" == "$recipe_id" ]] && \
+   (cd "$output_dir" && sha256sum -c .build-sha256 >/dev/null 2>&1); then
+    printf 'FreeRDP Windows relay runtime is already current in %s\n' \
+        "$output_dir"
+    exit 0
+fi
+
 download "$sdl_url" "$sdl_sha256" "$downloads/sdl-freerdp.exe"
 download "$openssl_url" "$openssl_sha256" "$downloads/openssl.pkg.tar.zst"
 download "$cjson_url" "$cjson_sha256" "$downloads/cjson.pkg.tar.zst"
@@ -150,5 +161,21 @@ install -m 0755 "$runtime/mingw64/bin/liburiparser-1.dll" \
 mkdir -p "$output_dir/ossl-modules"
 install -m 0755 "$runtime/mingw64/lib/ossl-modules/legacy.dll" \
     "$output_dir/ossl-modules/legacy.dll"
+
+printf '%s\n' "$recipe_id" >"$build_recipe.tmp"
+(
+    cd "$output_dir"
+    sha256sum \
+        sdl-freerdp.exe \
+        libwinpr3.dll \
+        libcrypto-3-x64.dll \
+        libssl-3-x64.dll \
+        libcjson-1.dll \
+        liburiparser-1.dll \
+        ossl-modules/legacy.dll \
+        >.build-sha256.tmp
+    mv .build-sha256.tmp .build-sha256
+)
+mv "$build_recipe.tmp" "$build_recipe"
 
 printf 'FreeRDP Windows relay runtime built in %s\n' "$output_dir"

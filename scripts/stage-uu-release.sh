@@ -151,14 +151,16 @@ if ((${#server_candidates[@]} != 1 || ${#healthd_candidates[@]} != 1)); then
         --setenv=HOME=/work/sandbox-home \
         --setenv=WINEPREFIX=/work/wine-prefix \
         --setenv=WINEDEBUG=-all \
-        --setenv=WINEDLLOVERRIDES='winedbg.exe=d' \
+        --setenv=WINEDLLOVERRIDES='winedbg.exe=d;mscoree,mshtml=' \
         --setenv=XDG_RUNTIME_DIR=/work/sandbox-runtime \
         --setenv=DISPLAY= \
         /bin/bash -c '
             set -Eeuo pipefail
             cleanup() {
-                /opt/wine-stable/bin/wineserver -k || true
-                /opt/wine-stable/bin/wineserver -w || true
+                /usr/bin/timeout --kill-after=2s 10s \
+                    /opt/wine-stable/bin/wineserver -k || true
+                /usr/bin/timeout --kill-after=2s 10s \
+                    /opt/wine-stable/bin/wineserver -w || true
             }
             trap cleanup EXIT
             /opt/wine-stable/bin/wine wineboot -u

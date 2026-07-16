@@ -17,7 +17,7 @@ and device metadata.
 Check the compatibility log:
 
 ```bash
-log="$HOME/.local/share/wineprefixes/uu-remote/drive_c/users/$USER/Temp/uu-input-bridge.log"
+log="$HOME/.local/share/wineprefixes/uu-remote/drive_c/users/$USER/AppData/Local/Temp/uu-input-bridge.log"
 tail -80 "$log"
 ```
 
@@ -85,14 +85,18 @@ for the current PID. The launcher re-injects automatically after a UU restart.
 Check each hop:
 
 ```bash
-systemctl --user status gnome-remote-desktop.service
-grdctl status
+systemctl --user status uu-remote-bridge.service
+/usr/bin/grdctl status
+ss -ltnp | rg ':3390\b'
+tail -80 ~/.local/state/uu-remote-bridge/gnome-remote-desktop.log
 tail -80 ~/.local/state/uu-remote-bridge/freerdp.log
 tail -80 ~/.local/state/uu-remote-bridge/openbox.log
 ```
 
-GNOME RDP must mirror the primary desktop, allow input, and listen on the
-configured port. The relay window must be named `Ubuntu-Desktop-Relay`:
+GNOME RDP must mirror the primary desktop, allow input, and own the configured
+port. The daemon is a child of `uu-remote-bridge.service`; an idle
+`gnome-remote-desktop.service` on a different D-Bus is not sufficient. The
+relay window must be named `Ubuntu-Desktop-Relay`:
 
 ```bash
 DISPLAY=:20 xdotool search --name Ubuntu-Desktop-Relay getwindowname
@@ -103,6 +107,15 @@ The Windows FreeRDP client requires `SDL_RENDER_DRIVER=software` under Xvfb.
 WinPR build uses internal MD4/MD5/RC4 for NTLM if Wine cannot load the legacy
 provider.
 
+On XRDP, confirm the journal says which private desktop was selected:
+
+```text
+GNOME Desktop Sharing is relaying x11 :10.0.
+```
+
+The launcher reads this from the live `gnome-shell` process. Do not hard-code
+an old `/tmp/dbus-*` address; it changes after logout or reboot.
+
 ## Device appears offline
 
 The UU GUI sends the account login IPC message after the service starts. The
@@ -110,21 +123,22 @@ launcher performs this automatically and again after a server PID change.
 Confirm the account has been authenticated once:
 
 ```bash
-uu-remote open
+uu-remote login
 ```
 
-Complete the official UU sign-in if prompted, then close the GUI normally.
-Forcibly terminating it during its bootstrap handshake can ask the background
-server to exit; the supervisor will recover, but the device can be briefly
-offline.
+This temporarily stops the hidden relay, opens the official UU client on the
+current visible desktop, and restores the bridge when the client closes.
+Complete sign-in, then close the GUI normally. Forcibly terminating it during
+its bootstrap handshake can ask the background server to exit; the supervisor
+will recover, but the device can be briefly offline.
 
 ## GNOME RDP authentication fails
 
 The UU bridge uses a separate local RDP credential from the login keyring:
 
 ```bash
-secret-tool lookup service uu-desktop-bridge username "$USER" >/dev/null
-grdctl status
+/usr/bin/secret-tool lookup service uu-desktop-bridge username "$USER" >/dev/null
+/usr/bin/grdctl status
 ```
 
 Clear only the bridge's keyring item, then rerun the installer to prompt for

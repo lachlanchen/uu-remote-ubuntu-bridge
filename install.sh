@@ -8,6 +8,10 @@ bridge_user="${USER:-$(id -un)}"
 wine_prefix="${WINEPREFIX:-$HOME/.local/share/wineprefixes/uu-remote}"
 wine_bin='/opt/wine-stable/bin/wine'
 wineserver_bin='/opt/wine-stable/bin/wineserver'
+grdctl_bin='/usr/bin/grdctl'
+openssl_bin='/usr/bin/openssl'
+python_bin='/usr/bin/python3'
+secret_tool_bin='/usr/bin/secret-tool'
 uu_dir="$wine_prefix/drive_c/Program Files/Netease/GameViewer"
 uu_bin="$uu_dir/bin"
 release_manifest="${UURB_RELEASE_MANIFEST:-$repo_dir/patches/uu-remote-4.33.0.8907.json}"
@@ -126,6 +130,15 @@ install_packages() {
     install_winehq
 }
 
+stop_wine_prefix() {
+    # Wine 11 can leave idle device-service processes behind after a silent
+    # installer exits. An unbounded `wineserver -w` then waits forever.
+    /usr/bin/timeout --kill-after=2s 10s \
+        "$wineserver_bin" -k >/dev/null 2>&1 || true
+    /usr/bin/timeout --kill-after=2s 10s \
+        "$wineserver_bin" -w >/dev/null 2>&1 || true
+}
+
 download_verified() {
     local url="$1"
     local expected="$2"
@@ -169,7 +182,9 @@ if [[ "$skip_packages" == false ]]; then
     install_packages
 fi
 
-for command in curl grdctl openssl python3 secret-tool sha256sum systemctl \
+for command in curl sha256sum systemctl \
+    timeout \
+    "$grdctl_bin" "$openssl_bin" "$python_bin" "$secret_tool_bin" \
     "$wine_bin" "$wineserver_bin"; do
     if ! command -v "$command" >/dev/null 2>&1; then
         printf 'missing required command: %s\n' "$command" >&2
@@ -179,7 +194,7 @@ done
 
 release_manifest="$(realpath "$release_manifest")"
 manifest_field() {
-    python3 "$repo_dir/scripts/patch-gameviewer.py" field "$1" \
+    "$python_bin" "$repo_dir/scripts/patch-gameviewer.py" field "$1" \
         --manifest "$release_manifest"
 }
 
@@ -192,11 +207,10 @@ healthd_sha256="$(manifest_field health_monitor.original_sha256)"
 
 export WINEPREFIX="$wine_prefix"
 export WINEDEBUG=-all
-export WINEDLLOVERRIDES='winedbg.exe=d'
+export WINEDLLOVERRIDES='winedbg.exe=d;mscoree,mshtml='
 
 systemctl --user stop uu-remote-bridge.service >/dev/null 2>&1 || true
-"$wineserver_bin" -k >/dev/null 2>&1 || true
-"$wineserver_bin" -w >/dev/null 2>&1 || true
+stop_wine_prefix
 
 if [[ ! -f "$uu_dir/GameViewer.exe" ]]; then
     fresh_install=true
@@ -214,13 +228,13 @@ if [[ ! -f "$uu_dir/GameViewer.exe" ]]; then
     "$wine_bin" wineboot -u
     "$wine_bin" winecfg -v win10
     "$wine_bin" "$uu_installer" /S
-    "$wineserver_bin" -w
+    stop_wine_prefix
 fi
 if [[ ! -f "$server_exe" || ! -f "$healthd_exe" ]]; then
     printf 'UU Remote installation did not produce the expected files.\n' >&2
     exit 1
 fi
-python3 "$repo_dir/scripts/patch-gameviewer.py" verify "$server_exe" \
+"$python_bin" "$repo_dir/scripts/patch-gameviewer.py" verify "$server_exe" \
     --manifest "$release_manifest" >/dev/null
 
 "$repo_dir/scripts/build-compat.sh" "$compat_build"
@@ -257,7 +271,7 @@ elif [[ ! -f "$healthd_backup" ]] || \
 fi
 install -m 0755 "$compat_build/uu-healthd-stub.exe" "$healthd_exe"
 
-python3 "$repo_dir/scripts/patch-gameviewer.py" patch "$server_exe" \
+"$python_bin" "$repo_dir/scripts/patch-gameviewer.py" patch "$server_exe" \
     --manifest "$installed_manifest"
 
 install -d -m 0755 "$HOME/.local/bin" "$HOME/.config/systemd/user"
@@ -272,13 +286,13 @@ tls_cert="$tls_dir/rdp-tls.crt"
 tls_key="$tls_dir/rdp-tls.key"
 mkdir -p "$tls_dir"
 if [[ ! -s "$tls_cert" || ! -s "$tls_key" ]]; then
-    openssl req -new -newkey rsa:3072 -days 730 -nodes -x509 \
+    "$openssl_bin" req -new -newkey rsa:3072 -days 730 -nodes -x509 \
         -subj "/CN=$(hostname) UU Remote bridge" \
         -keyout "$tls_key" -out "$tls_cert"
     chmod 0600 "$tls_key"
 fi
 
-rdp_password="$(secret-tool lookup service uu-desktop-bridge \
+rdp_password="$("$secret_tool_bin" lookup service uu-desktop-bridge \
     username "$bridge_user" || true)"
 if [[ -z "$rdp_password" ]]; then
     while true; do
@@ -294,32 +308,31 @@ if [[ -z "$rdp_password" ]]; then
     done
 fi
 
-grdctl rdp set-port "$rdp_port"
-grdctl rdp set-tls-cert "$tls_cert"
-grdctl rdp set-tls-key "$tls_key"
-grdctl rdp set-credentials "$bridge_user" "$rdp_password"
-grdctl rdp disable-view-only
-grdctl rdp disable-port-negotiation
-grdctl rdp enable
-printf '%s' "$rdp_password" | secret-tool store \
+"$grdctl_bin" rdp set-port "$rdp_port"
+"$grdctl_bin" rdp set-tls-cert "$tls_cert"
+"$grdctl_bin" rdp set-tls-key "$tls_key"
+"$grdctl_bin" rdp set-credentials "$bridge_user" "$rdp_password"
+"$grdctl_bin" rdp disable-view-only
+"$grdctl_bin" rdp disable-port-negotiation
+"$grdctl_bin" rdp enable
+printf '%s' "$rdp_password" | "$secret_tool_bin" store \
     --label='UU Remote Ubuntu bridge RDP credential' \
     service uu-desktop-bridge username "$bridge_user"
 unset rdp_password
 
 systemctl --user daemon-reload
-systemctl --user enable uu-remote-bridge.service
-if [[ "$start_service" == true ]]; then
-    systemctl --user restart uu-remote-bridge.service
-    "$repo_dir/scripts/verify.sh" --quick
-fi
+systemctl --user reenable uu-remote-bridge.service
 
 if [[ "$fresh_install" == true && "$skip_account_login" == false ]]; then
     printf '\nUU Remote needs an authenticated account once.\n'
     printf 'Complete the official UU sign-in window, then close that window.\n'
-    "$HOME/.local/bin/uu-remote" open || true
-    if [[ "$start_service" == true ]]; then
-        systemctl --user restart uu-remote-bridge.service
-    fi
+    (cd "$uu_dir" && "$wine_bin" GameViewer.exe) || true
+    stop_wine_prefix
+fi
+
+if [[ "$start_service" == true ]]; then
+    systemctl --user restart uu-remote-bridge.service
+    "$repo_dir/scripts/verify.sh" --quick
 fi
 
 printf '\nInstalled UU Remote Ubuntu bridge.\n'

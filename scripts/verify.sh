@@ -10,7 +10,7 @@ if [[ ! -f "$release_manifest" ]]; then
     release_manifest="$repo_dir/patches/uu-remote-4.33.0.8907.json"
 fi
 manifest_field() {
-    python3 "$repo_dir/scripts/patch-gameviewer.py" field "$1" \
+    /usr/bin/python3 "$repo_dir/scripts/patch-gameviewer.py" field "$1" \
         --manifest "$release_manifest"
 }
 release_version="$(manifest_field version)"
@@ -19,7 +19,10 @@ healthd="$wine_prefix/drive_c/Program Files/Netease/GameViewer/bin/$(manifest_fi
 healthd_original_sha256="$(manifest_field health_monitor.original_sha256)"
 healthd_stub="$repo_dir/build/compat/uu-healthd-stub.exe"
 freerdp="$wine_prefix/drive_c/Program Files/FreeRDP/sdl-freerdp.exe"
-bridge_log="$wine_prefix/drive_c/users/$bridge_user/Temp/uu-input-bridge.log"
+# GameViewerServer is launched by Wine's service manager, which intentionally
+# does not inherit UU_INPUT_BRIDGE_LOG. The injected DLL therefore uses the
+# target process's normal GetTempPathW() location.
+bridge_log="$wine_prefix/drive_c/users/$bridge_user/AppData/Local/Temp/uu-input-bridge.log"
 broker_log="$wine_prefix/drive_c/users/$bridge_user/Temp/uu-input-broker.log"
 stability_seconds=270
 errors=0
@@ -62,7 +65,7 @@ fi
 
 pass "approved UU release manifest $release_version is active"
 
-if python3 "$repo_dir/scripts/patch-gameviewer.py" verify "$server" \
+if /usr/bin/python3 "$repo_dir/scripts/patch-gameviewer.py" verify "$server" \
     --manifest "$release_manifest" --expect patched >/dev/null; then
     pass 'GameViewerServer.exe is the audited patched build'
 else
@@ -101,11 +104,16 @@ else
     fail 'local input broker did not initialize'
 fi
 
-rdp_port="$(gsettings get org.gnome.desktop.remote-desktop.rdp port | awk '{print $2}')"
-if (exec 3<>"/dev/tcp/127.0.0.1/$rdp_port") 2>/dev/null; then
-    exec 3>&-
-    exec 3<&-
-    pass "GNOME RDP relay is listening on localhost:$rdp_port"
+rdp_port="${UURB_RDP_PORT:-3390}"
+configured_rdp_port="$(
+    /usr/bin/gsettings get org.gnome.desktop.remote-desktop.rdp port | \
+        /usr/bin/awk '{print $2}'
+)"
+if [[ "$configured_rdp_port" != "$rdp_port" ]]; then
+    fail "GNOME RDP is configured for port $configured_rdp_port, expected $rdp_port"
+elif /usr/bin/ss -H -ltnp "sport = :$rdp_port" 2>/dev/null | \
+     /usr/bin/grep -q 'gnome-remote-de'; then
+    pass "GNOME RDP relay owns localhost:$rdp_port"
 else
     fail "GNOME RDP relay is unavailable on localhost:$rdp_port"
 fi

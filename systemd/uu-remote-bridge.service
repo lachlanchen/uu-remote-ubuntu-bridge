@@ -1,8 +1,6 @@
 [Unit]
 Description=UU Remote bridge for the live GNOME desktop
-After=graphical-session.target gnome-remote-desktop.service
-Wants=gnome-remote-desktop.service
-PartOf=graphical-session.target
+After=default.target
 
 [Service]
 Type=simple
@@ -13,4 +11,4 @@ TimeoutStopSec=15
 KillMode=control-group
 
 [Install]
-WantedBy=graphical-session.target
+WantedBy=default.target

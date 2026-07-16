@@ -19,7 +19,7 @@
 </div>
 
 An experimental compatibility bridge that runs the official Windows UU client
-in an isolated Wine prefix, presents the real GNOME Wayland desktop through a
+in an isolated Wine prefix, presents the real GNOME desktop through a
 local RDP relay, and makes mouse and keyboard control work normally.
 
 | Capability | Validated result |
@@ -55,8 +55,9 @@ The one installer:
 9. runs immediate end-to-end verification
 
 The first run prompts for a local relay password without echo and opens the
-official UU window once if account sign-in is needed. Re-running the same
-command is idempotent.
+official UU window on the logged-in desktop before starting the private relay.
+Complete account sign-in and close that window. Re-running the same command is
+idempotent; unchanged FreeRDP build outputs are checksum-verified and reused.
 
 Use an already downloaded installer or a future approved release manifest:
 
@@ -90,11 +91,14 @@ Phone / Windows / macOS UU controller
               GNOME Remote Desktop
                          |
                          v
-             logged-in Wayland desktop
+             logged-in GNOME desktop
+              (Wayland or Xorg/XRDP)
 ```
 
 UU sees one ordinary Windows desktop window. SDL FreeRDP relays that window to
-GNOME Remote Desktop, which owns supported Wayland capture and input. When
+GNOME Remote Desktop, which owns supported GNOME capture and input. The
+launcher discovers the D-Bus of the live GNOME Shell, including XRDP sessions
+that use a private session bus, and keeps the RDP hop local to the host. When
 Wine denies `SendInput` from UU's service token, a bounded broker repeats the
 same input request from a normal user Wine process.
 
@@ -107,6 +111,7 @@ uu-remote status
 uu-remote restart
 uu-remote stop
 uu-remote logs
+uu-remote login       # one-time sign-in or account recovery on this desktop
 scripts/verify.sh --quick
 scripts/verify.sh
 ```

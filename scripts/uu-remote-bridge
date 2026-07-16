@@ -6,6 +6,7 @@ bridge_user="${USER:-$(id -un)}"
 bridge_display="${UURB_DISPLAY:-:20}"
 rdp_port="${UURB_RDP_PORT:-3390}"
 resolution="${UURB_RESOLUTION:-1920x1080}"
+manager_display="${DISPLAY:-}"
 
 if [[ ! "$bridge_display" =~ ^:[0-9]+$ ||
       ! "$rdp_port" =~ ^[0-9]+$ ||
@@ -17,7 +18,7 @@ fi
 export DISPLAY="$bridge_display"
 export WINEPREFIX="$HOME/.local/share/wineprefixes/uu-remote"
 export WINEDEBUG=-all
-export WINEDLLOVERRIDES='winedbg.exe=d'
+export WINEDLLOVERRIDES='winedbg.exe=d;mscoree,mshtml='
 export OPENSSL_MODULES='C:\Program Files\FreeRDP\ossl-modules'
 export SDL_RENDER_DRIVER=software
 export UU_INPUT_BRIDGE_LOG="C:\\users\\$bridge_user\\Temp\\uu-input-bridge.log"
@@ -37,10 +38,15 @@ xauth_file="$runtime_dir/Xauthority"
 
 xvfb_pid=""
 openbox_pid=""
+grd_pid=""
 freerdp_pid=""
 winlogon_pid=""
 input_broker_pid=""
 server_supervisor_pid=""
+desktop_bus=""
+desktop_display=""
+desktop_wayland=""
+desktop_session_type=""
 
 log() {
     printf '%s %s\n' "$(date --iso-8601=seconds)" "$*"
@@ -57,6 +63,7 @@ cleanup() {
         "$input_broker_pid" \
         "$winlogon_pid" \
         "$freerdp_pid" \
+        "$grd_pid" \
         "$openbox_pid" \
         "$xvfb_pid"; do
         if [[ -n "$pid" ]]; then
@@ -67,7 +74,128 @@ cleanup() {
     rm -f "$xauth_file"
 }
 
-trap cleanup EXIT INT TERM HUP
+trap cleanup EXIT
+trap 'exit 0' INT TERM HUP
+
+process_environment_value() {
+    local name="$1"
+    local pid="$2"
+
+    /usr/bin/tr '\0' '\n' <"/proc/$pid/environ" 2>/dev/null | \
+        /usr/bin/sed -n "s/^${name}=//p" | /usr/bin/head -n 1
+}
+
+discover_desktop_session() {
+    local candidate_bus
+    local candidate_display
+    local candidate_session_type
+    local candidate_session_id
+    local candidate_state
+    local candidate_wayland
+    local fallback_bus=""
+    local fallback_display=""
+    local fallback_session_type=""
+    local fallback_wayland=""
+    local pid
+
+    while read -r pid; do
+        [[ -n "$pid" && -r "/proc/$pid/environ" ]] || continue
+        candidate_bus="$(process_environment_value \
+            DBUS_SESSION_BUS_ADDRESS "$pid")"
+        candidate_display="$(process_environment_value DISPLAY "$pid")"
+        candidate_wayland="$(process_environment_value WAYLAND_DISPLAY "$pid")"
+        candidate_session_type="$(process_environment_value \
+            XDG_SESSION_TYPE "$pid")"
+        [[ -n "$candidate_bus" ]] || continue
+        [[ -n "$candidate_display" || -n "$candidate_wayland" ]] || continue
+        candidate_session_id="$(
+            /usr/bin/sed -n \
+                's#.*session-\([^/]*\)\.scope.*#\1#p' \
+                "/proc/$pid/cgroup" 2>/dev/null | /usr/bin/head -n 1
+        )"
+        if [[ -n "$candidate_session_id" ]]; then
+            candidate_state="$(
+                /usr/bin/loginctl show-session "$candidate_session_id" \
+                    --property=State --value 2>/dev/null || true
+            )"
+            [[ "$candidate_state" == active || \
+               "$candidate_state" == online ]] || continue
+        fi
+
+        if [[ -z "$fallback_bus" ]]; then
+            fallback_bus="$candidate_bus"
+            fallback_display="$candidate_display"
+            fallback_wayland="$candidate_wayland"
+            fallback_session_type="$candidate_session_type"
+        fi
+        if [[ -n "$manager_display" && \
+              "$candidate_display" == "$manager_display" ]]; then
+            desktop_bus="$candidate_bus"
+            desktop_display="$candidate_display"
+            desktop_wayland="$candidate_wayland"
+            desktop_session_type="$candidate_session_type"
+            return 0
+        fi
+    done < <(/usr/bin/pgrep -u "$UID" -x gnome-shell | /usr/bin/sort -nr)
+
+    if [[ -n "$fallback_bus" ]]; then
+        desktop_bus="$fallback_bus"
+        desktop_display="$fallback_display"
+        desktop_wayland="$fallback_wayland"
+        desktop_session_type="$fallback_session_type"
+        return 0
+    fi
+    return 1
+}
+
+start_desktop_relay() {
+    local -a desktop_environment
+
+    if ! discover_desktop_session; then
+        log 'Waiting for a logged-in GNOME desktop session.'
+        until discover_desktop_session; do
+            sleep 5
+        done
+    fi
+
+    desktop_environment=(
+        "DBUS_SESSION_BUS_ADDRESS=$desktop_bus"
+        "DISPLAY=$desktop_display"
+        "OPENSSL_CONF=/etc/ssl/openssl.cnf"
+        "OPENSSL_MODULES=/usr/lib/x86_64-linux-gnu/ossl-modules"
+    )
+    if [[ -n "$desktop_wayland" ]]; then
+        desktop_environment+=("WAYLAND_DISPLAY=$desktop_wayland")
+    fi
+    if [[ -n "$desktop_session_type" ]]; then
+        desktop_environment+=("XDG_SESSION_TYPE=$desktop_session_type")
+    fi
+
+    # XRDP starts GNOME on a private session bus. The regular user unit runs
+    # on /run/user/$UID/bus and cannot see that shell, so launch GRD on the
+    # bus belonging to the desktop that is actually being shared.
+    systemctl --user stop gnome-remote-desktop.service >/dev/null 2>&1 || true
+    /usr/bin/env "${desktop_environment[@]}" \
+        /usr/libexec/gnome-remote-desktop-daemon --rdp-port "$rdp_port" \
+        >>"$state_dir/gnome-remote-desktop.log" 2>&1 &
+    grd_pid=$!
+
+    for _ in {1..150}; do
+        if ! kill -0 "$grd_pid" >/dev/null 2>&1; then
+            log 'GNOME Desktop Sharing exited during startup.'
+            return 1
+        fi
+        if /usr/bin/ss -H -ltnp "sport = :$rdp_port" 2>/dev/null | \
+            /usr/bin/grep -q 'gnome-remote-de'; then
+            log "GNOME Desktop Sharing is relaying $desktop_session_type ${desktop_display:-$desktop_wayland}."
+            return 0
+        fi
+        sleep 0.1
+    done
+
+    log "GNOME Desktop Sharing did not open 127.0.0.1:$rdp_port."
+    return 1
+}
 
 mkdir -p \
     "$state_dir" \
@@ -75,21 +203,7 @@ mkdir -p \
     "$WINEPREFIX/drive_c/users/$bridge_user/Temp"
 chmod 700 "$runtime_dir"
 
-systemctl --user start gnome-remote-desktop.service
-
-rdp_ready=false
-for _ in {1..100}; do
-    if (exec 3<>"/dev/tcp/127.0.0.1/$rdp_port") 2>/dev/null; then
-        exec 3>&-
-        exec 3<&-
-        rdp_ready=true
-        break
-    fi
-    sleep 0.1
-done
-
-if [[ "$rdp_ready" != true ]]; then
-    log "GNOME Desktop Sharing did not open 127.0.0.1:$rdp_port."
+if ! start_desktop_relay; then
     exit 1
 fi
 
@@ -135,7 +249,11 @@ if [[ ! -f "$input_bridge_dll" || ! -f "$input_broker_exe" ||
     exit 1
 fi
 
-password="$(/usr/bin/secret-tool lookup service uu-desktop-bridge username "$bridge_user" || true)"
+password="$(
+    /usr/bin/env DBUS_SESSION_BUS_ADDRESS="$desktop_bus" \
+        /usr/bin/secret-tool lookup service uu-desktop-bridge \
+        username "$bridge_user" || true
+)"
 if [[ -z "$password" ]]; then
     log 'The RDP bridge password is missing from the login keyring.'
     exit 1
@@ -296,6 +414,7 @@ set +e
 wait -n \
     "$xvfb_pid" \
     "$openbox_pid" \
+    "$grd_pid" \
     "$freerdp_pid" \
     "$winlogon_pid" \
     "$input_broker_pid" \

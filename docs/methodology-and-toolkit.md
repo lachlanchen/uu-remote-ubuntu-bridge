@@ -93,10 +93,10 @@ The final bridge uses small adapters at stable interfaces:
 - a one-function event-log hook returns a documented Windows error
 - an SSPI shim normalizes private WinPR handle representation
 - SDL FreeRDP provides a normal capturable Windows window
-- GNOME Remote Desktop owns Wayland capture and input
+- GNOME Remote Desktop owns GNOME session capture and input
 
 This is more maintainable than emulating UU's kernel driver or inventing a new
-Wayland input stack.
+desktop input stack.
 
 ## Make lifecycle behavior explicit
 
@@ -123,8 +123,8 @@ and live process behavior.
 | Wine/WineGCC | Run UU and provide the fake Winlogon process shape |
 | Xvfb/Openbox | Private, deterministic Windows capture desktop |
 | `xdotool`/`xauth` | Window focus checks and protected X11 access |
-| SDL FreeRDP/WinPR | Windows RDP relay into GNOME's Wayland session |
-| GNOME Remote Desktop | Supported Wayland capture and input endpoint |
+| SDL FreeRDP/WinPR | Windows RDP relay into the live GNOME session |
+| GNOME Remote Desktop | Supported GNOME capture and input endpoint |
 | `grdctl`/`gsettings` | Configure and inspect GNOME RDP |
 | `secret-tool` | Keep the relay password in GNOME Keyring |
 | systemd user units | Restart and supervise the live bridge |
