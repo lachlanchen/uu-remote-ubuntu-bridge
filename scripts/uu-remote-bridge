@@ -1,0 +1,305 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+bridge_user="${USER:-$(id -un)}"
+bridge_display="${UURB_DISPLAY:-:20}"
+rdp_port="${UURB_RDP_PORT:-3390}"
+resolution="${UURB_RESOLUTION:-1920x1080}"
+
+if [[ ! "$bridge_display" =~ ^:[0-9]+$ ||
+      ! "$rdp_port" =~ ^[0-9]+$ ||
+      ! "$resolution" =~ ^[0-9]+x[0-9]+$ ]]; then
+    printf 'Invalid UURB display, RDP port, or resolution setting.\n' >&2
+    exit 2
+fi
+
+export DISPLAY="$bridge_display"
+export WINEPREFIX="$HOME/.local/share/wineprefixes/uu-remote"
+export WINEDEBUG=-all
+export WINEDLLOVERRIDES='winedbg.exe=d'
+export OPENSSL_MODULES='C:\Program Files\FreeRDP\ossl-modules'
+export SDL_RENDER_DRIVER=software
+export UU_INPUT_BRIDGE_LOG="C:\\users\\$bridge_user\\Temp\\uu-input-bridge.log"
+export UU_INPUT_BROKER_LOG="C:\\users\\$bridge_user\\Temp\\uu-input-broker.log"
+export PATH="/opt/wine-stable/bin:/usr/bin:/bin"
+
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/uu-remote-bridge"
+runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$UID}/uu-remote-bridge"
+compat_dir="$WINEPREFIX/compat"
+freerdp_exe="$WINEPREFIX/drive_c/Program Files/FreeRDP/sdl-freerdp.exe"
+input_bridge_dll="$compat_dir/uu-input-bridge.dll"
+input_broker_exe="$compat_dir/uu-input-broker.exe"
+input_injector_exe="$compat_dir/uu-injector.exe"
+service_control_exe="$compat_dir/uu-service-control.exe"
+uu_app_dir="$WINEPREFIX/drive_c/Program Files/Netease/GameViewer"
+xauth_file="$runtime_dir/Xauthority"
+
+xvfb_pid=""
+openbox_pid=""
+freerdp_pid=""
+winlogon_pid=""
+input_broker_pid=""
+server_supervisor_pid=""
+
+log() {
+    printf '%s %s\n' "$(date --iso-8601=seconds)" "$*"
+}
+
+cleanup() {
+    trap - EXIT INT TERM HUP
+    /usr/bin/timeout --kill-after=1s 5s \
+        /usr/bin/env WINEPREFIX="$WINEPREFIX" \
+        /opt/wine-stable/bin/wineserver -k >/dev/null 2>&1 || true
+
+    for pid in \
+        "$server_supervisor_pid" \
+        "$input_broker_pid" \
+        "$winlogon_pid" \
+        "$freerdp_pid" \
+        "$openbox_pid" \
+        "$xvfb_pid"; do
+        if [[ -n "$pid" ]]; then
+            kill "$pid" >/dev/null 2>&1 || true
+        fi
+    done
+
+    rm -f "$xauth_file"
+}
+
+trap cleanup EXIT INT TERM HUP
+
+mkdir -p \
+    "$state_dir" \
+    "$runtime_dir" \
+    "$WINEPREFIX/drive_c/users/$bridge_user/Temp"
+chmod 700 "$runtime_dir"
+
+systemctl --user start gnome-remote-desktop.service
+
+rdp_ready=false
+for _ in {1..100}; do
+    if (exec 3<>"/dev/tcp/127.0.0.1/$rdp_port") 2>/dev/null; then
+        exec 3>&-
+        exec 3<&-
+        rdp_ready=true
+        break
+    fi
+    sleep 0.1
+done
+
+if [[ "$rdp_ready" != true ]]; then
+    log "GNOME Desktop Sharing did not open 127.0.0.1:$rdp_port."
+    exit 1
+fi
+
+touch "$xauth_file"
+chmod 600 "$xauth_file"
+/usr/bin/xauth -f "$xauth_file" add "$DISPLAY" . "$(/usr/bin/mcookie)"
+export XAUTHORITY="$xauth_file"
+
+/usr/bin/Xvfb "$DISPLAY" \
+    -screen 0 "${resolution}x24" \
+    -dpi 96 \
+    -nolisten tcp \
+    -noreset \
+    -auth "$xauth_file" \
+    >>"$state_dir/xvfb.log" 2>&1 &
+xvfb_pid=$!
+
+x_ready=false
+for _ in {1..100}; do
+    if /usr/bin/xdpyinfo -display "$DISPLAY" >/dev/null 2>&1; then
+        x_ready=true
+        break
+    fi
+    sleep 0.1
+done
+
+if [[ "$x_ready" != true ]]; then
+    log 'The private X11 display did not become ready.'
+    exit 1
+fi
+
+/usr/bin/openbox >>"$state_dir/openbox.log" 2>&1 &
+openbox_pid=$!
+
+if [[ ! -f "$freerdp_exe" ]]; then
+    log 'The Windows FreeRDP client is missing from the Wine prefix.'
+    exit 1
+fi
+
+if [[ ! -f "$input_bridge_dll" || ! -f "$input_broker_exe" ||
+      ! -f "$input_injector_exe" || ! -f "$service_control_exe" ]]; then
+    log 'The UU input compatibility bridge is missing from the Wine prefix.'
+    exit 1
+fi
+
+password="$(/usr/bin/secret-tool lookup service uu-desktop-bridge username "$bridge_user" || true)"
+if [[ -z "$password" ]]; then
+    log 'The RDP bridge password is missing from the login keyring.'
+    exit 1
+fi
+
+tls_cert="$(/usr/bin/gsettings get \
+    org.gnome.desktop.remote-desktop.rdp tls-cert)"
+tls_cert="${tls_cert#\'}"
+tls_cert="${tls_cert%\'}"
+if [[ ! -f "$tls_cert" ]]; then
+    log 'The configured GNOME RDP TLS certificate is missing.'
+    exit 1
+fi
+tls_fingerprint="$(
+    /usr/bin/openssl x509 -in "$tls_cert" -outform DER | \
+        /usr/bin/sha256sum | /usr/bin/awk '{print $1}'
+)"
+cert_option="/cert:fingerprint:sha256:$tls_fingerprint"
+
+/usr/bin/timeout --kill-after=1s 5s \
+    /usr/bin/env WINEPREFIX="$WINEPREFIX" \
+    /opt/wine-stable/bin/wineserver -k >/dev/null 2>&1 || true
+/usr/bin/timeout --kill-after=1s 5s \
+    /usr/bin/env WINEPREFIX="$WINEPREFIX" \
+    /opt/wine-stable/bin/wineserver -w >/dev/null 2>&1 || true
+
+"$compat_dir/winlogon.exe" >>"$state_dir/winlogon.log" 2>&1 &
+winlogon_pid=$!
+
+uu_ready=false
+for _ in {1..120}; do
+    if pgrep -u "$UID" -f 'GameViewerServer\.exe' >/dev/null && \
+       pgrep -u "$UID" -f 'GameViewerHealthd' >/dev/null; then
+        uu_ready=true
+        break
+    fi
+    sleep 0.25
+done
+
+if [[ "$uu_ready" != true ]]; then
+    log 'UU Remote background processes did not become ready.'
+    exit 1
+fi
+
+/opt/wine-stable/bin/wine "$input_broker_exe" \
+    >>"$state_dir/input-broker.log" 2>&1 &
+input_broker_pid=$!
+
+sleep 0.2
+if ! kill -0 "$input_broker_pid" >/dev/null 2>&1; then
+    log 'The UU input broker exited during startup.'
+    exit 1
+fi
+
+input_bridge_windows_path="$(
+    /opt/wine-stable/bin/winepath -w "$input_bridge_dll"
+)"
+if ! /opt/wine-stable/bin/wine "$input_injector_exe" \
+    "$input_bridge_windows_path" \
+    >>"$state_dir/input-injector.log" 2>&1; then
+    log 'Could not inject the UU input compatibility bridge.'
+    exit 1
+fi
+server_pid="$(pgrep -o -u "$UID" -f 'GameViewerServer\.exe')"
+
+/opt/wine-stable/bin/wine "$freerdp_exe" \
+    "/v:127.0.0.1:$rdp_port" \
+    "/u:$bridge_user" \
+    /from-stdin:force \
+    "$cert_option" \
+    /sspi-module:'C:\Program Files\FreeRDP\winpr-sspi-shim.dll' \
+    /auth-pkg-list:'none,ntlm' \
+    /network:auto \
+    "/size:$resolution" \
+    /bpp:32 \
+    /gdi:sw \
+    /audio-mode:2 \
+    /prevent-session-lock:180 \
+    /t:Ubuntu-Desktop-Relay \
+    +f \
+    -toggle-fullscreen \
+    -decorations \
+    -suppress-output \
+    -clipboard \
+    +auto-reconnect \
+    /auto-reconnect-max-retries:0 \
+    /log-level:WARN \
+    <<<"$password" >>"$state_dir/freerdp.log" 2>&1 &
+freerdp_pid=$!
+unset password
+
+relay_ready=false
+for _ in {1..150}; do
+    if /usr/bin/xdotool search --name Ubuntu-Desktop-Relay \
+        >/dev/null 2>&1; then
+        relay_ready=true
+        break
+    fi
+    if ! kill -0 "$freerdp_pid" >/dev/null 2>&1; then
+        break
+    fi
+    sleep 0.1
+done
+
+if [[ "$relay_ready" != true ]]; then
+    log 'FreeRDP did not create the Ubuntu desktop relay window.'
+    exit 1
+fi
+
+/usr/bin/xdotool search --name Ubuntu-Desktop-Relay \
+    windowactivate --sync >/dev/null 2>&1 || true
+
+bootstrap_account() {
+    /opt/wine-stable/bin/wine "$service_control_exe" \
+        GameViewerService 133 \
+        >>"$state_dir/service-control.log" 2>&1 || true
+    /opt/wine-stable/bin/wine start /unix "$uu_app_dir/GameViewer.exe" \
+        >>"$state_dir/client-bootstrap.log" 2>&1 || true
+
+    sleep 1
+    /usr/bin/xdotool search --onlyvisible --name '网易UU远程' \
+        windowminimize >/dev/null 2>&1 || true
+    /usr/bin/xdotool search --name Ubuntu-Desktop-Relay \
+        windowactivate --sync >/dev/null 2>&1 || true
+}
+
+# UU's GUI sends the account-login IPC message that makes the background
+# server visible to other devices. Let it exit normally: forcibly closing it
+# also asks the server to exit.
+bootstrap_account
+
+supervise_server() {
+    local last_pid="$1"
+    local candidate
+
+    while true; do
+        candidate="$(pgrep -o -u "$UID" -f 'GameViewerServer\.exe' || true)"
+        if [[ -n "$candidate" && "$candidate" != "$last_pid" ]]; then
+            sleep 0.25
+            if /opt/wine-stable/bin/wine "$input_injector_exe" \
+                "$input_bridge_windows_path" \
+                >>"$state_dir/input-injector.log" 2>&1; then
+                last_pid="$candidate"
+                log "Re-injected UU server process $candidate."
+                bootstrap_account
+            fi
+        fi
+        sleep 0.25
+    done
+}
+
+supervise_server "$server_pid" &
+server_supervisor_pid=$!
+
+log "UU Remote and the Windows RDP relay share DISPLAY=$DISPLAY."
+
+set +e
+wait -n \
+    "$xvfb_pid" \
+    "$openbox_pid" \
+    "$freerdp_pid" \
+    "$winlogon_pid" \
+    "$input_broker_pid" \
+    "$server_supervisor_pid"
+set -e
+log 'A bridge process exited; systemd will restart the complete relay.'
+exit 1

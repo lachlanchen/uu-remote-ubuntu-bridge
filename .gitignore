@@ -1,0 +1,8 @@
+/build/
+*.dll
+*.dmp
+*.exe
+*.log
+*.so
+__pycache__/
+.pytest_cache/

@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+export WINEPREFIX="${WINEPREFIX:-$HOME/.local/share/wineprefixes/uu-remote}"
+export WINEDEBUG="${WINEDEBUG:--all}"
+
+wine_bin="${WINE_BIN:-/opt/wine-stable/bin/wine}"
+app_dir="$WINEPREFIX/drive_c/Program Files/Netease/GameViewer"
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/uu-remote"
+
+notify_error() {
+    if command -v notify-send >/dev/null 2>&1; then
+        notify-send 'UU Remote' "$1"
+    fi
+    printf '%s\n' "$1" >&2
+}
+
+case "${1:-open}" in
+    status)
+        exec systemctl --user status uu-remote-bridge.service --no-pager
+        ;;
+    restart)
+        exec systemctl --user restart uu-remote-bridge.service
+        ;;
+    stop)
+        exec systemctl --user stop uu-remote-bridge.service
+        ;;
+    logs)
+        exec journalctl --user -fu uu-remote-bridge.service
+        ;;
+    open)
+        shift || true
+        ;;
+    *)
+        printf 'usage: uu-remote [open|status|restart|stop|logs]\n' >&2
+        exit 2
+        ;;
+esac
+
+mkdir -p "$state_dir"
+if ! systemctl --user start uu-remote-bridge.service; then
+    notify_error 'The Ubuntu desktop bridge could not start.'
+    exit 1
+fi
+
+for _ in {1..120}; do
+    if pgrep -u "$UID" -f 'GameViewerServer\.exe' >/dev/null; then
+        break
+    fi
+    sleep 0.25
+done
+
+if ! pgrep -u "$UID" -f 'GameViewerServer\.exe' >/dev/null; then
+    notify_error 'The Ubuntu desktop bridge is not ready.'
+    exit 1
+fi
+if [[ ! -f "$app_dir/GameViewer.exe" ]]; then
+    notify_error 'UU Remote is not installed in the bridge Wine prefix.'
+    exit 1
+fi
+
+cd "$app_dir"
+exec "$wine_bin" GameViewer.exe "$@" >>"$state_dir/client.log" 2>&1
