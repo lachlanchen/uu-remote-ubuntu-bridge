@@ -43,6 +43,11 @@ scripts/patch-gameviewer.py verify \
   "$HOME/.local/share/wineprefixes/uu-remote/drive_c/Program Files/Netease/GameViewer/bin/GameViewerServer.exe"
 ```
 
+An `unsupported executable` result is intentional. Stage and audit the new
+release with `scripts/stage-uu-release.sh` and
+`scripts/audit-gameviewer.py`; follow `docs/upstream-maintenance.md`. Do not
+add only the new hash to an old manifest.
+
 ## First click forces the UU session to exit
 
 This was the original symptom of Wine rejecting `SendInput` from UU's service

@@ -1,0 +1,62 @@
+from __future__ import annotations
+
+import re
+import unittest
+from pathlib import Path
+from urllib.parse import unquote, urlparse
+
+
+REPO_DIR = Path(__file__).resolve().parent.parent
+MARKDOWN_LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
+TRANSLATIONS = {
+    "README.ar.md",
+    "README.de.md",
+    "README.es.md",
+    "README.fr.md",
+    "README.ja.md",
+    "README.ko.md",
+    "README.ru.md",
+    "README.vi.md",
+    "README.zh-Hans.md",
+    "README.zh-Hant.md",
+}
+
+
+class DocumentationTests(unittest.TestCase):
+    def test_all_local_markdown_links_resolve(self) -> None:
+        failures: list[str] = []
+        for document in REPO_DIR.rglob("*.md"):
+            if "build" in document.parts or ".git" in document.parts:
+                continue
+            text = document.read_text(encoding="utf-8")
+            for raw_target in MARKDOWN_LINK.findall(text):
+                target = raw_target.strip().split(maxsplit=1)[0].strip("<>")
+                parsed = urlparse(target)
+                if parsed.scheme or target.startswith("#"):
+                    continue
+                relative = unquote(parsed.path)
+                destination = (document.parent / relative).resolve()
+                if not destination.exists():
+                    failures.append(
+                        f"{document.relative_to(REPO_DIR)} -> {raw_target}"
+                    )
+        self.assertEqual([], failures)
+
+    def test_language_selector_has_eleven_real_destinations(self) -> None:
+        readme = (REPO_DIR / "README.md").read_text(encoding="utf-8")
+        expected = {f"i18n/{name}" for name in TRANSLATIONS}
+        expected.add("README.md")
+        selector_targets = {
+            target
+            for target in MARKDOWN_LINK.findall(readme.split("</div>", 1)[0])
+            if target == "README.md" or target.startswith("i18n/README.")
+        }
+        self.assertEqual(expected, selector_targets)
+        actual = {
+            path.name for path in (REPO_DIR / "i18n").glob("README.*.md")
+        }
+        self.assertEqual(TRANSLATIONS, actual)
+
+
+if __name__ == "__main__":
+    unittest.main()

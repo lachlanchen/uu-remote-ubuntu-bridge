@@ -6,30 +6,69 @@ repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 bridge_user="${USER:-$(id -un)}"
 wine_prefix="${WINEPREFIX:-$HOME/.local/share/wineprefixes/uu-remote}"
 uu_bin="$wine_prefix/drive_c/Program Files/Netease/GameViewer/bin"
+release_manifest="${UURB_RELEASE_MANIFEST:-$wine_prefix/compat/release-manifest.json}"
+if [[ ! -f "$release_manifest" ]]; then
+    release_manifest="$repo_dir/patches/uu-remote-4.33.0.8907.json"
+fi
+manifest_field() {
+    python3 "$repo_dir/scripts/patch-gameviewer.py" field "$1" \
+        --manifest "$release_manifest"
+}
 purge=false
+dry_run=false
 
-if [[ "${1:-}" == --purge ]]; then
-    purge=true
-elif (($#)); then
-    printf 'usage: ./uninstall.sh [--purge]\n' >&2
-    exit 2
-fi
+while (($#)); do
+    case "$1" in
+        --purge)
+            purge=true
+            shift
+            ;;
+        --dry-run)
+            dry_run=true
+            shift
+            ;;
+        -h|--help)
+            printf 'usage: ./uninstall.sh [--purge] [--dry-run]\n'
+            exit 0
+            ;;
+        *)
+            printf 'usage: ./uninstall.sh [--purge] [--dry-run]\n' >&2
+            exit 2
+            ;;
+    esac
+done
 
-systemctl --user disable --now uu-remote-bridge.service >/dev/null 2>&1 || true
-/opt/wine-stable/bin/wineserver -k >/dev/null 2>&1 || true
-
-server="$uu_bin/GameViewerServer.exe"
+server="$uu_bin/$(manifest_field server.filename)"
 if [[ -f "$server.uu-original" ]]; then
-    python3 "$repo_dir/scripts/patch-gameviewer.py" restore "$server"
+    python3 "$repo_dir/scripts/patch-gameviewer.py" verify \
+        "$server.uu-original" --manifest "$release_manifest" \
+        --expect original >/dev/null
 fi
-healthd="$uu_bin/GameViewerHealthd.exe"
+healthd="$uu_bin/$(manifest_field health_monitor.filename)"
 if [[ -f "$healthd.uu-original" ]]; then
-    healthd_original_sha256='ba4cdef465b3714940b154d6d40d7cfca4d65c3d639a6254bb0fb7be69bd19e6'
+    healthd_original_sha256="$(manifest_field health_monitor.original_sha256)"
     if [[ "$(sha256sum "$healthd.uu-original" | awk '{print $1}')" != \
           "$healthd_original_sha256" ]]; then
         printf 'Refusing to restore an unknown GameViewerHealthd.exe backup.\n' >&2
         exit 1
     fi
+fi
+
+if [[ "$dry_run" == true ]]; then
+    printf 'PASS  audited server and health-monitor backups can be restored.\n'
+    printf 'INFO  purge=%s; no service, file, credential, or RDP setting changed.\n' \
+        "$purge"
+    exit 0
+fi
+
+systemctl --user disable --now uu-remote-bridge.service >/dev/null 2>&1 || true
+/opt/wine-stable/bin/wineserver -k >/dev/null 2>&1 || true
+
+if [[ -f "$server.uu-original" ]]; then
+    python3 "$repo_dir/scripts/patch-gameviewer.py" restore "$server" \
+        --manifest "$release_manifest"
+fi
+if [[ -f "$healthd.uu-original" ]]; then
     install -m 0755 "$healthd.uu-original" "$healthd"
 fi
 

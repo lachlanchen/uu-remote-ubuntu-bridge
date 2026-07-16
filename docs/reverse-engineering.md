@@ -4,6 +4,11 @@ This document records the reproducible analysis behind the 4.33.0.8907
 compatibility patch. Addresses and bytes must not be reused for another UU
 release without a new audit.
 
+The machine-readable source of truth is
+`patches/uu-remote-4.33.0.8907.json`. For a new version, follow
+`docs/upstream-maintenance.md`; the generic patcher refuses unknown hashes and
+unapproved draft manifests.
+
 ## Audited files
 
 ```text
@@ -80,8 +85,13 @@ x86_64-w64-mingw32-objdump -d -M intel \
   --start-address=0x140230280 --stop-address=0x140230980 "$server"
 
 x86_64-w64-mingw32-objdump -d -M intel \
-  --start-address=0x1401dba80 --stop-address=0x1401dbcf0 "$server"
+  --start-address=0x1401dc640 --stop-address=0x1401dc930 "$server"
 ```
+
+The latter VA range includes file offsets `0x1dbaae` and `0x1dbcb2` after
+mapping `.text` raw offset to its aligned RVA. An earlier hand-written range
+omitted that section-alignment delta; the manifest offsets and patch bytes were
+always file offsets and are unchanged.
 
 ## Byte inspection
 
@@ -132,7 +142,9 @@ virtual switch state:0
 
 `scripts/patch-gameviewer.py` does not search for three-byte fragments. It
 checks longer unique signatures, their expected offsets, the complete input
-hash, and the complete output hash.
+hash, and the complete output hash. These checks are now loaded from an
+approved release manifest so future audited versions can be added without
+editing patch-engine code.
 
 ## Input-token failure
 
@@ -216,3 +228,7 @@ The investigation used `rg`, `strings`, `xxd`, `sha256sum`, GNU
 GNOME RDP logs, `xdotool`, `scrot`, and a real Windows UU installation as a
 behavioral reference. Temporary capture and SendInput test binaries are not
 part of the repository.
+
+`scripts/audit-gameviewer.py` now reproduces the PE section mapping, landmark
+search, masked-signature candidate scan, and targeted disassembly report. Its
+output is a draft only; semantic review remains mandatory.

@@ -5,8 +5,18 @@ set -Eeuo pipefail
 repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 bridge_user="${USER:-$(id -un)}"
 wine_prefix="${WINEPREFIX:-$HOME/.local/share/wineprefixes/uu-remote}"
-server="$wine_prefix/drive_c/Program Files/Netease/GameViewer/bin/GameViewerServer.exe"
-healthd="$wine_prefix/drive_c/Program Files/Netease/GameViewer/bin/GameViewerHealthd.exe"
+release_manifest="${UURB_RELEASE_MANIFEST:-$wine_prefix/compat/release-manifest.json}"
+if [[ ! -f "$release_manifest" ]]; then
+    release_manifest="$repo_dir/patches/uu-remote-4.33.0.8907.json"
+fi
+manifest_field() {
+    python3 "$repo_dir/scripts/patch-gameviewer.py" field "$1" \
+        --manifest "$release_manifest"
+}
+release_version="$(manifest_field version)"
+server="$wine_prefix/drive_c/Program Files/Netease/GameViewer/bin/$(manifest_field server.filename)"
+healthd="$wine_prefix/drive_c/Program Files/Netease/GameViewer/bin/$(manifest_field health_monitor.filename)"
+healthd_original_sha256="$(manifest_field health_monitor.original_sha256)"
 healthd_stub="$repo_dir/build/compat/uu-healthd-stub.exe"
 freerdp="$wine_prefix/drive_c/Program Files/FreeRDP/sdl-freerdp.exe"
 bridge_log="$wine_prefix/drive_c/users/$bridge_user/Temp/uu-input-bridge.log"
@@ -50,8 +60,10 @@ else
     fail 'systemd user service is not active'
 fi
 
+pass "approved UU release manifest $release_version is active"
+
 if python3 "$repo_dir/scripts/patch-gameviewer.py" verify "$server" \
-    >/dev/null; then
+    --manifest "$release_manifest" --expect patched >/dev/null; then
     pass 'GameViewerServer.exe is the audited patched build'
 else
     fail 'GameViewerServer.exe verification failed'
@@ -59,7 +71,7 @@ fi
 
 if [[ -f "$healthd.uu-original" ]] && \
    [[ "$(sha256sum "$healthd.uu-original" | awk '{print $1}')" == \
-      ba4cdef465b3714940b154d6d40d7cfca4d65c3d639a6254bb0fb7be69bd19e6 ]] && \
+      "$healthd_original_sha256" ]] && \
    [[ -f "$healthd_stub" ]] && cmp -s "$healthd" "$healthd_stub"; then
     pass 'health monitor stub is installed with an audited backup'
 else
@@ -119,6 +131,9 @@ fi
 if [[ -f "$bridge_log" ]] && \
    tail -500 "$bridge_log" | grep -q 'route=broker result=1 error=0'; then
     pass 'at least one real input event completed through the broker'
+elif [[ -f "$bridge_log" ]] && \
+     grep -q 'route=broker result=1 error=0' "$bridge_log"; then
+    pass 'historical controller input completed through the broker'
 else
     printf 'INFO  no remote input event has been observed yet\n'
 fi

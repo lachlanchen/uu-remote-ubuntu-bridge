@@ -1,106 +1,212 @@
+<div align="center">
+
+[English](README.md) · [العربية](i18n/README.ar.md) · [Español](i18n/README.es.md) · [Français](i18n/README.fr.md) · [日本語](i18n/README.ja.md) · [한국어](i18n/README.ko.md) · [Tiếng Việt](i18n/README.vi.md) · [中文 (简体)](i18n/README.zh-Hans.md) · [中文（繁體）](i18n/README.zh-Hant.md) · [Deutsch](i18n/README.de.md) · [Русский](i18n/README.ru.md)
+
+[![LazyingArt banner](https://github.com/lachlanchen/lachlanchen/raw/main/figs/banner.png)](https://lazying.art)
+
 # UU Remote Ubuntu Bridge
 
-An experimental compatibility bridge that lets the official Windows UU
-Remote client display and control an existing GNOME desktop from Wine.
+**Use NetEase UU Remote to view and fully control the Ubuntu GNOME desktop.**
 
-The working path is:
+[![Ubuntu 24.04](https://img.shields.io/badge/Ubuntu-24.04-E95420?logo=ubuntu&logoColor=white)](https://ubuntu.com/)
+[![GNOME 46](https://img.shields.io/badge/GNOME-46-4A86CF?logo=gnome&logoColor=white)](https://www.gnome.org/)
+[![UU Remote](https://img.shields.io/badge/UU_Remote-4.33.0.8907-00A870)](https://uuyc.163.com/)
+[![Wine 11](https://img.shields.io/badge/Wine-11.0-800000?logo=wine&logoColor=white)](https://www.winehq.org/)
+[![Patch policy](https://img.shields.io/badge/Patches-fail--closed-1F883D)](docs/security.md)
+[![License MIT](https://img.shields.io/badge/License-MIT-2F81F7)](LICENSE)
+[![Website](https://img.shields.io/badge/Website-lazying.art-0A7EA4)](https://lazying.art)
 
-```text
-UU controller
-  -> GameViewerServer.exe in an isolated Wine prefix
-  -> local SendInput broker
-  -> Windows SDL FreeRDP in the same private X11 display
-  -> GNOME Remote Desktop on localhost
-  -> the logged-in Ubuntu Wayland desktop
-```
+</div>
 
-This is not a native UU Linux port. It is a version-locked workaround tested
-on Ubuntu 24.04.2, GNOME 46, Wine 11.0, and UU Remote 4.33.0.8907. The patcher
-refuses any other UU executable.
+An experimental compatibility bridge that runs the official Windows UU client
+in an isolated Wine prefix, presents the real GNOME Wayland desktop through a
+local RDP relay, and makes mouse and keyboard control work normally.
 
-## Current result
+| Capability | Validated result |
+| --- | --- |
+| Desktop video | Live GNOME session at `1920x1080` |
+| Mouse | Motion, buttons, wheel, focus, and clicks through UU |
+| Keyboard | Printable keys, modifiers, shortcuts, and key-up events |
+| Recovery | User systemd restart plus automatic DLL re-injection |
+| Stability | One UU server PID beyond the former four-minute failure window |
+| Authentication | Normal UU sign-in and separate GNOME RDP credential |
 
-- Live GNOME desktop video at 1920x1080
-- Mouse and keyboard control through UU
-- Persistent account registration after service restart
-- No four-minute Wine event-log crash
-- Automatic re-injection if UU replaces its server process
-- User-level systemd startup and restart handling
+> This is not a native UU Linux port and is not affiliated with NetEase. The
+> current manifest is intentionally locked to UU Remote `4.33.0.8907`.
 
-## Install
+## Quick start
 
-Run from a logged-in GNOME desktop session:
+Run from the logged-in Ubuntu GNOME desktop session:
 
 ```bash
 ./install.sh
 ```
 
-The installer uses `sudo` only for Ubuntu/Wine packages. It prompts for a
-local GNOME RDP relay password and stores it in the user's login keyring. It
-downloads the audited UU installer from NetEase's official release endpoint,
-builds the compatibility code, installs a user service, and opens UU once if
-an account sign-in is needed.
+The one installer:
 
-To reuse the already downloaded audited installer:
+1. installs Ubuntu, WineHQ, build, X11, RDP, and keyring dependencies
+2. downloads and verifies the approved UU installer when needed
+3. builds all original compatibility DLLs and helpers
+4. builds the pinned Windows WinPR runtime used by SDL FreeRDP
+5. backs up and applies only approved binary signatures
+6. configures GNOME Remote Desktop with a pinned TLS certificate
+7. stores the relay password in GNOME Keyring, never in a script
+8. installs and starts the supervised user service
+9. runs immediate end-to-end verification
+
+The first run prompts for a local relay password without echo and opens the
+official UU window once if account sign-in is needed. Re-running the same
+command is idempotent.
+
+Use an already downloaded installer or a future approved release manifest:
 
 ```bash
-./install.sh --uu-installer ~/Downloads/UU-Remote/uuyc_4.33.0.exe
+./install.sh \
+  --uu-installer ~/Downloads/UU-Remote/uuyc_4.33.0.exe \
+  --release-manifest patches/uu-remote-4.33.0.8907.json
 ```
 
-Useful commands:
+## Architecture
+
+```text
+Phone / Windows / macOS UU controller
+                  |
+                  | UU signaling, video, and input
+                  v
+       GameViewerServer.exe in Wine
+             |                 |
+       captures window    SendInput IAT hook
+             |                 |
+             v                 v
+   Ubuntu-Desktop-Relay   bounded named-pipe broker
+       SDL FreeRDP              |
+             |                  |
+             +------------------+
+                  Wine/X11 input
+                         |
+                 RDP on 127.0.0.1
+                         |
+                         v
+              GNOME Remote Desktop
+                         |
+                         v
+             logged-in Wayland desktop
+```
+
+UU sees one ordinary Windows desktop window. SDL FreeRDP relays that window to
+GNOME Remote Desktop, which owns supported Wayland capture and input. When
+Wine denies `SendInput` from UU's service token, a bounded broker repeats the
+same input request from a normal user Wine process.
+
+[Read the complete architecture](docs/architecture.md).
+
+## Daily commands
 
 ```bash
 uu-remote status
 uu-remote restart
+uu-remote stop
 uu-remote logs
 scripts/verify.sh --quick
 scripts/verify.sh
 ```
 
-The default verification waits 270 seconds to cross UU's former four-minute
-failure interval. Use `--quick` for installation checks.
+The full verifier waits 270 seconds and proves the same server PID crosses
+UU's former four-minute failure interval.
 
-## Safety model
+## Updating for a new UU release
 
-The bridge preserves UU and GNOME authentication. It does not edit account
-databases, bypass login, install a kernel input driver, or expose a new remote
-control protocol. The input pipe exists only inside the user-owned Wine
-prefix; requests are bounded; logs contain event types and flags, never typed
-characters. RDP credentials remain in the GNOME keyring and are not committed.
+Unknown binaries are never patched automatically. The maintenance toolkit
+turns an update into a reproducible review:
 
-The installer verifies upstream hashes and exact machine-code signatures,
-backs up both changed UU executables, and fails closed on unknown releases.
-See [Security](docs/security.md) before deploying outside a trusted personal
-machine.
+```bash
+# Stage the installer without touching the live Wine prefix.
+scripts/stage-uu-release.sh \
+  --installer ~/Downloads/UU-Remote/uuyc_NEW.exe \
+  --sandbox-install
 
-## Repository contents
+# Produce PE maps, semantic landmarks, candidate signatures,
+# targeted disassembly, and a deliberately non-runnable draft manifest.
+scripts/audit-gameviewer.py inspect \
+  --server build/upstream/NEW/GameViewerServer.exe \
+  --healthd build/upstream/NEW/GameViewerHealthd.exe \
+  --installer ~/Downloads/UU-Remote/uuyc_NEW.exe \
+  --baseline patches/uu-remote-4.33.0.8907.json \
+  --version NEW_VERSION
+```
 
-- `src/`: compatibility DLL, broker, injector, service helper, and SSPI shim
-- `scripts/patch-gameviewer.py`: audited patch, verification, and restore
-- `scripts/build-compat.sh`: builds all original compatibility code
-- `scripts/build-winpr.sh`: builds WinPR and assembles the FreeRDP runtime
-- `scripts/uu-remote-bridge`: supervised desktop relay
-- `install.sh` and `uninstall.sh`: installation and reversible removal
-- `docs/reverse-engineering.md`: exact `strings`, `xxd`, and `objdump` record
+After manual semantic review, `audit-gameviewer.py finalize` derives the full
+patched hash and creates an approved manifest. The generic patch engine then
+handles patch, verify, and byte-identical restore without source changes.
 
-No proprietary UU binary or third-party compiled artifact is stored here.
+[Learn the complete upstream workflow](docs/upstream-maintenance.md).
+
+## Binary safety model
+
+The patch engine verifies:
+
+- approved manifest status
+- complete original SHA-256 and file size
+- one long original signature at every exact file offset
+- equal-length, non-overlapping replacements
+- complete patched SHA-256
+- matching audited backup before restore
+
+An update with one changed byte outside the approved result fails closed. A
+draft manifest cannot be used by the installer or patcher.
+
+The bridge does not edit OS account databases, bypass a login, install a
+kernel input driver, expose X11 over TCP, or add a new remote-control protocol.
+The RDP hop targets loopback and pins GNOME's certificate fingerprint.
+
+[Review all trust boundaries and residual risk](docs/security.md).
+
+## Repository map
+
+| Path | Purpose |
+| --- | --- |
+| `patches/` | Versioned approved UU identities and patch signatures |
+| `src/` | Input hook, broker, injector, service helper, and SSPI shim |
+| `scripts/gameviewer_patchlib.py` | Generic release-manifest engine |
+| `scripts/patch-gameviewer.py` | Patch, verify, status, field, and restore CLI |
+| `scripts/stage-uu-release.sh` | Private installer staging sandbox |
+| `scripts/audit-gameviewer.py` | New-release evidence and approval workflow |
+| `scripts/uu-remote-bridge` | Supervised UU/Xvfb/FreeRDP orchestration |
+| `install.sh` / `uninstall.sh` | Idempotent setup and reversible removal |
+| `tests/` | Proprietary-binary-free manifest unit tests |
+
+No NetEase executable, FreeRDP artifact, Wine prefix, password, token, device
+ID, raw production log, screenshot, or private desktop content is committed.
 
 ## Documentation
 
 - [Architecture](docs/architecture.md)
-- [Reverse-engineering record](docs/reverse-engineering.md)
+- [Methodology and tool inventory](docs/methodology-and-toolkit.md)
+- [Reverse-engineering record with exact `xxd` and `objdump` evidence](docs/reverse-engineering.md)
+- [Maintaining the bridge across upstream updates](docs/upstream-maintenance.md)
 - [Windows reference comparison](docs/windows-reference.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Security](docs/security.md)
+- [Contributing](CONTRIBUTING.md)
 
 ## Removal
 
-Restore the original UU executables and remove only bridge files:
+Restore the audited upstream files and remove bridge components while keeping
+the dedicated UU account state:
 
 ```bash
+./uninstall.sh --dry-run
 ./uninstall.sh
 ```
 
-`./uninstall.sh --purge` also deletes the dedicated Wine prefix, bridge
-credential, and GNOME RDP enablement. That removes the UU account state in the
-prefix.
+The dry run verifies both rollback backups without changing the service or any
+file. `./uninstall.sh --purge` also deletes the dedicated Wine prefix, bridge
+credential, and GNOME RDP enablement.
+
+## Project
+
+Created as part of [The Art of Lazying](https://lazying.art): automate the
+tedious parts, preserve the reasoning, and make the result reusable.
+
+Original source is MIT licensed. UU Remote, Wine, FreeRDP, GNOME, OpenSSL, and
+other third-party components retain their own licenses and trademarks.

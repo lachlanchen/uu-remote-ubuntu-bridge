@@ -10,14 +10,17 @@ wine_bin='/opt/wine-stable/bin/wine'
 wineserver_bin='/opt/wine-stable/bin/wineserver'
 uu_dir="$wine_prefix/drive_c/Program Files/Netease/GameViewer"
 uu_bin="$uu_dir/bin"
-server_exe="$uu_bin/GameViewerServer.exe"
-healthd_exe="$uu_bin/GameViewerHealthd.exe"
+release_manifest="${UURB_RELEASE_MANIFEST:-$repo_dir/patches/uu-remote-4.33.0.8907.json}"
+installed_manifest="$wine_prefix/compat/release-manifest.json"
+server_exe=''
+healthd_exe=''
 compat_build="$repo_dir/build/compat"
 freerdp_build="$repo_dir/build/freerdp"
 freerdp_install="$wine_prefix/drive_c/Program Files/FreeRDP"
-uu_download_url='https://api.nrd.nie.163.com/api/v1/release/dl/1?channel=gwqd'
-uu_installer_sha256='5e3cfe8cfdc6552c1fc26f1ad2c94df133ca20dc3c45c23155358c32ac9bf53e'
-healthd_sha256='ba4cdef465b3714940b154d6d40d7cfca4d65c3d639a6254bb0fb7be69bd19e6'
+uu_download_url=''
+uu_installer_filename=''
+uu_installer_sha256=''
+healthd_sha256=''
 rdp_port="${UURB_RDP_PORT:-3390}"
 uu_installer=''
 skip_packages=false
@@ -30,6 +33,8 @@ usage() {
 usage: ./install.sh [options]
 
   --uu-installer PATH    use a previously downloaded audited installer
+  --release-manifest PATH
+                         use an approved release manifest
   --skip-packages        do not install Ubuntu/Wine package dependencies
   --skip-account-login   do not open UU for first-time account sign-in
   --no-start             install and verify files without starting the service
@@ -41,6 +46,10 @@ while (($#)); do
     case "$1" in
         --uu-installer)
             uu_installer="${2:?--uu-installer requires a path}"
+            shift 2
+            ;;
+        --release-manifest)
+            release_manifest="${2:?--release-manifest requires a path}"
             shift 2
             ;;
         --skip-packages)
@@ -168,6 +177,19 @@ for command in curl grdctl openssl python3 secret-tool sha256sum systemctl \
     fi
 done
 
+release_manifest="$(realpath "$release_manifest")"
+manifest_field() {
+    python3 "$repo_dir/scripts/patch-gameviewer.py" field "$1" \
+        --manifest "$release_manifest"
+}
+
+uu_download_url="$(manifest_field installer.url)"
+uu_installer_filename="$(manifest_field installer.filename)"
+uu_installer_sha256="$(manifest_field installer.sha256)"
+server_exe="$uu_bin/$(manifest_field server.filename)"
+healthd_exe="$uu_bin/$(manifest_field health_monitor.filename)"
+healthd_sha256="$(manifest_field health_monitor.original_sha256)"
+
 export WINEPREFIX="$wine_prefix"
 export WINEDEBUG=-all
 export WINEDLLOVERRIDES='winedbg.exe=d'
@@ -180,7 +202,7 @@ if [[ ! -f "$uu_dir/GameViewer.exe" ]]; then
     fresh_install=true
     mkdir -p "$repo_dir/build/downloads"
     if [[ -z "$uu_installer" ]]; then
-        uu_installer="$repo_dir/build/downloads/uuyc_4.33.0.exe"
+        uu_installer="$repo_dir/build/downloads/$uu_installer_filename"
         download_verified "$uu_download_url" "$uu_installer_sha256" \
             "$uu_installer"
     else
@@ -198,11 +220,14 @@ if [[ ! -f "$server_exe" || ! -f "$healthd_exe" ]]; then
     printf 'UU Remote installation did not produce the expected files.\n' >&2
     exit 1
 fi
+python3 "$repo_dir/scripts/patch-gameviewer.py" verify "$server_exe" \
+    --manifest "$release_manifest" >/dev/null
 
 "$repo_dir/scripts/build-compat.sh" "$compat_build"
 "$repo_dir/scripts/build-winpr.sh" "$freerdp_build"
 
 mkdir -p "$wine_prefix/compat" "$freerdp_install"
+install -m 0644 "$release_manifest" "$installed_manifest"
 install -m 0755 \
     "$compat_build/uu-input-bridge.dll" \
     "$compat_build/uu-input-broker.exe" \
@@ -232,7 +257,8 @@ elif [[ ! -f "$healthd_backup" ]] || \
 fi
 install -m 0755 "$compat_build/uu-healthd-stub.exe" "$healthd_exe"
 
-python3 "$repo_dir/scripts/patch-gameviewer.py" patch "$server_exe"
+python3 "$repo_dir/scripts/patch-gameviewer.py" patch "$server_exe" \
+    --manifest "$installed_manifest"
 
 install -d -m 0755 "$HOME/.local/bin" "$HOME/.config/systemd/user"
 install -m 0755 "$repo_dir/scripts/uu-remote-bridge" \

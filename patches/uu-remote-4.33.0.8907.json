@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "review_status": "approved",
+  "product": "NetEase UU Remote",
+  "version": "4.33.0.8907",
+  "architecture": "x86_64",
+  "installer": {
+    "filename": "uuyc_4.33.0.exe",
+    "url": "https://api.nrd.nie.163.com/api/v1/release/dl/1?channel=gwqd",
+    "sha256": "5e3cfe8cfdc6552c1fc26f1ad2c94df133ca20dc3c45c23155358c32ac9bf53e"
+  },
+  "server": {
+    "filename": "GameViewerServer.exe",
+    "size": 31713272,
+    "original_sha256": "be1c6c108e6e4d0d5cc15dcd22650dc5fde34c7e7b9f19eee72aba0160ea3494",
+    "patched_sha256": "30cad61560213c7a66244c6f79c9017cc9dfa81996d7faa15a0e8bf330aa0948",
+    "patches": [
+      {
+        "id": "constructor-virtual-input-default",
+        "description": "Set the constructor virtual-input default to false",
+        "rationale": "Select UU's existing user-mode SendInput path instead of the unavailable gvinput.sys path.",
+        "file_offset": "0x22f713",
+        "original": "c786e0010000000100008886e4010000",
+        "replacement": "c786e0010000000000008886e4010000"
+      },
+      {
+        "id": "constructor-virtual-input-setting",
+        "description": "Ignore the persisted virtual-input setting in the constructor",
+        "rationale": "Keep startup on the user-mode input path even when the stored Windows setting requests the kernel driver.",
+        "file_offset": "0x22f901",
+        "original": "e8c910e0ff0fb608888d38010000488d",
+        "replacement": "e8c910e0ff31c990888d38010000488d"
+      },
+      {
+        "id": "read-setting-virtual-input-result",
+        "description": "Return false from the virtual-input setting read",
+        "rationale": "Prevent a later settings refresh from switching back to the unavailable kernel path.",
+        "file_offset": "0x1dbaae",
+        "original": "e866f5e5ff83fb020f94c08807488d0506843601",
+        "replacement": "e866f5e5ff83fb0231c0908807488d0506843601"
+      },
+      {
+        "id": "runtime-virtual-input-setter",
+        "description": "Store false in the runtime virtual-input setter",
+        "rationale": "Keep runtime control messages from restoring the kernel-driver path.",
+        "file_offset": "0x1dbcb2",
+        "original": "e862f3e5ff408837488d",
+        "replacement": "e862f3e5ffc60700488d"
+      }
+    ]
+  },
+  "health_monitor": {
+    "filename": "GameViewerHealthd.exe",
+    "original_sha256": "ba4cdef465b3714940b154d6d40d7cfca4d65c3d639a6254bb0fb7be69bd19e6"
+  },
+  "landmarks": [
+    "virtual switch state:",
+    "set_virtual_mouse_switch",
+    "read setting read_user_setting:"
+  ],
+  "imports": [
+    "USER32.dll!SendInput",
+    "wevtapi.dll!EvtOpenPublisherMetadata"
+  ],
+  "review": {
+    "method": "Windows behavior comparison, string cross-references, targeted objdump disassembly, xxd byte capture, and end-to-end controller testing",
+    "evidence": "docs/reverse-engineering.md"
+  }
+}

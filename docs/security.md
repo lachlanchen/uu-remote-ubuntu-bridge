@@ -39,7 +39,8 @@ codes, Unicode values, mouse coordinates, and clipboard data.
 
 ## Binary modification controls
 
-`patch-gameviewer.py` accepts only these two SHA-256 states:
+`patch-gameviewer.py` loads only manifests whose `review_status` is
+`approved`. The current manifest accepts only these two SHA-256 states:
 
 - Upstream GameViewerServer 4.33.0.8907:
   `be1c6c108e6e4d0d5cc15dcd22650dc5fde34c7e7b9f19eee72aba0160ea3494`
@@ -50,9 +51,22 @@ It also checks each unique instruction signature at its expected file offset.
 An unknown update fails closed. The original is retained as
 `GameViewerServer.exe.uu-original` and can be restored without this repository.
 
+Draft manifests produced by `audit-gameviewer.py` are deliberately rejected.
+Finalization requires every candidate to be marked reviewed, validates PE
+identity and non-overlapping same-length signatures, computes the complete
+patched hash in memory, and does not modify the executable.
+
 The installer applies the same policy to GameViewerHealthd and pins the UU
 installer, SDL FreeRDP artifact, FreeRDP source commit, and MSYS2 dependency
 packages.
+
+`stage-uu-release.sh` first attempts non-executing archive extraction. Its
+explicit `--sandbox-install` fallback uses a root-managed transient systemd
+service that runs as the desktop UID with the real home hidden, the host
+filesystem read-only, a single private staging directory writable, private
+devices/tmp, no-new-privileges, and Internet address families disabled. An
+unknown installer should still be staged in a separate VM when stronger
+isolation is required.
 
 ## Residual risk
 
@@ -65,6 +79,7 @@ the same desktop, whether or not this pipe exists.
 Use a separate Unix account for stronger isolation. Keep the OS, Wine, UU, and
 GNOME patched. Review a new UU build before adding its hash or signatures.
 Do not disable the patcher's version checks to make an update "work."
+Follow `docs/upstream-maintenance.md` and preserve each old approved manifest.
 
 ## Repository policy
 
