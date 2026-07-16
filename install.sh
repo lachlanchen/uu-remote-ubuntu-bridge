@@ -6,6 +6,8 @@ umask 077
 repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 bridge_user="${USER:-$(id -un)}"
 wine_prefix="${WINEPREFIX:-$HOME/.local/share/wineprefixes/uu-remote}"
+config_dir="$HOME/.config/uu-remote-bridge"
+environment_file="$config_dir/environment"
 wine_bin='/opt/wine-stable/bin/wine'
 wineserver_bin='/opt/wine-stable/bin/wineserver'
 grdctl_bin='/usr/bin/grdctl'
@@ -30,7 +32,19 @@ uu_download_url=''
 uu_installer_filename=''
 uu_installer_sha256=''
 healthd_sha256=''
-rdp_port="${UURB_RDP_PORT:-3390}"
+saved_setting() {
+    local name="$1"
+
+    [[ -f "$environment_file" ]] || return 0
+    /usr/bin/sed -n "s/^${name}=//p" "$environment_file" | \
+        /usr/bin/tail -n 1
+}
+saved_rdp_port="$(saved_setting UURB_RDP_PORT)"
+saved_resolution="$(saved_setting UURB_RESOLUTION)"
+saved_display="$(saved_setting UURB_DISPLAY)"
+rdp_port="${UURB_RDP_PORT:-${saved_rdp_port:-3390}}"
+resolution="${UURB_RESOLUTION:-${saved_resolution:-1920x1080}}"
+bridge_display="${UURB_DISPLAY:-${saved_display:-auto}}"
 uu_installer=''
 skip_packages=false
 skip_account_login=false
@@ -44,6 +58,9 @@ usage: ./install.sh [options]
   --uu-installer PATH    use a previously downloaded audited installer
   --release-manifest PATH
                          use an approved release manifest
+  --rdp-port PORT        local GNOME RDP relay port (default: 3390)
+  --resolution WxH       relay resolution (default: 1920x1080)
+  --display auto|:N      private X display (default: first free from :20)
   --skip-packages        do not install Ubuntu/Wine package dependencies
   --skip-account-login   do not open UU for first-time account sign-in
   --no-start             install and verify files without starting the service
@@ -59,6 +76,18 @@ while (($#)); do
             ;;
         --release-manifest)
             release_manifest="${2:?--release-manifest requires a path}"
+            shift 2
+            ;;
+        --rdp-port)
+            rdp_port="${2:?--rdp-port requires a port}"
+            shift 2
+            ;;
+        --resolution)
+            resolution="${2:?--resolution requires WIDTHxHEIGHT}"
+            shift 2
+            ;;
+        --display)
+            bridge_display="${2:?--display requires auto or :N}"
             shift 2
             ;;
         --skip-packages)
@@ -93,9 +122,43 @@ if [[ "$(uname -m)" != x86_64 ]]; then
     printf 'Only x86_64 Ubuntu is currently supported.\n' >&2
     exit 1
 fi
-if [[ ! "$rdp_port" =~ ^[0-9]+$ ]]; then
-    printf 'UURB_RDP_PORT must be numeric.\n' >&2
+if [[ ! -r /etc/os-release ]]; then
+    printf 'Cannot identify this operating system.\n' >&2
+    exit 1
+fi
+# shellcheck source=/dev/null
+source /etc/os-release
+if [[ "${ID:-}" != ubuntu || "${VERSION_ID:-}" != 24.04 ]]; then
+    printf 'Only Ubuntu 24.04 is currently supported; detected %s %s.\n' \
+        "${ID:-unknown}" "${VERSION_ID:-unknown}" >&2
+    exit 1
+fi
+if [[ ! "$rdp_port" =~ ^[1-9][0-9]{0,4}$ ]] ||
+   ((rdp_port < 1024 || rdp_port > 65535)); then
+    printf 'The RDP port must be an integer from 1024 through 65535.\n' >&2
     exit 2
+fi
+if [[ ! "$resolution" =~ ^[1-9][0-9]{2,4}x[1-9][0-9]{2,4}$ ]]; then
+    printf 'The resolution must use WIDTHxHEIGHT, for example 1920x1080.\n' >&2
+    exit 2
+fi
+resolution_width="${resolution%x*}"
+resolution_height="${resolution#*x}"
+if ((resolution_width < 640 || resolution_width > 16384 ||
+     resolution_height < 480 || resolution_height > 16384)); then
+    printf 'The resolution must be between 640x480 and 16384x16384.\n' >&2
+    exit 2
+fi
+if [[ "$bridge_display" != auto &&
+      ! "$bridge_display" =~ ^:(0|[1-9][0-9]{0,2})$ ]]; then
+    printf 'The private display must be auto or an X display such as :20.\n' >&2
+    exit 2
+fi
+user_bus="${XDG_RUNTIME_DIR:-/run/user/$UID}/bus"
+if [[ ! -S "$user_bus" ]]; then
+    printf 'The systemd user bus is unavailable at %s.\n' "$user_bus" >&2
+    printf 'Log into the target GNOME desktop as this user, then rerun.\n' >&2
+    exit 1
 fi
 
 install_winehq() {
@@ -136,12 +199,7 @@ install_packages() {
 }
 
 stop_wine_prefix() {
-    # Wine 11 can leave idle device-service processes behind after a silent
-    # installer exits. An unbounded `wineserver -w` then waits forever.
-    /usr/bin/timeout --kill-after=2s 10s \
-        "$wineserver_bin" -k >/dev/null 2>&1 || true
-    /usr/bin/timeout --kill-after=2s 10s \
-        "$wineserver_bin" -w >/dev/null 2>&1 || true
+    "$repo_dir/scripts/stop-wine-prefix" "$wine_prefix" "$wineserver_bin"
 }
 
 download_verified() {
@@ -187,10 +245,11 @@ if [[ "$skip_packages" == false ]]; then
     install_packages
 fi
 
-for command in curl sha256sum /usr/bin/systemctl \
-    timeout \
+for command in curl sha256sum /usr/bin/systemctl timeout \
     "$grdctl_bin" "$openssl_bin" "$python_bin" "$secret_tool_bin" \
-    "$wine_bin" "$wineserver_bin"; do
+    "$wine_bin" "$wineserver_bin" /usr/bin/Xvfb /usr/bin/gsettings \
+    /usr/bin/mcookie /usr/bin/openbox /usr/bin/ss /usr/bin/xauth \
+    /usr/bin/xdotool /usr/libexec/gnome-remote-desktop-daemon; do
     if ! command -v "$command" >/dev/null 2>&1; then
         printf 'missing required command: %s\n' "$command" >&2
         exit 1
@@ -214,8 +273,40 @@ export WINEPREFIX="$wine_prefix"
 export WINEDEBUG=-all
 export WINEDLLOVERRIDES='winedbg.exe=d;mscoree,mshtml='
 
+bridge_was_active=false
+if "${systemctl_user[@]}" is-active --quiet uu-remote-bridge.service; then
+    bridge_was_active=true
+fi
+restore_bridge_after_failure() {
+    local status=$?
+
+    if ((status != 0)) && [[ "$bridge_was_active" == true ]]; then
+        "${systemctl_user[@]}" start uu-remote-bridge.service \
+            >/dev/null 2>&1 || true
+    fi
+}
+trap restore_bridge_after_failure EXIT
+
+port_listener="$(/usr/bin/ss -H -ltnp "sport = :$rdp_port" 2>/dev/null || true)"
+if [[ -n "$port_listener" ]] &&
+   ! /usr/bin/grep -q 'gnome-remote-de' <<<"$port_listener"; then
+    printf 'RDP port %s is already owned by another process:\n%s\n' \
+        "$rdp_port" "$port_listener" >&2
+    exit 1
+fi
+
 "${systemctl_user[@]}" stop uu-remote-bridge.service >/dev/null 2>&1 || true
 stop_wine_prefix
+
+if [[ "$bridge_display" != auto ]]; then
+    display_number="${bridge_display#:}"
+    if [[ -e "/tmp/.X11-unix/X$display_number" ||
+          -e "/tmp/.X${display_number}-lock" ]]; then
+        printf 'Private X display %s is already in use; use --display auto.\n' \
+            "$bridge_display" >&2
+        exit 1
+    fi
+fi
 
 if [[ ! -f "$uu_dir/GameViewer.exe" ]]; then
     fresh_install=true
@@ -279,10 +370,21 @@ install -m 0755 "$compat_build/uu-healthd-stub.exe" "$healthd_exe"
 "$python_bin" "$repo_dir/scripts/patch-gameviewer.py" patch "$server_exe" \
     --manifest "$installed_manifest"
 
-install -d -m 0755 "$HOME/.local/bin" "$HOME/.config/systemd/user"
+install -d -m 0755 \
+    "$HOME/.local/bin" "$HOME/.local/libexec" \
+    "$HOME/.config/systemd/user"
+install -d -m 0700 "$config_dir"
+environment_tmp="$(mktemp "$config_dir/.environment.XXXXXX")"
+printf 'UURB_RDP_PORT=%s\n' "$rdp_port" >"$environment_tmp"
+printf 'UURB_RESOLUTION=%s\n' "$resolution" >>"$environment_tmp"
+printf 'UURB_DISPLAY=%s\n' "$bridge_display" >>"$environment_tmp"
+chmod 0600 "$environment_tmp"
+mv "$environment_tmp" "$environment_file"
 install -m 0755 "$repo_dir/scripts/uu-remote-bridge" \
     "$HOME/.local/bin/uu-remote-bridge"
 install -m 0755 "$repo_dir/scripts/uu-remote" "$HOME/.local/bin/uu-remote"
+install -m 0755 "$repo_dir/scripts/stop-wine-prefix" \
+    "$HOME/.local/libexec/uu-remote-stop-wine-prefix"
 install -m 0644 "$repo_dir/systemd/uu-remote-bridge.service" \
     "$HOME/.config/systemd/user/uu-remote-bridge.service"
 

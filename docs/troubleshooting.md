@@ -12,6 +12,15 @@ Runtime logs are under `~/.local/state/uu-remote-bridge`. UU's proprietary logs
 remain inside its Wine prefix. Do not post either set without removing account
 and device metadata.
 
+Persistent runtime choices are in
+`~/.config/uu-remote-bridge/environment`. Change them by rerunning the
+installer, for example:
+
+```bash
+./install.sh --skip-packages --skip-account-login \
+  --rdp-port 3391 --resolution 2560x1440 --display auto
+```
+
 ## Device is online and video works, but control does not
 
 Check the compatibility log:
@@ -87,7 +96,9 @@ Check each hop:
 ```bash
 systemctl --user status uu-remote-bridge.service
 /usr/bin/grdctl status
-ss -ltnp | rg ':3390\b'
+rdp_port="$(sed -n 's/^UURB_RDP_PORT=//p' \
+  ~/.config/uu-remote-bridge/environment)"
+ss -ltnp | rg ":${rdp_port:-3390}\\b"
 tail -80 ~/.local/state/uu-remote-bridge/gnome-remote-desktop.log
 tail -80 ~/.local/state/uu-remote-bridge/freerdp.log
 tail -80 ~/.local/state/uu-remote-bridge/openbox.log
@@ -99,8 +110,12 @@ port. The daemon is a child of `uu-remote-bridge.service`; an idle
 relay window must be named `Ubuntu-Desktop-Relay`:
 
 ```bash
-DISPLAY=:20 xdotool search --name Ubuntu-Desktop-Relay getwindowname
+pgrep -af '/usr/bin/Xvfb :[0-9]+'
 ```
+
+Automatic display selection starts at `:20` and skips occupied X sockets and
+lock files. If a fixed display is configured and occupied, the service fails
+clearly instead of attaching to or disrupting that display.
 
 The Windows FreeRDP client requires `SDL_RENDER_DRIVER=software` under Xvfb.
 `OPENSSL_MODULES` points to the copied provider directory, while the pinned
@@ -115,6 +130,22 @@ GNOME Desktop Sharing is relaying x11 :10.0.
 
 The launcher reads this from the live `gnome-shell` process. Do not hard-code
 an old `/tmp/dbus-*` address; it changes after logout or reboot.
+
+## Service is active but UU stays offline after its server exits
+
+Current versions treat a missing `GameViewerServer.exe` lasting ten seconds,
+or a failed DLL re-injection after a server PID change, as a bridge failure.
+Systemd then restarts the complete relay. Confirm the journal contains the
+recovery reason rather than an indefinitely idle service:
+
+```bash
+uu-remote logs
+```
+
+If shutdown previously waited for `winedevice.exe`, rerun the current
+installer. It installs a bounded prefix-scoped cleanup helper. The helper
+matches both the current UID and exact UU `WINEPREFIX`; it does not terminate
+Wine programs from other prefixes.
 
 ## Device appears offline
 

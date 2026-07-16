@@ -68,10 +68,8 @@ fi
 
 "${systemctl_user[@]}" disable --now uu-remote-bridge.service \
     >/dev/null 2>&1 || true
-/usr/bin/timeout --kill-after=2s 10s \
-    /opt/wine-stable/bin/wineserver -k >/dev/null 2>&1 || true
-/usr/bin/timeout --kill-after=2s 10s \
-    /opt/wine-stable/bin/wineserver -w >/dev/null 2>&1 || true
+"$repo_dir/scripts/stop-wine-prefix" \
+    "$wine_prefix" /opt/wine-stable/bin/wineserver || true
 
 if [[ -f "$server.uu-original" ]]; then
     /usr/bin/python3 "$repo_dir/scripts/patch-gameviewer.py" restore "$server" \
@@ -84,8 +82,10 @@ fi
 rm -f \
     "$HOME/.local/bin/uu-remote" \
     "$HOME/.local/bin/uu-remote-bridge" \
+    "$HOME/.local/libexec/uu-remote-stop-wine-prefix" \
     "$HOME/.config/systemd/user/uu-remote-bridge.service"
 rm -rf \
+    "$HOME/.config/uu-remote-bridge" \
     "$wine_prefix/compat" \
     "$wine_prefix/drive_c/Program Files/FreeRDP"
 "${systemctl_user[@]}" daemon-reload

@@ -5,6 +5,14 @@ set -Eeuo pipefail
 repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 bridge_user="${USER:-$(id -un)}"
 wine_prefix="${WINEPREFIX:-$HOME/.local/share/wineprefixes/uu-remote}"
+environment_file="$HOME/.config/uu-remote-bridge/environment"
+saved_setting() {
+    local name="$1"
+
+    [[ -f "$environment_file" ]] || return 0
+    /usr/bin/sed -n "s/^${name}=//p" "$environment_file" | \
+        /usr/bin/tail -n 1
+}
 release_manifest="${UURB_RELEASE_MANIFEST:-$wine_prefix/compat/release-manifest.json}"
 if [[ ! -f "$release_manifest" ]]; then
     release_manifest="$repo_dir/patches/uu-remote-4.33.0.8907.json"
@@ -109,7 +117,8 @@ else
     fail 'local input broker did not initialize'
 fi
 
-rdp_port="${UURB_RDP_PORT:-3390}"
+saved_rdp_port="$(saved_setting UURB_RDP_PORT)"
+rdp_port="${UURB_RDP_PORT:-${saved_rdp_port:-3390}}"
 configured_rdp_port="$(
     /usr/bin/gsettings get org.gnome.desktop.remote-desktop.rdp port | \
         /usr/bin/awk '{print $2}'
@@ -128,6 +137,17 @@ if [[ -n "$server_pid" ]]; then
     pass "UU server is running as process $server_pid"
 else
     fail 'UU server is not running'
+fi
+
+account_state="$({
+    find "$wine_prefix/drive_c/users/$bridge_user/AppData/Local/GameViewer" \
+        -maxdepth 1 -type f -name 'setting_*.ini' \
+        ! -name 'setting_guest_anonymous_id.ini' -print -quit 2>/dev/null
+} || true)"
+if [[ -n "$account_state" ]]; then
+    pass 'UU account state is present'
+else
+    printf 'INFO  UU account login has not been observed yet\n'
 fi
 
 if ((stability_seconds > 0)) && [[ -n "$server_pid" ]]; then

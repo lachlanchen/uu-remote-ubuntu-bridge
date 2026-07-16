@@ -34,6 +34,10 @@ local RDP relay, and makes mouse and keyboard control work normally.
 > This is not a native UU Linux port and is not affiliated with NetEase. The
 > current manifest is intentionally locked to UU Remote `4.33.0.8907`.
 
+The supported host is x86-64 Ubuntu 24.04 with a logged-in GNOME 46 desktop
+(physical, Wayland, Xorg, or XRDP). The installer checks this boundary and
+fails before making partial changes on an unsupported OS or architecture.
+
 ## Quick start
 
 Run from the logged-in Ubuntu GNOME desktop session:
@@ -58,6 +62,21 @@ The first run prompts for a local relay password without echo and opens the
 official UU window on the logged-in desktop before starting the private relay.
 Complete account sign-in and close that window. Re-running the same command is
 idempotent; unchanged FreeRDP build outputs are checksum-verified and reused.
+
+Port, resolution, and private-display choices are persistent and can be set
+without editing the service:
+
+```bash
+./install.sh --rdp-port 3391 --resolution 2560x1440 --display auto
+```
+
+They are validated and stored in
+`~/.config/uu-remote-bridge/environment`. `auto` safely chooses the first free
+private X display from `:20` through `:99`, avoiding existing VNC/Xvfb
+sessions. A later plain `./install.sh` preserves these choices.
+Requested ports and fixed displays are checked before use. A conflicting
+non-GNOME listener fails closed, and an installer error restarts a bridge that
+was active before the attempted upgrade.
 
 Use an already downloaded installer or a future approved release manifest:
 

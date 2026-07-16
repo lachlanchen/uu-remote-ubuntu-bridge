@@ -7,6 +7,7 @@ export WINEDEBUG="${WINEDEBUG:--all}"
 
 wine_bin="${WINE_BIN:-/opt/wine-stable/bin/wine}"
 wineserver_bin="${WINESERVER_BIN:-/opt/wine-stable/bin/wineserver}"
+wine_stop_bin="$HOME/.local/libexec/uu-remote-stop-wine-prefix"
 app_dir="$WINEPREFIX/drive_c/Program Files/Netease/GameViewer"
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/uu-remote"
 systemctl_user=(
@@ -48,15 +49,9 @@ case "${1:-open}" in
             exit 1
         fi
         "${systemctl_user[@]}" stop uu-remote-bridge.service
-        /usr/bin/timeout --kill-after=2s 10s \
-            "$wineserver_bin" -k >/dev/null 2>&1 || true
-        /usr/bin/timeout --kill-after=2s 10s \
-            "$wineserver_bin" -w >/dev/null 2>&1 || true
+        "$wine_stop_bin" "$WINEPREFIX" "$wineserver_bin"
         restart_bridge() {
-            /usr/bin/timeout --kill-after=2s 10s \
-                "$wineserver_bin" -k >/dev/null 2>&1 || true
-            /usr/bin/timeout --kill-after=2s 10s \
-                "$wineserver_bin" -w >/dev/null 2>&1 || true
+            "$wine_stop_bin" "$WINEPREFIX" "$wineserver_bin" || true
             "${systemctl_user[@]}" start uu-remote-bridge.service
         }
         trap restart_bridge EXIT

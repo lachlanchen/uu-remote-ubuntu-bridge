@@ -17,10 +17,18 @@ mechanism.
   certificate by SHA-256 fingerprint.
 - The systemd unit is a user unit and has no root privileges.
 - `sudo` is used only while installing Ubuntu and WineHQ packages.
+- The persistent environment file contains only a validated port, resolution,
+  and private-display choice; it never contains either account credential.
 
 GNOME Remote Desktop may listen on the LAN as configured by GNOME. Protect
 the host with the normal firewall and a strong, unique relay password. The
-bridge itself never forwards port 3390 beyond localhost.
+bridge itself never forwards the configured RDP port beyond localhost.
+
+The launcher may temporarily stop the regular
+`gnome-remote-desktop.service` to bind the daemon to the actual GNOME session
+bus (notably under XRDP). If that service was active beforehand, cleanup
+restores it. A fixed private X display is never reused when its socket or lock
+file already exists.
 
 ## Credentials and private data
 

@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 bridge_user="${USER:-$(id -un)}"
-bridge_display="${UURB_DISPLAY:-:20}"
+bridge_display="${UURB_DISPLAY:-auto}"
 rdp_port="${UURB_RDP_PORT:-3390}"
 resolution="${UURB_RESOLUTION:-1920x1080}"
 manager_display="${DISPLAY:-}"
@@ -13,11 +13,42 @@ systemctl_user=(
     /usr/bin/systemctl --user
 )
 
-if [[ ! "$bridge_display" =~ ^:[0-9]+$ ||
-      ! "$rdp_port" =~ ^[0-9]+$ ||
-      ! "$resolution" =~ ^[0-9]+x[0-9]+$ ]]; then
+if [[ "$bridge_display" != auto &&
+      ! "$bridge_display" =~ ^:(0|[1-9][0-9]{0,2})$ ]] ||
+   [[ ! "$rdp_port" =~ ^[1-9][0-9]{0,4}$ ]] ||
+   [[ ! "$resolution" =~ ^[1-9][0-9]{2,4}x[1-9][0-9]{2,4}$ ]]; then
     printf 'Invalid UURB display, RDP port, or resolution setting.\n' >&2
     exit 2
+fi
+resolution_width="${resolution%x*}"
+resolution_height="${resolution#*x}"
+if ((rdp_port < 1024 || rdp_port > 65535 ||
+     resolution_width < 640 || resolution_width > 16384 ||
+     resolution_height < 480 || resolution_height > 16384)); then
+    printf 'UURB port or resolution is outside the supported range.\n' >&2
+    exit 2
+fi
+
+if [[ "$bridge_display" == auto ]]; then
+    for display_number in $(/usr/bin/seq 20 99); do
+        if [[ ! -e "/tmp/.X11-unix/X$display_number" &&
+              ! -e "/tmp/.X${display_number}-lock" ]]; then
+            bridge_display=":$display_number"
+            break
+        fi
+    done
+    if [[ "$bridge_display" == auto ]]; then
+        printf 'No free private X display was found from :20 through :99.\n' >&2
+        exit 1
+    fi
+else
+    display_number="${bridge_display#:}"
+    if [[ -e "/tmp/.X11-unix/X$display_number" ||
+          -e "/tmp/.X${display_number}-lock" ]]; then
+        printf 'Private X display %s is already in use; choose auto or another display.\n' \
+            "$bridge_display" >&2
+        exit 1
+    fi
 fi
 
 export DISPLAY="$bridge_display"
@@ -40,6 +71,7 @@ input_injector_exe="$compat_dir/uu-injector.exe"
 service_control_exe="$compat_dir/uu-service-control.exe"
 uu_app_dir="$WINEPREFIX/drive_c/Program Files/Netease/GameViewer"
 xauth_file="$runtime_dir/Xauthority"
+wine_stop_bin="$HOME/.local/libexec/uu-remote-stop-wine-prefix"
 
 xvfb_pid=""
 openbox_pid=""
@@ -48,6 +80,7 @@ freerdp_pid=""
 winlogon_pid=""
 input_broker_pid=""
 server_supervisor_pid=""
+grd_user_service_was_active=false
 desktop_bus=""
 desktop_display=""
 desktop_wayland=""
@@ -58,10 +91,13 @@ log() {
 }
 
 cleanup() {
+    local display_lock
+    local display_socket
+    local lock_pid
+    local pid
+    local processes_alive
+
     trap - EXIT INT TERM HUP
-    /usr/bin/timeout --kill-after=1s 5s \
-        /usr/bin/env WINEPREFIX="$WINEPREFIX" \
-        /opt/wine-stable/bin/wineserver -k >/dev/null 2>&1 || true
 
     for pid in \
         "$server_supervisor_pid" \
@@ -75,6 +111,56 @@ cleanup() {
             kill "$pid" >/dev/null 2>&1 || true
         fi
     done
+
+    for _ in {1..10}; do
+        processes_alive=false
+        for pid in \
+            "$server_supervisor_pid" \
+            "$input_broker_pid" \
+            "$winlogon_pid" \
+            "$freerdp_pid" \
+            "$grd_pid" \
+            "$openbox_pid" \
+            "$xvfb_pid"; do
+            if [[ -n "$pid" ]] && kill -0 "$pid" >/dev/null 2>&1; then
+                processes_alive=true
+                break
+            fi
+        done
+        [[ "$processes_alive" == false ]] && break
+        sleep 0.1
+    done
+
+    for pid in \
+        "$server_supervisor_pid" \
+        "$input_broker_pid" \
+        "$winlogon_pid" \
+        "$freerdp_pid" \
+        "$grd_pid" \
+        "$openbox_pid" \
+        "$xvfb_pid"; do
+        if [[ -n "$pid" ]] && kill -0 "$pid" >/dev/null 2>&1; then
+            kill -KILL "$pid" >/dev/null 2>&1 || true
+        fi
+    done
+
+    "$wine_stop_bin" \
+        "$WINEPREFIX" /opt/wine-stable/bin/wineserver || true
+
+    display_lock="/tmp/.X${display_number}-lock"
+    display_socket="/tmp/.X11-unix/X${display_number}"
+    lock_pid="$(
+        /usr/bin/tr -d '[:space:]' <"$display_lock" 2>/dev/null || true
+    )"
+    if [[ -n "$xvfb_pid" && "$lock_pid" == "$xvfb_pid" &&
+          ! -d "/proc/$xvfb_pid" ]]; then
+        rm -f "$display_lock" "$display_socket"
+    fi
+
+    if [[ "$grd_user_service_was_active" == true ]]; then
+        "${systemctl_user[@]}" start gnome-remote-desktop.service \
+            >/dev/null 2>&1 || true
+    fi
 
     rm -f "$xauth_file"
 }
@@ -155,6 +241,7 @@ discover_desktop_session() {
 
 start_desktop_relay() {
     local -a desktop_environment
+    local native_openssl_modules
 
     if ! discover_desktop_session; then
         log 'Waiting for a logged-in GNOME desktop session.'
@@ -163,11 +250,21 @@ start_desktop_relay() {
         done
     fi
 
+    native_openssl_modules="$(
+        /usr/bin/openssl version -m | /usr/bin/sed -n \
+            's/^MODULESDIR: "\(.*\)"$/\1/p'
+    )"
+    if [[ -z "$native_openssl_modules" ||
+          ! -d "$native_openssl_modules" ]]; then
+        log 'Could not discover the native OpenSSL provider directory.'
+        return 1
+    fi
+
     desktop_environment=(
         "DBUS_SESSION_BUS_ADDRESS=$desktop_bus"
         "DISPLAY=$desktop_display"
         "OPENSSL_CONF=/etc/ssl/openssl.cnf"
-        "OPENSSL_MODULES=/usr/lib/x86_64-linux-gnu/ossl-modules"
+        "OPENSSL_MODULES=$native_openssl_modules"
     )
     if [[ -n "$desktop_wayland" ]]; then
         desktop_environment+=("WAYLAND_DISPLAY=$desktop_wayland")
@@ -179,6 +276,10 @@ start_desktop_relay() {
     # XRDP starts GNOME on a private session bus. The regular user unit runs
     # on /run/user/$UID/bus and cannot see that shell, so launch GRD on the
     # bus belonging to the desktop that is actually being shared.
+    if "${systemctl_user[@]}" is-active --quiet \
+        gnome-remote-desktop.service; then
+        grd_user_service_was_active=true
+    fi
     "${systemctl_user[@]}" stop gnome-remote-desktop.service \
         >/dev/null 2>&1 || true
     /usr/bin/env "${desktop_environment[@]}" \
@@ -208,6 +309,12 @@ mkdir -p \
     "$runtime_dir" \
     "$WINEPREFIX/drive_c/users/$bridge_user/Temp"
 chmod 700 "$runtime_dir"
+log "Using private display $DISPLAY at $resolution and RDP port $rdp_port."
+
+if [[ ! -x "$wine_stop_bin" ]]; then
+    log 'The prefix-scoped Wine cleanup helper is missing.'
+    exit 1
+fi
 
 if ! start_desktop_relay; then
     exit 1
@@ -394,9 +501,19 @@ bootstrap_account
 supervise_server() {
     local last_pid="$1"
     local candidate
+    local missing_checks=0
 
     while true; do
         candidate="$(pgrep -o -u "$UID" -f 'GameViewerServer\.exe' || true)"
+        if [[ -z "$candidate" ]]; then
+            missing_checks=$((missing_checks + 1))
+            if ((missing_checks >= 40)); then
+                log 'UU server was absent for 10 seconds; restarting the bridge.'
+                return 1
+            fi
+        else
+            missing_checks=0
+        fi
         if [[ -n "$candidate" && "$candidate" != "$last_pid" ]]; then
             sleep 0.25
             if /opt/wine-stable/bin/wine "$input_injector_exe" \
@@ -405,6 +522,9 @@ supervise_server() {
                 last_pid="$candidate"
                 log "Re-injected UU server process $candidate."
                 bootstrap_account
+            else
+                log "Could not re-inject UU server process $candidate."
+                return 1
             fi
         fi
         sleep 0.25

@@ -4,6 +4,7 @@ After=default.target
 
 [Service]
 Type=simple
+EnvironmentFile=-%h/.config/uu-remote-bridge/environment
 ExecStart=%h/.local/bin/uu-remote-bridge
 Restart=on-failure
 RestartSec=3

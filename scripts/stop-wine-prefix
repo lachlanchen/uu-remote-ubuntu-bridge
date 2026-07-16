@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+wine_prefix="${1:-${WINEPREFIX:-}}"
+wineserver_bin="${2:-/opt/wine-stable/bin/wineserver}"
+
+if [[ -z "$wine_prefix" ]]; then
+    printf 'usage: stop-wine-prefix WINEPREFIX [WINESERVER]\n' >&2
+    exit 2
+fi
+
+is_protected_pid() {
+    local candidate="$1"
+    local ancestor="$$"
+
+    while [[ -n "$ancestor" && "$ancestor" != 0 ]]; do
+        [[ "$candidate" != "$ancestor" ]] || return 0
+        ancestor="$(
+            /usr/bin/awk '/^PPid:/ {print $2}' \
+                "/proc/$ancestor/status" 2>/dev/null || true
+        )"
+    done
+    return 1
+}
+
+wine_prefix_pids() {
+    local command
+    local environment
+    local executable
+    local pid
+
+    while read -r pid command; do
+        case "$command" in
+            wine*|wineserver*|*.exe|source=) ;;
+            *) continue ;;
+        esac
+        is_protected_pid "$pid" && continue
+        environment="/proc/$pid/environ"
+        /usr/bin/grep -zFqx "WINEPREFIX=$wine_prefix" "$environment" \
+            2>/dev/null || continue
+        executable="$(/usr/bin/readlink -f "/proc/$pid/exe" 2>/dev/null || true)"
+        case "${executable##*/}" in
+            wine*|wineserver*) printf '%s\n' "$pid" ;;
+        esac
+    done < <(/usr/bin/ps -u "$UID" -o pid=,comm=)
+}
+
+if [[ -x "$wineserver_bin" ]]; then
+    /usr/bin/timeout --kill-after=1s 4s \
+        /usr/bin/env WINEPREFIX="$wine_prefix" \
+        "$wineserver_bin" -k >/dev/null 2>&1 || true
+    /usr/bin/timeout --kill-after=1s 2s \
+        /usr/bin/env WINEPREFIX="$wine_prefix" \
+        "$wineserver_bin" -w >/dev/null 2>&1 || true
+fi
+
+mapfile -t remaining < <(wine_prefix_pids)
+if ((${#remaining[@]} == 0)); then
+    exit 0
+fi
+
+kill -TERM "${remaining[@]}" >/dev/null 2>&1 || true
+for _ in {1..10}; do
+    mapfile -t remaining < <(wine_prefix_pids)
+    ((${#remaining[@]} > 0)) || exit 0
+    sleep 0.1
+done
+
+kill -KILL "${remaining[@]}" >/dev/null 2>&1 || true
+exit 0

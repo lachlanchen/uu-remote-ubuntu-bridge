@@ -41,10 +41,16 @@ Logged-in GNOME desktop (Wayland or Xorg/XRDP)
 
 ### Private X11 display
 
-`Xvfb` supplies a 1920x1080 display on `:20`, and Openbox supplies basic
-window management. Both UU and the Windows SDL FreeRDP client use this display.
-UU therefore captures the FreeRDP window as if it were a normal Windows
-desktop application.
+`Xvfb` supplies a 1920x1080 display by default, and Openbox supplies basic
+window management. In automatic mode the launcher chooses the first unused X
+display from `:20` through `:99`; a validated fixed display and resolution can
+also be persisted by the installer. Both UU and the Windows SDL FreeRDP client
+use this display. UU therefore captures the FreeRDP window as if it were a
+normal Windows desktop application.
+
+After a forced Xvfb exit, cleanup removes a stale socket/lock only when the
+lock still names the exact Xvfb PID started by this bridge and that PID no
+longer exists. It never deletes an unowned display lock.
 
 The X server uses an `Xauthority` cookie and `-nolisten tcp`; it is not exposed
 as a network service.
@@ -61,9 +67,11 @@ from the live user-owned `gnome-shell` process and starts GNOME Remote Desktop
 on that exact bus. This also works for a normal Wayland login and prevents an
 idle daemon on the wrong bus from being mistaken for a working relay.
 
-The native GNOME daemon receives Linux's OpenSSL configuration and provider
-directory; the Windows FreeRDP client receives its separate Wine path. Keeping
-those environments separate is required for NTLM/NLA authentication.
+The native GNOME daemon receives Linux's OpenSSL configuration and a provider
+directory discovered from the host `openssl` executable; the Windows FreeRDP
+client receives its separate Wine path. Keeping those environments separate
+is required for NTLM/NLA authentication and avoids architecture-specific host
+paths.
 
 The relay uses NetEase-independent GNOME credentials kept in the login
 keyring. FreeRDP reads the password from standard input, not its command line,
@@ -108,12 +116,23 @@ The launcher waits on all critical bridge processes. A complete relay restart
 is requested if GNOME Remote Desktop, Xvfb, Openbox, FreeRDP, the input broker,
 or fake Winlogon process exits. A lightweight inner supervisor watches
 GameViewerServer's Linux PID, re-injects the compatibility DLL after a UU
-restart, and sends the account bootstrap IPC again.
+restart, and sends the account bootstrap IPC again. If the server remains
+absent for ten seconds or re-injection fails, the inner supervisor exits so
+systemd rebuilds the complete relay instead of leaving a false-active service.
+Shutdown first stops the supervised producers, then asks Wine's own server to
+exit and applies a bounded fallback only to Wine executables owned by the
+current user whose environment names the dedicated UU prefix. Other Wine
+prefixes are deliberately excluded.
 
 The user unit is enabled under `default.target`. It can therefore survive the
 different target wiring used by physical GNOME, XRDP, and persistent user
 managers. If no user GNOME Shell exists yet, it waits quietly and attaches when
 the desktop becomes available.
+
+If the normal `gnome-remote-desktop.service` was active before the bridge, the
+launcher records that state, temporarily replaces it with the session-aware
+relay, and restores it during cleanup. Stopping UU therefore does not silently
+leave an existing native desktop-sharing service disabled.
 
 The fake `winlogon.exe` exists because GameViewerService expects an active
 Windows session token source. It only sleeps; it does not authenticate or
