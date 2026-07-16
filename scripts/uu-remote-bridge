@@ -7,6 +7,11 @@ bridge_display="${UURB_DISPLAY:-:20}"
 rdp_port="${UURB_RDP_PORT:-3390}"
 resolution="${UURB_RESOLUTION:-1920x1080}"
 manager_display="${DISPLAY:-}"
+systemctl_user=(
+    /usr/bin/env
+    "DBUS_SESSION_BUS_ADDRESS=unix:path=${XDG_RUNTIME_DIR:-/run/user/$UID}/bus"
+    /usr/bin/systemctl --user
+)
 
 if [[ ! "$bridge_display" =~ ^:[0-9]+$ ||
       ! "$rdp_port" =~ ^[0-9]+$ ||
@@ -174,7 +179,8 @@ start_desktop_relay() {
     # XRDP starts GNOME on a private session bus. The regular user unit runs
     # on /run/user/$UID/bus and cannot see that shell, so launch GRD on the
     # bus belonging to the desktop that is actually being shared.
-    systemctl --user stop gnome-remote-desktop.service >/dev/null 2>&1 || true
+    "${systemctl_user[@]}" stop gnome-remote-desktop.service \
+        >/dev/null 2>&1 || true
     /usr/bin/env "${desktop_environment[@]}" \
         /usr/libexec/gnome-remote-desktop-daemon --rdp-port "$rdp_port" \
         >>"$state_dir/gnome-remote-desktop.log" 2>&1 &

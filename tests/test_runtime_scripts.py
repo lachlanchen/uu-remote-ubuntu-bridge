@@ -36,6 +36,7 @@ class RuntimeScriptTests(unittest.TestCase):
         verifier = (REPOSITORY / "scripts" / "verify.sh").read_text()
         self.assertIn("/usr/bin/gsettings", verifier)
         self.assertIn("gnome-remote-de", verifier)
+        self.assertIn("unix:path=${XDG_RUNTIME_DIR:-/run/user/$UID}/bus", verifier)
         self.assertNotIn('rdp_port="$(gsettings ', verifier)
 
     def test_user_service_starts_from_default_target(self):

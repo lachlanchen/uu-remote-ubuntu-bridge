@@ -11,11 +11,16 @@ if [[ ! -f "$release_manifest" ]]; then
     release_manifest="$repo_dir/patches/uu-remote-4.33.0.8907.json"
 fi
 manifest_field() {
-    python3 "$repo_dir/scripts/patch-gameviewer.py" field "$1" \
+    /usr/bin/python3 "$repo_dir/scripts/patch-gameviewer.py" field "$1" \
         --manifest "$release_manifest"
 }
 purge=false
 dry_run=false
+systemctl_user=(
+    /usr/bin/env
+    "DBUS_SESSION_BUS_ADDRESS=unix:path=${XDG_RUNTIME_DIR:-/run/user/$UID}/bus"
+    /usr/bin/systemctl --user
+)
 
 while (($#)); do
     case "$1" in
@@ -40,7 +45,7 @@ done
 
 server="$uu_bin/$(manifest_field server.filename)"
 if [[ -f "$server.uu-original" ]]; then
-    python3 "$repo_dir/scripts/patch-gameviewer.py" verify \
+    /usr/bin/python3 "$repo_dir/scripts/patch-gameviewer.py" verify \
         "$server.uu-original" --manifest "$release_manifest" \
         --expect original >/dev/null
 fi
@@ -61,11 +66,15 @@ if [[ "$dry_run" == true ]]; then
     exit 0
 fi
 
-systemctl --user disable --now uu-remote-bridge.service >/dev/null 2>&1 || true
-/opt/wine-stable/bin/wineserver -k >/dev/null 2>&1 || true
+"${systemctl_user[@]}" disable --now uu-remote-bridge.service \
+    >/dev/null 2>&1 || true
+/usr/bin/timeout --kill-after=2s 10s \
+    /opt/wine-stable/bin/wineserver -k >/dev/null 2>&1 || true
+/usr/bin/timeout --kill-after=2s 10s \
+    /opt/wine-stable/bin/wineserver -w >/dev/null 2>&1 || true
 
 if [[ -f "$server.uu-original" ]]; then
-    python3 "$repo_dir/scripts/patch-gameviewer.py" restore "$server" \
+    /usr/bin/python3 "$repo_dir/scripts/patch-gameviewer.py" restore "$server" \
         --manifest "$release_manifest"
 fi
 if [[ -f "$healthd.uu-original" ]]; then
@@ -79,14 +88,15 @@ rm -f \
 rm -rf \
     "$wine_prefix/compat" \
     "$wine_prefix/drive_c/Program Files/FreeRDP"
-systemctl --user daemon-reload
+"${systemctl_user[@]}" daemon-reload
 
 if [[ "$purge" == true ]]; then
     printf 'Purging the dedicated Wine prefix and bridge credentials.\n'
     rm -rf "$wine_prefix"
-    secret-tool clear service uu-desktop-bridge username "$bridge_user" || true
-    grdctl rdp disable || true
-    grdctl rdp clear-credentials || true
+    /usr/bin/secret-tool clear service uu-desktop-bridge \
+        username "$bridge_user" || true
+    /usr/bin/grdctl rdp disable || true
+    /usr/bin/grdctl rdp clear-credentials || true
 fi
 
 printf 'UU Remote Ubuntu bridge removed. The UU installation was %s.\n' \

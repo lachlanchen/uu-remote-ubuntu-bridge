@@ -12,6 +12,11 @@ grdctl_bin='/usr/bin/grdctl'
 openssl_bin='/usr/bin/openssl'
 python_bin='/usr/bin/python3'
 secret_tool_bin='/usr/bin/secret-tool'
+systemctl_user=(
+    /usr/bin/env
+    "DBUS_SESSION_BUS_ADDRESS=unix:path=${XDG_RUNTIME_DIR:-/run/user/$UID}/bus"
+    /usr/bin/systemctl --user
+)
 uu_dir="$wine_prefix/drive_c/Program Files/Netease/GameViewer"
 uu_bin="$uu_dir/bin"
 release_manifest="${UURB_RELEASE_MANIFEST:-$repo_dir/patches/uu-remote-4.33.0.8907.json}"
@@ -182,7 +187,7 @@ if [[ "$skip_packages" == false ]]; then
     install_packages
 fi
 
-for command in curl sha256sum systemctl \
+for command in curl sha256sum /usr/bin/systemctl \
     timeout \
     "$grdctl_bin" "$openssl_bin" "$python_bin" "$secret_tool_bin" \
     "$wine_bin" "$wineserver_bin"; do
@@ -209,7 +214,7 @@ export WINEPREFIX="$wine_prefix"
 export WINEDEBUG=-all
 export WINEDLLOVERRIDES='winedbg.exe=d;mscoree,mshtml='
 
-systemctl --user stop uu-remote-bridge.service >/dev/null 2>&1 || true
+"${systemctl_user[@]}" stop uu-remote-bridge.service >/dev/null 2>&1 || true
 stop_wine_prefix
 
 if [[ ! -f "$uu_dir/GameViewer.exe" ]]; then
@@ -320,8 +325,8 @@ printf '%s' "$rdp_password" | "$secret_tool_bin" store \
     service uu-desktop-bridge username "$bridge_user"
 unset rdp_password
 
-systemctl --user daemon-reload
-systemctl --user reenable uu-remote-bridge.service
+"${systemctl_user[@]}" daemon-reload
+"${systemctl_user[@]}" reenable uu-remote-bridge.service
 
 if [[ "$fresh_install" == true && "$skip_account_login" == false ]]; then
     printf '\nUU Remote needs an authenticated account once.\n'
@@ -331,7 +336,7 @@ if [[ "$fresh_install" == true && "$skip_account_login" == false ]]; then
 fi
 
 if [[ "$start_service" == true ]]; then
-    systemctl --user restart uu-remote-bridge.service
+    "${systemctl_user[@]}" restart uu-remote-bridge.service
     "$repo_dir/scripts/verify.sh" --quick
 fi
 

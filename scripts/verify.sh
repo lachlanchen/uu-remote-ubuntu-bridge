@@ -26,6 +26,11 @@ bridge_log="$wine_prefix/drive_c/users/$bridge_user/AppData/Local/Temp/uu-input-
 broker_log="$wine_prefix/drive_c/users/$bridge_user/Temp/uu-input-broker.log"
 stability_seconds=270
 errors=0
+systemctl_user=(
+    /usr/bin/env
+    "DBUS_SESSION_BUS_ADDRESS=unix:path=${XDG_RUNTIME_DIR:-/run/user/$UID}/bus"
+    /usr/bin/systemctl --user
+)
 
 if [[ "${1:-}" == --quick ]]; then
     stability_seconds=0
@@ -49,7 +54,7 @@ fail() {
 }
 
 for _ in {1..180}; do
-    if systemctl --user is-active --quiet uu-remote-bridge.service && \
+    if "${systemctl_user[@]}" is-active --quiet uu-remote-bridge.service && \
        pgrep -u "$UID" -f 'GameViewerServer\.exe' >/dev/null && \
        pgrep -u "$UID" -f 'sdl-freerdp\.exe' >/dev/null; then
         break
@@ -57,7 +62,7 @@ for _ in {1..180}; do
     sleep 0.25
 done
 
-if systemctl --user is-active --quiet uu-remote-bridge.service; then
+if "${systemctl_user[@]}" is-active --quiet uu-remote-bridge.service; then
     pass 'systemd user service is active'
 else
     fail 'systemd user service is not active'

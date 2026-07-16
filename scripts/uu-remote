@@ -9,6 +9,11 @@ wine_bin="${WINE_BIN:-/opt/wine-stable/bin/wine}"
 wineserver_bin="${WINESERVER_BIN:-/opt/wine-stable/bin/wineserver}"
 app_dir="$WINEPREFIX/drive_c/Program Files/Netease/GameViewer"
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/uu-remote"
+systemctl_user=(
+    /usr/bin/env
+    "DBUS_SESSION_BUS_ADDRESS=unix:path=${XDG_RUNTIME_DIR:-/run/user/$UID}/bus"
+    /usr/bin/systemctl --user
+)
 
 notify_error() {
     if command -v notify-send >/dev/null 2>&1; then
@@ -21,13 +26,13 @@ mkdir -p "$state_dir"
 
 case "${1:-open}" in
     status)
-        exec systemctl --user status uu-remote-bridge.service --no-pager
+        exec "${systemctl_user[@]}" status uu-remote-bridge.service --no-pager
         ;;
     restart)
-        exec systemctl --user restart uu-remote-bridge.service
+        exec "${systemctl_user[@]}" restart uu-remote-bridge.service
         ;;
     stop)
-        exec systemctl --user stop uu-remote-bridge.service
+        exec "${systemctl_user[@]}" stop uu-remote-bridge.service
         ;;
     logs)
         exec journalctl --user -fu uu-remote-bridge.service
@@ -42,7 +47,7 @@ case "${1:-open}" in
             notify_error 'UU Remote is not installed in the bridge Wine prefix.'
             exit 1
         fi
-        systemctl --user stop uu-remote-bridge.service
+        "${systemctl_user[@]}" stop uu-remote-bridge.service
         /usr/bin/timeout --kill-after=2s 10s \
             "$wineserver_bin" -k >/dev/null 2>&1 || true
         /usr/bin/timeout --kill-after=2s 10s \
@@ -52,7 +57,7 @@ case "${1:-open}" in
                 "$wineserver_bin" -k >/dev/null 2>&1 || true
             /usr/bin/timeout --kill-after=2s 10s \
                 "$wineserver_bin" -w >/dev/null 2>&1 || true
-            systemctl --user start uu-remote-bridge.service
+            "${systemctl_user[@]}" start uu-remote-bridge.service
         }
         trap restart_bridge EXIT
         cd "$app_dir"
@@ -68,7 +73,7 @@ case "${1:-open}" in
         ;;
 esac
 
-if ! systemctl --user start uu-remote-bridge.service; then
+if ! "${systemctl_user[@]}" start uu-remote-bridge.service; then
     notify_error 'The Ubuntu desktop bridge could not start.'
     exit 1
 fi
