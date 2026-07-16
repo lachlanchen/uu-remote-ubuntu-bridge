@@ -21,6 +21,31 @@ installer, for example:
   --rdp-port 3391 --resolution 2560x1440 --display auto
 ```
 
+## UU is offline after reboot
+
+Inspect the unattended boot chain without displaying either password:
+
+```bash
+./scripts/configure-unattended.sh status
+journalctl --user -b \
+  -u uu-keyring-unlock.service \
+  -u gnome-remote-desktop.service \
+  -u uu-remote-bridge.service
+```
+
+After the first configured reboot, both `Account in tss group` and
+`tss active in this login` must be `yes`. A keyring unlock failure usually
+means the GNOME keyring password changed. Replace the encrypted credential:
+
+```bash
+./scripts/configure-unattended.sh enable --replace-credential
+sudo reboot
+```
+
+Do not place the password in the unit or command line. See
+`unattended-startup.md` for the boot sequence, controlled verification, and
+rollback.
+
 ## Device is online and video works, but control does not
 
 Check the compatibility log:

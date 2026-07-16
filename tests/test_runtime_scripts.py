@@ -34,6 +34,16 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn('"OPENSSL_MODULES=$native_openssl_modules"', launcher)
         self.assertIn("grd_user_service_was_active", launcher)
 
+    def test_physical_session_uses_manager_display_fallback(self):
+        launcher = (REPOSITORY / "scripts" / "uu-remote-bridge").read_text()
+
+        self.assertIn('manager_wayland="${WAYLAND_DISPLAY:-}"', launcher)
+        self.assertIn('"$candidate_bus" == "$manager_bus"', launcher)
+        self.assertIn(
+            'candidate_display="${candidate_display:-$manager_display}"',
+            launcher,
+        )
+
     def test_runtime_settings_are_persistent_and_collision_safe(self):
         installer = (REPOSITORY / "install.sh").read_text()
         launcher = (REPOSITORY / "scripts" / "uu-remote-bridge").read_text()

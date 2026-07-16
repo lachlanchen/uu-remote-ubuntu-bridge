@@ -4,8 +4,9 @@
 
 Use this bridge only on a computer and UU account you are authorized to
 administer. It preserves the normal UU account login and GNOME RDP credential;
-it is not an account recovery, password bypass, persistence, or hidden access
-mechanism.
+it is not an account recovery, password bypass, or hidden access mechanism.
+The optional unattended mode is explicit, visible systemd/GDM configuration
+that the same setup script can reverse.
 
 ## Boundaries
 
@@ -16,9 +17,10 @@ mechanism.
 - The FreeRDP hop targets `127.0.0.1` only and pins GNOME's configured TLS
   certificate by SHA-256 fingerprint.
 - The systemd unit is a user unit and has no root privileges.
-- `sudo` is used only while installing Ubuntu and WineHQ packages.
 - The persistent environment file contains only a validated port, resolution,
   and private-display choice; it never contains either account credential.
+- `sudo` is used while installing packages and, in unattended mode, while
+  changing two GDM keys, group membership, and root-only rollback state.
 
 GNOME Remote Desktop may listen on the LAN as configured by GNOME. Protect
 the host with the normal firewall and a strong, unique relay password. The
@@ -36,6 +38,25 @@ The installer prompts without echo and stores the relay password with
 `secret-tool` in the user's login keyring. The launcher feeds it to FreeRDP on
 standard input, then unsets the shell variable. No credential is in this
 repository, the systemd unit, or a process command line.
+
+Unattended mode additionally needs the GNOME login keyring password because
+PAM cannot unlock the keyring during GDM automatic login. The configurator
+encrypts that password with `systemd-creds --with-key=tpm2`. Only the encrypted
+blob is stored in the user's configuration directory. At session startup,
+systemd decrypts it into a protected runtime credential and a oneshot helper
+unlocks the login collection over D-Bus before GNOME Remote Desktop starts.
+The plaintext is not stored in an environment variable, command line, unit,
+or journal entry.
+
+Adding the account to `tss` grants access to the TPM resource-manager device.
+Until that membership is active at the next login, setup applies an equivalent
+per-user ACL so the current bridge can still restart. The device is recreated
+without that ACL during reboot, and rollback removes it when still present.
+
+The unlock helper uses a GNOME Keyring-specific private D-Bus method available
+on the validated Ubuntu 24.04/GNOME 46 stack. A future incompatible keyring
+release causes the oneshot and dependent bridge startup to fail rather than
+falling back to plaintext storage.
 
 UU's own tokens and account data remain in the dedicated Wine prefix. Do not
 publish that prefix or UU's logs: they can include device identifiers,
@@ -88,6 +109,12 @@ Use a separate Unix account for stronger isolation. Keep the OS, Wine, UU, and
 GNOME patched. Review a new UU build before adding its hash or signatures.
 Do not disable the patcher's version checks to make an update "work."
 Follow `docs/upstream-maintenance.md` and preserve each old approved manifest.
+
+GDM automatic login removes the local login gate after boot. Anyone with
+physical access can use the desktop account, and code running as that user can
+access the unlocked keyring. TPM binding prevents offline reuse of the
+credential on another machine; it does not defend an already logged-in
+desktop. A pre-boot disk-encryption prompt also remains interactive.
 
 ## Repository policy
 

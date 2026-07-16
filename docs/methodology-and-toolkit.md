@@ -127,6 +127,9 @@ and live process behavior.
 | GNOME Remote Desktop | Supported GNOME capture and input endpoint |
 | `grdctl`/`gsettings` | Configure and inspect GNOME RDP |
 | `secret-tool` | Keep the relay password in GNOME Keyring |
+| `systemd-creds`/TPM2 | Bind unattended keyring unlock to this machine |
+| Secret Service D-Bus | Unlock the login collection without a GUI prompt |
+| `crudini` | Make reversible, scoped GDM INI changes |
 | systemd user units | Restart and supervise the live bridge |
 | systemd transient sandbox | Stage an installer with host/network isolation |
 | `7z` | Non-executing installer extraction attempt |
@@ -147,6 +150,8 @@ and live process behavior.
 | `uu_injector.c` | Controlled DLL injection into the UU server |
 | `winpr_sspi_shim.c` | FreeRDP NLA compatibility |
 | `uu-remote-bridge` | X/RDP/UU orchestration and supervision |
+| `configure-unattended.sh` | GDM, TPM credential, unit, and rollback setup |
+| `uu-keyring-unlock.py` | Bounded login-keyring unlock over session D-Bus |
 | `install.sh` | Idempotent dependency-to-service deployment |
 | `verify.sh` | Static, process, input, and stability evidence |
 
@@ -165,6 +170,7 @@ disassembly remain under ignored paths or user runtime state.
 8. Preserve byte-identical rollback artifacts.
 9. Test elapsed-time and restart behavior, not just startup.
 10. Convert discoveries into code, tests, and operational documentation.
+11. Test implicit login dependencies, not only the final application process.
 
 These habits are the reusable result. The current four byte edits are only one
 version-specific application of them.

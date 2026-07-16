@@ -68,6 +68,10 @@ fi
 
 "${systemctl_user[@]}" disable --now uu-remote-bridge.service \
     >/dev/null 2>&1 || true
+if [[ -f "$HOME/.config/uu-remote-bridge/login-keyring-password.cred" ]] || \
+   "${systemctl_user[@]}" is-enabled --quiet uu-keyring-unlock.service; then
+    "$repo_dir/scripts/configure-unattended.sh" disable
+fi
 "$repo_dir/scripts/stop-wine-prefix" \
     "$wine_prefix" /opt/wine-stable/bin/wineserver || true
 
@@ -83,6 +87,8 @@ rm -f \
     "$HOME/.local/bin/uu-remote" \
     "$HOME/.local/bin/uu-remote-bridge" \
     "$HOME/.local/libexec/uu-remote-stop-wine-prefix" \
+    "$HOME/.local/bin/uu-keyring-unlock" \
+    "$HOME/.config/systemd/user/uu-keyring-unlock.service" \
     "$HOME/.config/systemd/user/uu-remote-bridge.service"
 rm -rf \
     "$HOME/.config/uu-remote-bridge" \

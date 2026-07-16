@@ -7,6 +7,9 @@ bridge_display="${UURB_DISPLAY:-auto}"
 rdp_port="${UURB_RDP_PORT:-3390}"
 resolution="${UURB_RESOLUTION:-1920x1080}"
 manager_display="${DISPLAY:-}"
+manager_wayland="${WAYLAND_DISPLAY:-}"
+manager_session_type="${XDG_SESSION_TYPE:-}"
+manager_bus="${DBUS_SESSION_BUS_ADDRESS:-unix:path=${XDG_RUNTIME_DIR:-/run/user/$UID}/bus}"
 systemctl_user=(
     /usr/bin/env
     "DBUS_SESSION_BUS_ADDRESS=unix:path=${XDG_RUNTIME_DIR:-/run/user/$UID}/bus"
@@ -198,6 +201,11 @@ discover_desktop_session() {
         candidate_session_type="$(process_environment_value \
             XDG_SESSION_TYPE "$pid")"
         [[ -n "$candidate_bus" ]] || continue
+        if [[ "$candidate_bus" == "$manager_bus" ]]; then
+            candidate_display="${candidate_display:-$manager_display}"
+            candidate_wayland="${candidate_wayland:-$manager_wayland}"
+            candidate_session_type="${candidate_session_type:-$manager_session_type}"
+        fi
         [[ -n "$candidate_display" || -n "$candidate_wayland" ]] || continue
         candidate_session_id="$(
             /usr/bin/sed -n \

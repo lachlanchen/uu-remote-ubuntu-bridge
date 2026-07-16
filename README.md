@@ -27,7 +27,7 @@ local RDP relay, and makes mouse and keyboard control work normally.
 | Desktop video | Live GNOME session at `1920x1080` |
 | Mouse | Motion, buttons, wheel, focus, and clicks through UU |
 | Keyboard | Printable keys, modifiers, shortcuts, and key-up events |
-| Recovery | User systemd restart plus automatic DLL re-injection |
+| Recovery | User systemd restart, boot autostart, and DLL re-injection |
 | Stability | One UU server PID beyond the former four-minute failure window |
 | Authentication | Normal UU sign-in and separate GNOME RDP credential |
 
@@ -85,6 +85,24 @@ Use an already downloaded installer or a future approved release manifest:
   --uu-installer ~/Downloads/UU-Remote/uuyc_4.33.0.exe \
   --release-manifest patches/uu-remote-4.33.0.8907.json
 ```
+
+### Unattended reboot startup
+
+To make UU available after reboot without first logging in locally or through
+RDP, enable the opt-in TPM-backed boot path:
+
+```bash
+./install.sh --unattended
+```
+
+For an existing installation, run
+`./scripts/configure-unattended.sh enable`. This enables GDM automatic login,
+so anyone with physical access can use the desktop after boot. The keyring
+password remains encrypted against this machine's TPM and is never stored in
+a script or process argument.
+
+[Read setup, verification, password-change, and rollback
+details](docs/unattended-startup.md).
 
 ## Architecture
 
@@ -196,6 +214,8 @@ The RDP hop targets loopback and pins GNOME's certificate fingerprint.
 | `scripts/stage-uu-release.sh` | Private installer staging sandbox |
 | `scripts/audit-gameviewer.py` | New-release evidence and approval workflow |
 | `scripts/uu-remote-bridge` | Supervised UU/Xvfb/FreeRDP orchestration |
+| `scripts/configure-unattended.sh` | TPM-backed GDM autologin setup and rollback |
+| `scripts/uu-keyring-unlock.py` | Secret Service unlock before GNOME RDP |
 | `install.sh` / `uninstall.sh` | Idempotent setup and reversible removal |
 | `tests/` | Proprietary-binary-free manifest unit tests |
 
@@ -205,6 +225,7 @@ ID, raw production log, screenshot, or private desktop content is committed.
 ## Documentation
 
 - [Architecture](docs/architecture.md)
+- [Unattended startup after reboot](docs/unattended-startup.md)
 - [Methodology and tool inventory](docs/methodology-and-toolkit.md)
 - [Reverse-engineering record with exact `xxd` and `objdump` evidence](docs/reverse-engineering.md)
 - [Maintaining the bridge across upstream updates](docs/upstream-maintenance.md)

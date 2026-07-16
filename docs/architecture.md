@@ -142,3 +142,17 @@ The replacement GameViewerHealthd also only sleeps. The upstream monitor
 mistook Wine's health reporting for a hung main loop and terminated a healthy
 server. Systemd and the inner PID supervisor provide the lifecycle monitoring
 instead.
+
+### Optional unattended boot
+
+The bridge user unit starts under `default.target` and waits for a real GNOME
+Shell. In unattended mode, GDM creates that desktop through automatic login.
+A separate oneshot unit asks systemd to decrypt a TPM2-bound credential and
+unlocks the existing GNOME login keyring over the Secret Service D-Bus
+interface.
+
+The bridge has a hard startup dependency on that unit. It runs after
+`gnome-keyring-daemon.service` and before both the packaged GNOME Remote
+Desktop service and the bridge's session-aware relay. The relay can therefore
+read its ordinary credential before it connects. The complete sequence and
+rollback are documented in `unattended-startup.md`.

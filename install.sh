@@ -50,6 +50,7 @@ skip_packages=false
 skip_account_login=false
 start_service=true
 fresh_install=false
+unattended=false
 
 usage() {
     cat <<'EOF'
@@ -63,6 +64,7 @@ usage: ./install.sh [options]
   --display auto|:N      private X display (default: first free from :20)
   --skip-packages        do not install Ubuntu/Wine package dependencies
   --skip-account-login   do not open UU for first-time account sign-in
+  --unattended           enable TPM-backed startup after an automatic login
   --no-start             install and verify files without starting the service
   -h, --help             show this help
 EOF
@@ -96,6 +98,10 @@ while (($#)); do
             ;;
         --skip-account-login)
             skip_account_login=true
+            shift
+            ;;
+        --unattended)
+            unattended=true
             shift
             ;;
         --no-start)
@@ -160,6 +166,10 @@ if [[ ! -S "$user_bus" ]]; then
     printf 'Log into the target GNOME desktop as this user, then rerun.\n' >&2
     exit 1
 fi
+if [[ "$unattended" == true && "$start_service" == false ]]; then
+    printf -- '--unattended cannot be combined with --no-start.\n' >&2
+    exit 2
+fi
 
 install_winehq() {
     local codename
@@ -192,9 +202,11 @@ install_winehq() {
 install_packages() {
     sudo apt-get update
     sudo apt-get install -y \
-        aria2 ca-certificates cmake curl freerdp3-x11 gcc-mingw-w64-x86-64 \
+        acl aria2 ca-certificates cmake crudini curl freerdp3-x11 \
+        gcc-mingw-w64-x86-64 \
         git gnome-remote-desktop jq libsecret-tools ninja-build openbox \
-        openssl p7zip-full python3 tar x11-utils xauth xdotool xvfb zstd
+        openssl p7zip-full python3 python3-gi tar x11-utils xauth xdotool xvfb \
+        zstd
     install_winehq
 }
 
@@ -385,8 +397,12 @@ install -m 0755 "$repo_dir/scripts/uu-remote-bridge" \
 install -m 0755 "$repo_dir/scripts/uu-remote" "$HOME/.local/bin/uu-remote"
 install -m 0755 "$repo_dir/scripts/stop-wine-prefix" \
     "$HOME/.local/libexec/uu-remote-stop-wine-prefix"
+install -m 0755 "$repo_dir/scripts/uu-keyring-unlock.py" \
+    "$HOME/.local/bin/uu-keyring-unlock"
 install -m 0644 "$repo_dir/systemd/uu-remote-bridge.service" \
     "$HOME/.config/systemd/user/uu-remote-bridge.service"
+install -m 0644 "$repo_dir/systemd/uu-keyring-unlock.service" \
+    "$HOME/.config/systemd/user/uu-keyring-unlock.service"
 
 tls_dir="$HOME/.local/share/gnome-remote-desktop"
 tls_cert="$tls_dir/rdp-tls.crt"
@@ -440,6 +456,10 @@ fi
 if [[ "$start_service" == true ]]; then
     "${systemctl_user[@]}" restart uu-remote-bridge.service
     "$repo_dir/scripts/verify.sh" --quick
+fi
+
+if [[ "$unattended" == true ]]; then
+    "$repo_dir/scripts/configure-unattended.sh" enable
 fi
 
 printf '\nInstalled UU Remote Ubuntu bridge.\n'

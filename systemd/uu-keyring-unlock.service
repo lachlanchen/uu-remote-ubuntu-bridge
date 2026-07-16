@@ -1,0 +1,16 @@
+[Unit]
+Description=Unlock GNOME Keyring for unattended UU Remote startup
+Requires=gnome-keyring-daemon.service
+After=gnome-keyring-daemon.service
+Before=gnome-remote-desktop.service uu-remote-bridge.service
+PartOf=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/uu-keyring-unlock
+LoadCredentialEncrypted=login-keyring-password:%h/.config/uu-remote-bridge/login-keyring-password.cred
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
