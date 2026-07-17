@@ -8,6 +8,7 @@ locked by the release manifest.
 
 ### Added
 
+- privacy-safe `uu-remote network` transport and key-watchdog diagnosis
 - deterministic installed-runtime digest verification, so a pulled checkout
   cannot be mistaken for deployed compatibility binaries
 - persistent GNOME RDP descriptor threshold with bounded relay recovery
@@ -17,6 +18,8 @@ locked by the release manifest.
 
 ### Changed
 
+- route live-relay input directly to the normal-user broker, avoiding one
+  known-denied service-token `SendInput` attempt per event
 - pace translated phone text one character chord at a time with a persistent,
   configurable 8 ms default delay
 - split bounded text and routine input telemetry and avoid synchronous disk

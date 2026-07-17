@@ -193,6 +193,23 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("static void flush_log", bridge)
         self.assertIn("static void flush_log", broker)
 
+    def test_live_relay_uses_broker_without_known_failed_attempt(self):
+        bridge = (REPOSITORY / "src" / "uu_input_bridge.c").read_text()
+
+        self.assertIn("if (relay != NULL || unicode_keyboard)", bridge)
+        self.assertNotIn("if (result != count) {\n            result = send_through_broker", bridge)
+
+    def test_network_diagnosis_is_installed_and_exposed(self):
+        installer = (REPOSITORY / "install.sh").read_text()
+        uninstaller = (REPOSITORY / "uninstall.sh").read_text()
+        command = (REPOSITORY / "scripts" / "uu-remote").read_text()
+
+        self.assertIn("scripts/uu_connection_status.py", installer)
+        self.assertIn("uu-connection-status", installer)
+        self.assertIn("uu-connection-status", uninstaller)
+        self.assertIn("network)", command)
+        self.assertIn('exec /usr/bin/python3 "$connection_status_bin"', command)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -86,6 +86,18 @@ has focus before acknowledging an input request and sends translated text one
 character chord at a time. Values from 0 through 50 ms are accepted; increase
 the delay only if a high-latency controller still drops characters.
 
+If individual keys lag or disappear while direct RDP remains responsive, check
+the transport before changing input code:
+
+```bash
+uu-remote network
+```
+
+The report shows only aggregate path, delay, P2P, and key-watchdog metadata. It
+never prints addresses, device IDs, account data, or typed text. A forced relay
+near UU's key-watchdog threshold is an upstream network problem; host-side
+retries can duplicate keys that arrive late.
+
 Ubuntu 24.04's libei 1.2.1 leaks the received keyboard-keymap descriptor after
 duplicating it. The installer builds the exact upstream one-line fix from a
 hash-verified 1.2.1 archive and loads that library only into this bridge's
@@ -261,6 +273,7 @@ The RDP hop targets loopback and pins GNOME's certificate fingerprint.
 | `scripts/stage-uu-release.sh` | Private installer staging sandbox |
 | `scripts/audit-gameviewer.py` | New-release evidence and approval workflow |
 | `scripts/uu-remote-bridge` | Supervised UU/Xvfb/FreeRDP orchestration |
+| `scripts/uu_connection_status.py` | Privacy-safe transport and key-watchdog diagnosis |
 | `scripts/configure-unattended.sh` | TPM-backed GDM autologin setup and rollback |
 | `scripts/uu-keyring-unlock.py` | Secret Service unlock before GNOME RDP |
 | `install.sh` / `uninstall.sh` | Idempotent setup and reversible removal |

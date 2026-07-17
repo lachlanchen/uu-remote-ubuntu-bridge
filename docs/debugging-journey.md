@@ -87,9 +87,10 @@ timestamp after that limit does not prove an API was never called.
 
 ### The working correction
 
-The IAT hook now detects any Unicode keyboard record before calling Wine's
-original `SendInput` and routes that complete batch directly to the broker.
-The broker:
+The IAT hook detects any Unicode keyboard record and routes that complete batch
+to the broker for normalization. In the live relay, ordinary events now also
+use the broker as their primary path instead of first repeating the known-
+denied service-token call. The broker:
 
 1. drops the matching synthetic Unicode key-up record
 2. maps each representable character with `VkKeyScanW`
@@ -257,3 +258,25 @@ The delay is persisted as `UURB_TEXT_KEY_DELAY_MS` and can be changed safely:
 
 The diagnostic line records only `focus`, `focus-wait-ms`, `paced`,
 `delay-ms`, counts, and result codes. It does not record what was typed.
+
+## 11. Separate upstream transport loss from local input injection
+
+A direct-RDP comparison later stayed responsive while individual keys sent by
+UU lagged or disappeared. The local broker showed successful calls with
+`focus-wait-ms=0`, and the relevant processes were neither CPU- nor
+memory-bound. UU's own aggregate logs instead showed forced relay sessions
+with roughly 289-346 ms average delay, peaks near 533 ms, and explicit key
+watchdog releases at a 300 ms threshold.
+
+That evidence places the loss before the local bridge. Retrying or synthesizing
+keys on Ubuntu would be unsafe because delayed originals could still arrive.
+The bounded correction is therefore to remove only avoidable local work: when
+the relay window exists, the injected hook now goes directly to the normal-user
+broker instead of first calling the service-token `SendInput` path already
+known to fail with access denied.
+
+`uu-remote network` summarizes the latest completed transport report without
+printing IP addresses, client IDs, account data, or typed content. It also
+retains the important counterexample: earlier automatic sessions may show P2P
+punching blocked by NAT/firewall and an even slower relay fallback. Connection
+mode should be selected from measured delay, not from the word “P2P” alone.

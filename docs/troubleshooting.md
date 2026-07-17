@@ -146,6 +146,29 @@ backport, or installed-source drift. The threshold is configurable with
 `--grd-fd-restart-threshold`; `0` disables only the fallback guard, not the
 backport.
 
+## Individual keys lag or disappear, but direct RDP is normal
+
+Run:
+
+```bash
+uu-remote network
+```
+
+This distinction matters. Direct RDP bypasses UU's controller-to-host network
+path, while the UU route adds its own P2P or relay transport before the local
+Wine-to-RDP bridge. If the report says `relay (forced by controller)` and its
+delay approaches 300 ms, compare that with any `key watchdog` line. UU may
+release a key after its own 300 ms safety interval before a delayed key-up
+arrives.
+
+Do not compensate by replaying keys in the host bridge. A late original event
+would then create duplicate text. Prefer Automatic/P2P in the controlling UU
+client when it is available, but compare the measured result: NAT or firewall
+rules can block P2P and make automatic relay fallback slower. The host bridge
+now sends directly through its working broker instead of first attempting the
+known-denied service-token `SendInput` path, so there is no avoidable local
+retry in a healthy relay.
+
 ## Server restarts every four minutes
 
 Check for Wine's unimplemented event-log abort:

@@ -8,6 +8,7 @@ export WINEDEBUG="${WINEDEBUG:--all}"
 wine_bin="${WINE_BIN:-/opt/wine-stable/bin/wine}"
 wineserver_bin="${WINESERVER_BIN:-/opt/wine-stable/bin/wineserver}"
 wine_stop_bin="$HOME/.local/libexec/uu-remote-stop-wine-prefix"
+connection_status_bin="$HOME/.local/libexec/uu-connection-status"
 app_dir="$WINEPREFIX/drive_c/Program Files/Netease/GameViewer"
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/uu-remote"
 systemctl_user=(
@@ -38,6 +39,9 @@ case "${1:-open}" in
     logs)
         exec journalctl --user -fu uu-remote-bridge.service
         ;;
+    network)
+        exec /usr/bin/python3 "$connection_status_bin"
+        ;;
     login)
         shift || true
         if [[ -z "${DISPLAY:-}" ]]; then
@@ -63,7 +67,7 @@ case "${1:-open}" in
         shift || true
         ;;
     *)
-        printf 'usage: uu-remote [open|login|status|restart|stop|logs]\n' >&2
+        printf 'usage: uu-remote [open|login|status|network|restart|stop|logs]\n' >&2
         exit 2
         ;;
 esac

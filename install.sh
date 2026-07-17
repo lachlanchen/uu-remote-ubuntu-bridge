@@ -444,6 +444,8 @@ install -m 0755 "$repo_dir/scripts/uu-remote-bridge" \
 install -m 0755 "$repo_dir/scripts/uu-remote" "$HOME/.local/bin/uu-remote"
 install -m 0755 "$repo_dir/scripts/stop-wine-prefix" \
     "$HOME/.local/libexec/uu-remote-stop-wine-prefix"
+install -m 0755 "$repo_dir/scripts/uu_connection_status.py" \
+    "$HOME/.local/libexec/uu-connection-status"
 install -m 0755 "$repo_dir/scripts/uu-keyring-unlock.py" \
     "$HOME/.local/bin/uu-keyring-unlock"
 install -m 0644 "$repo_dir/systemd/uu-remote-bridge.service" \

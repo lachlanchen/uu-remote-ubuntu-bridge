@@ -201,8 +201,6 @@ static UINT WINAPI bridged_send_input(UINT count, LPINPUT inputs, int size)
     LONG category_call_number;
 
     relay = find_relay_window();
-    if (relay != NULL)
-        SetForegroundWindow(relay);
 
     if (count > 0 && inputs != NULL && size == (int)sizeof(INPUT)) {
         first_type = inputs[0].type;
@@ -213,7 +211,14 @@ static UINT WINAPI bridged_send_input(UINT count, LPINPUT inputs, int size)
     }
 
     unicode_keyboard = contains_unicode_keyboard(count, inputs, size);
-    if (unicode_keyboard) {
+    /*
+     * The service-created UU process is not permitted to inject into the
+     * normal Wine desktop.  Once the relay exists, trying that known-failing
+     * path first adds work to every mouse and keyboard event.  The broker is
+     * both the normal and the lower-latency path; retain the original API only
+     * as a pre-relay fallback.
+     */
+    if (relay != NULL || unicode_keyboard) {
         result = send_through_broker(count, inputs, size, &error);
         used_broker = TRUE;
         SetLastError(error);
@@ -221,11 +226,6 @@ static UINT WINAPI bridged_send_input(UINT count, LPINPUT inputs, int size)
         SetLastError(ERROR_SUCCESS);
         result = original_send_input(count, inputs, size);
         error = GetLastError();
-        if (result != count) {
-            result = send_through_broker(count, inputs, size, &error);
-            used_broker = TRUE;
-            SetLastError(error);
-        }
     }
     call_number = InterlockedIncrement(&input_call_count);
     category_call_number = InterlockedIncrement(
