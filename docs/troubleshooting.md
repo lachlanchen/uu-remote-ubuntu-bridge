@@ -165,9 +165,9 @@ Do not compensate by replaying keys in the host bridge. A late original event
 would then create duplicate text. Prefer Automatic/P2P in the controlling UU
 client when it is available, but compare the measured result: NAT or firewall
 rules can block P2P and make automatic relay fallback slower. The host bridge
-now sends directly through its working broker instead of first attempting the
-known-denied service-token `SendInput` path, so there is no avoidable local
-retry in a healthy relay.
+must retain its proven original-call-then-broker fallback for ordinary input.
+Do not select that route from service-side relay-window visibility: Wine may
+hide the window from that token even while the relay is healthy.
 
 ## Server restarts every four minutes
 

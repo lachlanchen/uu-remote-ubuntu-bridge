@@ -95,14 +95,14 @@ described in `reverse-engineering.md`.
 ### Input broker
 
 The UU service creates GameViewerServer with a token for which Wine rejects
-`SendInput` with error 5. While the relay window exists,
-`uu-input-bridge.dll` forwards the exact bounded `INPUT` array directly to a
-normal user Wine process over a local named pipe. It does not repeat that
-known-denied call for every event. The original API remains only as a
-pre-relay fallback. The broker requests focus for the relay window and confirms
-it became the foreground window within a bounded 300 ms before calling
-`SendInput`. It returns the real count and error code to UU only after that
-boundary succeeds.
+`SendInput` with error 5. `uu-input-bridge.dll` first calls the original API;
+only when that call fails does it forward the exact bounded `INPUT` array to a
+normal user Wine process over a local named pipe. That fallback is intentional:
+the service process cannot reliably use relay-window visibility to choose the
+route across Wine's desktop boundary. The broker requests focus for the relay
+window and confirms it became the foreground window within a bounded 300 ms
+before calling `SendInput`. It returns the real count and error code to UU only
+after that boundary succeeds.
 
 No key code, Unicode character, clipboard payload, or text is written to the
 diagnostic logs.

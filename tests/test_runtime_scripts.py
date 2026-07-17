@@ -193,11 +193,15 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("static void flush_log", bridge)
         self.assertIn("static void flush_log", broker)
 
-    def test_live_relay_uses_broker_without_known_failed_attempt(self):
+    def test_routine_input_retains_proven_broker_fallback(self):
         bridge = (REPOSITORY / "src" / "uu_input_bridge.c").read_text()
 
-        self.assertIn("if (relay != NULL || unicode_keyboard)", bridge)
-        self.assertNotIn("if (result != count) {\n            result = send_through_broker", bridge)
+        self.assertIn("if (unicode_keyboard)", bridge)
+        self.assertIn(
+            "if (result != count) {\n"
+            "            result = send_through_broker",
+            bridge,
+        )
 
     def test_network_diagnosis_is_installed_and_exposed(self):
         installer = (REPOSITORY / "install.sh").read_text()

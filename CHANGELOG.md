@@ -18,8 +18,6 @@ locked by the release manifest.
 
 ### Changed
 
-- route live-relay input directly to the normal-user broker, avoiding one
-  known-denied service-token `SendInput` attempt per event
 - pace translated phone text one character chord at a time with a persistent,
   configurable 8 ms default delay
 - split bounded text and routine input telemetry and avoid synchronous disk
@@ -32,6 +30,9 @@ locked by the release manifest.
 
 ### Fixed
 
+- restored the proven original-call-then-broker fallback for ordinary input;
+  selecting the route from service-side relay-window visibility can disable all
+  mouse and keyboard input under Wine
 - confirm the FreeRDP relay owns foreground focus before acknowledging brokered
   input, preventing successful API returns from hiding dropped keystrokes
 - stopped Ubuntu 24.04's libei 1.2.1 from leaking one `mutter-shared`

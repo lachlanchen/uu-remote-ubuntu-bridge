@@ -270,10 +270,17 @@ watchdog releases at a 300 ms threshold.
 
 That evidence places the loss before the local bridge. Retrying or synthesizing
 keys on Ubuntu would be unsafe because delayed originals could still arrive.
-The bounded correction is therefore to remove only avoidable local work: when
-the relay window exists, the injected hook now goes directly to the normal-user
-broker instead of first calling the service-token `SendInput` path already
-known to fail with access denied.
+It also did not justify changing the proven ordinary-input routing. A later
+attempt to choose the broker from `FindWindowW` visibility caused a complete
+mouse and keyboard regression: the service-side process could not reliably see
+the relay window, so it selected the denied original path without reaching the
+fallback. Broker startup lines appeared, but no new calls reached it.
+
+The exact proven behavior was restored: ordinary input tries the original API
+and falls back to the broker on failure; Unicode phone text still routes to the
+broker directly for normalization. A source-level regression test now guards
+that fallback. The lesson is to optimize only after measuring the boundary in
+the same Wine token and window station that executes it.
 
 `uu-remote network` summarizes the latest completed transport report without
 printing IP addresses, client IDs, account data, or typed content. It also
