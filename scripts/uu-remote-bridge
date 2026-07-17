@@ -6,6 +6,7 @@ bridge_user="${USER:-$(id -un)}"
 bridge_display="${UURB_DISPLAY:-auto}"
 rdp_port="${UURB_RDP_PORT:-3390}"
 resolution="${UURB_RESOLUTION:-1920x1080}"
+grd_fd_restart_threshold="${UURB_GRD_FD_RESTART_THRESHOLD:-4096}"
 manager_display="${DISPLAY:-}"
 manager_wayland="${WAYLAND_DISPLAY:-}"
 manager_session_type="${XDG_SESSION_TYPE:-}"
@@ -19,16 +20,20 @@ systemctl_user=(
 if [[ "$bridge_display" != auto &&
       ! "$bridge_display" =~ ^:(0|[1-9][0-9]{0,2})$ ]] ||
    [[ ! "$rdp_port" =~ ^[1-9][0-9]{0,4}$ ]] ||
-   [[ ! "$resolution" =~ ^[1-9][0-9]{2,4}x[1-9][0-9]{2,4}$ ]]; then
-    printf 'Invalid UURB display, RDP port, or resolution setting.\n' >&2
+   [[ ! "$resolution" =~ ^[1-9][0-9]{2,4}x[1-9][0-9]{2,4}$ ]] ||
+   [[ ! "$grd_fd_restart_threshold" =~ ^[0-9]+$ ]]; then
+    printf 'Invalid UURB display, RDP port, resolution, or descriptor setting.\n' >&2
     exit 2
 fi
 resolution_width="${resolution%x*}"
 resolution_height="${resolution#*x}"
 if ((rdp_port < 1024 || rdp_port > 65535 ||
      resolution_width < 640 || resolution_width > 16384 ||
-     resolution_height < 480 || resolution_height > 16384)); then
-    printf 'UURB port or resolution is outside the supported range.\n' >&2
+     resolution_height < 480 || resolution_height > 16384 ||
+     (grd_fd_restart_threshold != 0 &&
+      (grd_fd_restart_threshold < 512 ||
+       grd_fd_restart_threshold > 60000)))); then
+    printf 'UURB port, resolution, or descriptor threshold is outside the supported range.\n' >&2
     exit 2
 fi
 
@@ -67,6 +72,7 @@ export PATH="/opt/wine-stable/bin:/usr/bin:/bin"
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/uu-remote-bridge"
 runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$UID}/uu-remote-bridge"
 compat_dir="$WINEPREFIX/compat"
+libei_dir="$compat_dir/libei"
 freerdp_exe="$WINEPREFIX/drive_c/Program Files/FreeRDP/sdl-freerdp.exe"
 input_bridge_dll="$compat_dir/uu-input-bridge.dll"
 input_broker_exe="$compat_dir/uu-input-broker.exe"
@@ -75,6 +81,12 @@ service_control_exe="$compat_dir/uu-service-control.exe"
 uu_app_dir="$WINEPREFIX/drive_c/Program Files/Netease/GameViewer"
 xauth_file="$runtime_dir/Xauthority"
 wine_stop_bin="$HOME/.local/libexec/uu-remote-stop-wine-prefix"
+
+if [[ ! -x "$libei_dir/libei.so.1.2.1" ||
+      ! -L "$libei_dir/libei.so.1" ]]; then
+    printf 'The patched libei keymap-FD backport is missing; reinstall the bridge.\n' >&2
+    exit 1
+fi
 
 xvfb_pid=""
 openbox_pid=""
@@ -153,7 +165,9 @@ cleanup() {
     display_lock="/tmp/.X${display_number}-lock"
     display_socket="/tmp/.X11-unix/X${display_number}"
     lock_pid="$(
-        /usr/bin/tr -d '[:space:]' <"$display_lock" 2>/dev/null || true
+        if [[ -r "$display_lock" ]]; then
+            /usr/bin/tr -d '[:space:]' 2>/dev/null <"$display_lock" || true
+        fi
     )"
     if [[ -n "$xvfb_pid" && "$lock_pid" == "$xvfb_pid" &&
           ! -d "/proc/$xvfb_pid" ]]; then
@@ -271,6 +285,7 @@ start_desktop_relay() {
     desktop_environment=(
         "DBUS_SESSION_BUS_ADDRESS=$desktop_bus"
         "DISPLAY=$desktop_display"
+        "LD_LIBRARY_PATH=$libei_dir"
         "OPENSSL_CONF=/etc/ssl/openssl.cnf"
         "OPENSSL_MODULES=$native_openssl_modules"
     )
@@ -509,6 +524,8 @@ bootstrap_account
 supervise_server() {
     local last_pid="$1"
     local candidate
+    local grd_fd_count
+    local health_checks=0
     local missing_checks=0
 
     while true; do
@@ -533,6 +550,20 @@ supervise_server() {
             else
                 log "Could not re-inject UU server process $candidate."
                 return 1
+            fi
+        fi
+        health_checks=$((health_checks + 1))
+        if ((grd_fd_restart_threshold > 0 && health_checks >= 40)); then
+            health_checks=0
+            if [[ -d "/proc/$grd_pid/fd" ]]; then
+                grd_fd_count="$(
+                    /usr/bin/find "/proc/$grd_pid/fd" -maxdepth 1 \
+                        -type l -printf '.\n' 2>/dev/null | /usr/bin/wc -l
+                )"
+                if ((grd_fd_count >= grd_fd_restart_threshold)); then
+                    log "GNOME Remote Desktop reached $grd_fd_count file descriptors; restarting the relay before exhaustion."
+                    return 1
+                fi
             fi
         fi
         sleep 0.25

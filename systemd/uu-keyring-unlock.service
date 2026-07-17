@@ -9,6 +9,8 @@ PartOf=graphical-session.target
 Type=oneshot
 ExecStart=%h/.local/bin/uu-keyring-unlock
 LoadCredentialEncrypted=login-keyring-password:%h/.config/uu-remote-bridge/login-keyring-password.cred
+RemainAfterExit=yes
+TimeoutStartSec=150
 Restart=on-failure
 RestartSec=3
 

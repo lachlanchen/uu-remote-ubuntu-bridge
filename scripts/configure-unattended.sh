@@ -76,7 +76,7 @@ account_has_tss() {
 ensure_dependencies() {
     if command -v crudini >/dev/null 2>&1 && \
        command -v setfacl >/dev/null 2>&1 && \
-       python3 -c 'from gi.repository import Gio, GLib' \
+       /usr/bin/python3 -c 'from gi.repository import Gio, GLib' \
            >/dev/null 2>&1; then
         return
     fi

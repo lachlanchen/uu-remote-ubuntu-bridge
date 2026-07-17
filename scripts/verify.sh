@@ -27,6 +27,8 @@ healthd="$wine_prefix/drive_c/Program Files/Netease/GameViewer/bin/$(manifest_fi
 healthd_original_sha256="$(manifest_field health_monitor.original_sha256)"
 healthd_stub="$repo_dir/build/compat/uu-healthd-stub.exe"
 freerdp="$wine_prefix/drive_c/Program Files/FreeRDP/sdl-freerdp.exe"
+libei_backport="$wine_prefix/compat/libei/libei.so.1.2.1"
+runtime_digest_file="$wine_prefix/compat/.runtime-source-sha256"
 # GameViewerServer is launched by Wine's service manager, which intentionally
 # does not inherit UU_INPUT_BRIDGE_LOG. The injected DLL therefore uses the
 # target process's normal GetTempPathW() location.
@@ -77,6 +79,14 @@ else
 fi
 
 pass "approved UU release manifest $release_version is active"
+
+expected_runtime_digest="$("$repo_dir/scripts/runtime-source-digest")"
+installed_runtime_digest="$(cat "$runtime_digest_file" 2>/dev/null || true)"
+if [[ "$installed_runtime_digest" == "$expected_runtime_digest" ]]; then
+    pass 'installed runtime matches this source checkout'
+else
+    fail 'installed runtime is older or differs from this source checkout; reinstall it'
+fi
 
 if /usr/bin/python3 "$repo_dir/scripts/patch-gameviewer.py" verify "$server" \
     --manifest "$release_manifest" --expect patched >/dev/null; then
@@ -132,6 +142,44 @@ else
     fail "GNOME RDP relay is unavailable on localhost:$rdp_port"
 fi
 
+grd_pid="$(
+    pgrep -o -u "$UID" -f \
+        "gnome-remote-desktop-daemon --rdp-port $rdp_port" || true
+)"
+saved_grd_fd_restart_threshold="$(
+    saved_setting UURB_GRD_FD_RESTART_THRESHOLD
+)"
+grd_fd_restart_threshold="${UURB_GRD_FD_RESTART_THRESHOLD:-${saved_grd_fd_restart_threshold:-4096}}"
+if [[ -n "$grd_pid" ]]; then
+    grd_fd_count="$(
+        /usr/bin/find "/proc/$grd_pid/fd" -maxdepth 1 -type l \
+            -printf '.\n' 2>/dev/null | /usr/bin/wc -l
+    )"
+    grd_soft_limit="$(
+        /usr/bin/awk '$1 == "Max" && $2 == "open" && $3 == "files" {print $4}' \
+            "/proc/$grd_pid/limits"
+    )"
+    if [[ -f "$libei_backport" ]] &&
+       /usr/bin/grep -Fq "$libei_backport" "/proc/$grd_pid/maps"; then
+        pass 'GNOME RDP uses the isolated patched libei keymap-FD backport'
+    else
+        fail 'GNOME RDP is not using the patched libei keymap-FD backport'
+    fi
+    if [[ "$grd_soft_limit" =~ ^[0-9]+$ ]] &&
+       ((grd_soft_limit >= 65536)); then
+        pass "GNOME RDP descriptor limit is $grd_soft_limit"
+    else
+        fail "GNOME RDP descriptor limit is only ${grd_soft_limit:-unknown}"
+    fi
+    if ((grd_fd_restart_threshold == 0)); then
+        printf 'INFO  GNOME RDP descriptor restart guard is disabled\n'
+    elif ((grd_fd_count < grd_fd_restart_threshold)); then
+        pass "GNOME RDP uses $grd_fd_count/$grd_fd_restart_threshold guarded descriptors"
+    else
+        fail "GNOME RDP uses $grd_fd_count descriptors, at or above the $grd_fd_restart_threshold restart threshold"
+    fi
+fi
+
 server_pid="$(pgrep -o -u "$UID" -f 'GameViewerServer\.exe' || true)"
 if [[ -n "$server_pid" ]]; then
     pass "UU server is running as process $server_pid"
@@ -158,6 +206,26 @@ if ((stability_seconds > 0)) && [[ -n "$server_pid" ]]; then
         pass "UU server remained stable for $stability_seconds seconds"
     else
         fail "UU server changed from $server_pid to ${current_pid:-none}"
+    fi
+    if [[ -n "$grd_pid" ]]; then
+        current_grd_pid="$(
+            pgrep -o -u "$UID" -f \
+                "gnome-remote-desktop-daemon --rdp-port $rdp_port" || true
+        )"
+        if [[ "$current_grd_pid" != "$grd_pid" ]]; then
+            fail 'GNOME RDP changed during the descriptor-stability check'
+        else
+            current_grd_fd_count="$(
+                /usr/bin/find "/proc/$grd_pid/fd" -maxdepth 1 -type l \
+                    -printf '.\n' 2>/dev/null | /usr/bin/wc -l
+            )"
+            grd_fd_growth=$((current_grd_fd_count - grd_fd_count))
+            if ((grd_fd_growth <= 16)); then
+                pass "GNOME RDP descriptor growth stayed bounded (${grd_fd_growth} over ${stability_seconds}s)"
+            else
+                fail "GNOME RDP leaked $grd_fd_growth descriptors over ${stability_seconds}s"
+            fi
+        fi
     fi
 fi
 

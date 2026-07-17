@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 
 from __future__ import annotations
 
@@ -40,7 +40,10 @@ def call(
 
 
 def wait_for_service(bus: Gio.DBusConnection) -> None:
-    for _ in range(100):
+    # GDM autologin can start the user manager before GNOME Keyring has
+    # acquired the Secret Service name. Keep the initial systemd transaction
+    # alive through that bounded boot race so dependent units are not stranded.
+    for _ in range(1200):
         owned = call(
             bus,
             "/org/freedesktop/DBus",

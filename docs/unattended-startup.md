@@ -73,6 +73,11 @@ than a portable Secret Service method. It is validated on Ubuntu 24.04 with
 GNOME Keyring 46. After a desktop upgrade, verify this unit before relying on
 unattended access; an incompatible interface fails closed.
 
+GDM can start the user manager before GNOME Keyring acquires the Secret
+Service bus name. The helper waits for that specific boot dependency for up to
+120 seconds. The oneshot remains `active (exited)` after success, making both
+dependency state and boot verification unambiguous.
+
 `loginctl enable-linger` is deliberately unnecessary. The user unit starts
 under `default.target`, but it waits for a real GNOME Shell instead of creating
 a pre-login synthetic desktop. GDM automatic login supplies that session.
@@ -165,6 +170,9 @@ The reusable debugging sequence is:
 This method applies to other GUI applications that start correctly after a
 password login but fail under GDM automatic login because their Secret Service
 collection remains locked.
+
+The complete development and incident trail is recorded in
+[`debugging-journey.md`](debugging-journey.md).
 
 ## Security tradeoff
 

@@ -93,7 +93,10 @@ patched hash in memory, and does not modify the executable.
 
 The installer applies the same policy to GameViewerHealthd and pins the UU
 installer, SDL FreeRDP artifact, FreeRDP source commit, and MSYS2 dependency
-packages.
+packages. It also downloads libei 1.2.1 from its upstream GitLab archive with
+a fixed SHA-256, applies the published one-line keymap-FD fix, and loads the
+result only into the supervised GNOME RDP child. It never overwrites Ubuntu's
+system libei.
 
 `stage-uu-release.sh` first attempts non-executing archive extraction. Its
 explicit `--sandbox-install` fallback uses a root-managed transient systemd

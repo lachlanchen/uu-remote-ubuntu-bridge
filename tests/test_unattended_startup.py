@@ -17,7 +17,15 @@ class UnattendedStartupTests(unittest.TestCase):
         self.assertIn("Before=gnome-remote-desktop.service", unit)
         self.assertIn("LoadCredentialEncrypted=login-keyring-password:", unit)
         self.assertIn("WantedBy=default.target", unit)
-        self.assertNotIn("RemainAfterExit", unit)
+        self.assertIn("RemainAfterExit=yes", unit)
+        self.assertIn("TimeoutStartSec=150", unit)
+
+    def test_unlock_helper_tolerates_the_bounded_gdm_boot_race(self) -> None:
+        helper = (
+            REPO_DIR / "scripts" / "uu-keyring-unlock.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("range(1200)", helper)
+        self.assertIn("bounded boot race", helper)
 
     def test_bridge_requires_successful_unlock_in_unattended_mode(self) -> None:
         dropin = (
@@ -40,6 +48,7 @@ class UnattendedStartupTests(unittest.TestCase):
             REPO_DIR / "scripts" / "configure-unattended.sh"
         ).read_text(encoding="utf-8")
         self.assertIn("systemd-creds encrypt --with-key=tpm2", configurator)
+        self.assertIn("/usr/bin/python3 -c", configurator)
         self.assertIn("restore_gdm_state", configurator)
         self.assertIn('setfacl -x "u:$bridge_user"', configurator)
         self.assertIn("--replace-credential", configurator)

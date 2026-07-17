@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+runtime_files=(
+    install.sh
+    uninstall.sh
+    patches/uu-remote-4.33.0.8907.json
+    patches/libei-1.2.1-close-keymap-fd.patch
+    scripts/build-compat.sh
+    scripts/build-libei.sh
+    scripts/build-winpr.sh
+    scripts/configure-unattended.sh
+    scripts/runtime-source-digest
+    scripts/stop-wine-prefix
+    scripts/uu-keyring-unlock.py
+    scripts/uu-remote
+    scripts/uu-remote-bridge
+    scripts/verify.sh
+    src/uu_injector.c
+    src/uu_input_bridge.c
+    src/uu_input_broker.c
+    src/uu_service_control.c
+    src/winlogon.c
+    src/winpr_sspi_shim.c
+    systemd/uu-keyring-unlock.service
+    systemd/uu-remote-bridge-unattended.conf
+    systemd/uu-remote-bridge.service
+)
+
+cd "$repo_dir"
+sha256sum "${runtime_files[@]}" | sha256sum | awk '{print $1}'

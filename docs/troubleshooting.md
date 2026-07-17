@@ -18,7 +18,8 @@ installer, for example:
 
 ```bash
 ./install.sh --skip-packages --skip-account-login \
-  --rdp-port 3391 --resolution 2560x1440 --display auto
+  --rdp-port 3391 --resolution 2560x1440 --display auto \
+  --grd-fd-restart-threshold 4096
 ```
 
 ## UU is offline after reboot
@@ -112,6 +113,38 @@ If Unicode calls appear in `uu-input-bridge.log` with flag `0x00000004` but the
 broker does not report normalization, reinstall or update the bridge and
 restart the service. A Windows UU host followed by RDP appears to fix the issue
 because native Windows converts the Unicode input before RDP handles it.
+
+If the checkout contains the fix but the verifier says the installed runtime
+differs, pulling was not followed by installation:
+
+```bash
+./install.sh --skip-packages --skip-account-login
+```
+
+## Input degrades after a long relay session
+
+Run the quick verifier and inspect only descriptor metadata:
+
+```bash
+scripts/verify.sh --quick
+pid="$(pgrep -o -f 'gnome-remote-desktop-daemon --rdp-port')"
+find "/proc/$pid/fd" -maxdepth 1 -type l | wc -l
+sed -n '/Max open files/p' "/proc/$pid/limits"
+```
+
+Repeated `Failed to dup keymap fd: Too many open files` messages mean GNOME
+RDP can no longer allocate the descriptor required by `libei` input. On the
+validated Ubuntu 24.04 stack, libei 1.2.1 duplicated every received keymap FD
+without closing the original. Current installations load a bridge-local
+backport of upstream commit `ee27dd5c92e4e9496a36ca2d4112049fe02d2269` into
+GNOME RDP only. `scripts/verify.sh` confirms the running process mapped that
+library, and a timed verifier rejects renewed descriptor growth.
+
+The 65536 soft limit and 4096-descriptor relay rebuild remain as defense in
+depth. Rerun the installer if the verifier reports a 1024 limit, a missing
+backport, or installed-source drift. The threshold is configurable with
+`--grd-fd-restart-threshold`; `0` disables only the fallback guard, not the
+backport.
 
 ## Server restarts every four minutes
 

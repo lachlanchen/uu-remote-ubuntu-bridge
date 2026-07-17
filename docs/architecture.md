@@ -135,6 +135,20 @@ GameViewerServer's Linux PID, re-injects the compatibility DLL after a UU
 restart, and sends the account bootstrap IPC again. If the server remains
 absent for ten seconds or re-injection fails, the inner supervisor exits so
 systemd rebuilds the complete relay instead of leaving a false-active service.
+The same existing supervisor samples GNOME Remote Desktop's descriptor count
+once every ten seconds. The user unit raises its descriptor limit to 65536,
+and the relay is rebuilt at a persistent default threshold of 4096 before
+`libei` can lose keyboard injection to `EMFILE`.
+
+The primary repair is an isolated backport of upstream libei commit
+`ee27dd5c92e4e9496a36ca2d4112049fe02d2269`. Ubuntu 24.04's libei 1.2.1
+duplicated each keymap descriptor but did not close the descriptor received
+from the protocol demarshaller. The installer builds 1.2.1 from a pinned,
+hash-verified archive with that one-line close and places it inside the bridge
+prefix. Only the supervised GNOME RDP process receives its directory through
+`LD_LIBRARY_PATH`; Ubuntu's system library is not replaced. The limit and
+restart threshold remain independent containment if another descriptor leak
+appears.
 Shutdown first stops the supervised producers, then asks Wine's own server to
 exit and applies a bounded fallback only to Wine executables owned by the
 current user whose environment names the dedicated UU prefix. Other Wine

@@ -4,6 +4,32 @@ All notable bridge changes are recorded here. The project uses semantic
 version tags for bridge releases; the separately audited UU version remains
 locked by the release manifest.
 
+## [Unreleased]
+
+### Added
+
+- deterministic installed-runtime digest verification, so a pulled checkout
+  cannot be mistaken for deployed compatibility binaries
+- persistent GNOME RDP descriptor threshold with bounded relay recovery
+- verified, bridge-local backport of upstream libei's received-keymap FD fix
+- a complete debugging journey covering input, lifecycle, deployment, and
+  unattended boot discoveries
+
+### Changed
+
+- raised the supervised GNOME RDP descriptor limit to 65536
+- extended the bounded GDM/keyring startup wait to 120 seconds and retained a
+  visible successful oneshot state
+- pinned unattended GI checks and execution to Ubuntu's system Python so an
+  active Conda environment cannot shadow `python3-gi`
+
+### Fixed
+
+- stopped Ubuntu 24.04's libei 1.2.1 from leaking one `mutter-shared`
+  descriptor for every received keyboard-keymap message
+- made Xvfb lock-file cleanup silent and ownership-safe when the server removes
+  its lock during a supervised restart
+
 ## [0.1.0] - 2026-07-17
 
 First supported handoff release.

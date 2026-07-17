@@ -10,6 +10,7 @@ Restart=on-failure
 RestartSec=3
 TimeoutStopSec=15
 KillMode=control-group
+LimitNOFILE=65536
 
 [Install]
 WantedBy=default.target

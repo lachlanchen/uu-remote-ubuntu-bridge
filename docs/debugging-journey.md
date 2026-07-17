@@ -1,0 +1,225 @@
+# Debugging Journey
+
+This is the evidence trail behind the bridge, including hypotheses that were
+useful but incomplete. It is intentionally free of account tokens, clipboard
+contents, typed characters from private sessions, and proprietary binaries.
+
+## 1. Split the relay into observable hops
+
+The first useful model was not “UU on Linux.” It was a chain of independently
+testable boundaries:
+
+```text
+phone controller
+  -> UU GameViewerServer under Wine
+  -> a capturable Windows relay window
+  -> SDL FreeRDP on private Xvfb
+  -> local GNOME RDP
+  -> the logged-in Ubuntu desktop
+```
+
+Video, pointer motion, button input, physical keyboard input, phone text,
+account presence, and long-running process survival were tested separately.
+This prevented one successful hop from being mistaken for a working system.
+
+## 2. Replace the unavailable kernel-input path
+
+Windows UU preferred its signed `gvinput.sys` virtual HID driver. Wine could
+not load that driver, although the official client still contained a
+user-mode `SendInput` path. Four version-locked executable edits selected that
+existing path. The patcher validates the complete upstream hash, exact
+instruction signatures, and complete patched hash before changing anything.
+
+That made the first input request visible, but the first click still ended the
+remote session. A minimal Windows probe and the bridge diagnostic showed:
+
+```text
+SendInput -> result=0 error=5
+```
+
+The UU service token was unsuitable for Wine input injection. A bounded named
+pipe now carries the original `INPUT` records to a normal user-token broker.
+The broker focuses only the relay window, calls `SendInput`, and returns the
+real count and Windows error. No key code, character, coordinate, or clipboard
+payload is logged.
+
+## 3. Prove stability by elapsed time
+
+An early bridge looked correct but the server disappeared at roughly four
+minutes. Replacing UU's health monitor helped one failure mode without fixing
+the second. Wine's event-log stub aborted the server when UU called
+`EvtOpenPublisherMetadata`.
+
+The injected bridge now returns the ordinary Windows error
+`ERROR_EVT_PUBLISHER_METADATA_NOT_FOUND` at that API boundary. UU handles the
+error and continues. The full verifier checks one server PID for 270 seconds;
+a startup-only check would not have found this fault.
+
+## 4. Distinguish two phone keyboard surfaces
+
+UU's computer-keyboard panel sends physical keyboard events. The phone's
+normal keyboard uses UU's text-input operation. The failure signature was
+specific: ordinary keys worked, while phone text became one repeated letter
+or punctuation.
+
+### The first incomplete hypothesis
+
+The first phone-text patch enabled FreeRDP's `cliprdr` channel. Clipboard
+sharing is useful for copy and paste, and a Windows host followed by RDP can
+make phone text appear related to clipboard transport. However, a test that
+only asserted `+clipboard` on the command line did not test phone input.
+
+UU's own bounded logs provided the decisive evidence:
+
+```text
+KeyboardMouseRunner::execTextInput
+wetpe_ime not install use SendInput
+```
+
+The text operation submitted paired `INPUT_KEYBOARD` records marked
+`KEYEVENTF_UNICODE`. Wine accepted the call, so the old “broker only after
+failure” rule did not run. SDL FreeRDP then interpreted unsuitable synthetic
+Unicode events as physical input.
+
+One diagnostic trap mattered: bridge and broker logs intentionally stop
+recording routine successful calls after a bounded count. An unchanged file
+timestamp after that limit does not prove an API was never called.
+
+### The working correction
+
+The IAT hook now detects any Unicode keyboard record before calling Wine's
+original `SendInput` and routes that complete batch directly to the broker.
+The broker:
+
+1. drops the matching synthetic Unicode key-up record
+2. maps each representable character with `VkKeyScanW`
+3. emits explicit modifier, virtual-key down/up, and modifier-release events
+4. reports UU's original request count only after the whole translated batch
+   succeeds
+5. returns `ERROR_NO_UNICODE_TRANSLATION` instead of emitting a wrong key when
+   a character cannot be represented
+
+The acceptance string `abcXYZ123,.!?` exercises case, shift state, digits, and
+punctuation through the phone's normal keyboard. The current implementation is
+not a general Unicode text engine: CJK characters, emoji, and characters
+outside the active Wine keyboard layout can still fail explicitly.
+
+## 5. Separate source updates from installed runtime
+
+During diagnosis, Git contained the corrected launcher while
+`~/.local/bin/uu-remote-bridge` and the compatibility binaries were still from
+an older installation. The running process therefore retained its old command
+line even though the checkout looked fixed.
+
+The installer now records a deterministic digest of all runtime-affecting
+source, build, manifest, unit, and launcher files. `verify.sh` compares that
+digest with the active installation. A pull without reinstalling is reported
+as runtime drift instead of being mistaken for a deployed fix.
+
+## 6. Find and repair long-running GNOME RDP descriptor growth
+
+After an eight-hour relay session, the GNOME Remote Desktop child showed:
+
+```text
+open descriptors: 1023
+soft limit:        1024
+mutter-shared:     888
+```
+
+Its log repeatedly reported:
+
+```text
+libei bug: Failed to dup keymap fd: Too many open files
+```
+
+This explains input degradation in that live session. The exact upstream
+cause was initially unproven, so the first safe response was containment. A
+fresh relay then made the leak measurable: `mutter-shared` grew from 893 to
+998 over 30 seconds, about 3.5 descriptors per second.
+
+The installed package was `libei1 1.2.1-1`. Upstream commit
+`ee27dd5c92e4e9496a36ca2d4112049fe02d2269` later described the exact defect:
+the received keymap descriptor was duplicated into an `ei_keymap`, but the
+descriptor from the protocol demarshaller was never closed. The upstream fix
+adds that missing close. This matches all local evidence: Mutter creates the
+files as `mutter-shared`, libei receives them, and failure occurs when libei
+can no longer duplicate another keymap FD.
+
+Replacing a desktop-wide system library would have enlarged the risk. The
+bridge instead builds libei 1.2.1 from a hash-verified upstream archive,
+applies that published one-line backport, and installs it inside the dedicated
+bridge prefix. `LD_LIBRARY_PATH` is set only for the supervised GNOME RDP
+child. The system package remains untouched.
+
+Two operational protections remain as defense in depth:
+
+- `LimitNOFILE=65536` gives the supervised GNOME RDP child practical headroom.
+- The existing quarter-second UU supervisor counts GNOME RDP descriptors only
+  once every ten seconds. At the default threshold of 4096 it exits, allowing
+  systemd to rebuild the complete local relay before injection fails.
+
+This adds no second monitoring loop. The threshold is persistent and
+controllable:
+
+```bash
+./install.sh --skip-packages --skip-account-login \
+  --grd-fd-restart-threshold 4096
+```
+
+Use `0` only to disable the guard deliberately.
+
+## 7. Reconstruct what an interactive login supplied
+
+Starting a user service at boot was not enough. UU needs a real GNOME session,
+and GNOME RDP needs its credential from the login keyring. GDM automatic login
+creates the desktop but does not give PAM a password with which to unlock that
+keyring.
+
+The unattended path therefore:
+
+1. preserves the previous GDM values in root-only rollback state
+2. enables automatic login for the selected desktop user
+3. seals the existing keyring password to the local TPM with
+   `systemd-creds`
+4. decrypts it only into systemd's protected runtime credential directory
+5. unlocks the existing login collection over session D-Bus
+6. starts GNOME RDP and the bridge only after that oneshot succeeds
+
+GDM can start the user manager slightly before GNOME Keyring owns the Secret
+Service name. The unlock helper now tolerates that specific race for up to 120
+seconds, and the oneshot remains visibly active after success. A wrong
+credential still fails closed.
+
+The configurator and installed unlock helper use Ubuntu's
+`/usr/bin/python3` explicitly. This prevents an activated Conda environment
+from hiding the system `python3-gi` package and turning an idempotent status or
+enable operation into an unnecessary package-install attempt.
+
+## 8. Treat teardown as a production path
+
+One controlled descriptor-guard restart exposed a harmless but noisy cleanup
+race: Xvfb removed `/tmp/.X20-lock` between process termination and the
+launcher's attempt to read its owner. Because shell redirections happen before
+the command runs, the missing-file message escaped the command's original
+error suppression. Cleanup now checks readability and redirects standard
+error before opening the lock file. It removes a stale lock only when the
+recorded owner is exactly the supervised Xvfb PID.
+
+## 9. Validation matrix
+
+| Boundary | Evidence |
+| --- | --- |
+| Approved UU binary | Full hash and exact patch signatures |
+| Input hook | Initialization record without key content |
+| Normal-token broker | Original count and `error=0` |
+| Phone text | `text=normalized`, plus exact visible acceptance string |
+| Local RDP | Configured port owned by GNOME RDP |
+| Runtime deployment | Installed source digest matches checkout |
+| Descriptor health | Limit and current count below restart threshold |
+| Former timed exit | Same UU server PID after 270 seconds |
+| Unattended boot | Current-boot unit order and successful keyring oneshot |
+
+The broad lesson is to test the complete behavior, not the presence of a flag,
+process, or file. Every useful discovery was converted into either a
+fail-closed check, bounded recovery behavior, a regression test, or an
+explicitly documented limitation.

@@ -23,11 +23,14 @@ uu_dir="$wine_prefix/drive_c/Program Files/Netease/GameViewer"
 uu_bin="$uu_dir/bin"
 release_manifest="${UURB_RELEASE_MANIFEST:-$repo_dir/patches/uu-remote-4.33.0.8907.json}"
 installed_manifest="$wine_prefix/compat/release-manifest.json"
+runtime_digest_file="$wine_prefix/compat/.runtime-source-sha256"
 server_exe=''
 healthd_exe=''
 compat_build="$repo_dir/build/compat"
 freerdp_build="$repo_dir/build/freerdp"
+libei_build="$repo_dir/build/libei"
 freerdp_install="$wine_prefix/drive_c/Program Files/FreeRDP"
+libei_install="$wine_prefix/compat/libei"
 uu_download_url=''
 uu_installer_filename=''
 uu_installer_sha256=''
@@ -42,9 +45,13 @@ saved_setting() {
 saved_rdp_port="$(saved_setting UURB_RDP_PORT)"
 saved_resolution="$(saved_setting UURB_RESOLUTION)"
 saved_display="$(saved_setting UURB_DISPLAY)"
+saved_grd_fd_restart_threshold="$(
+    saved_setting UURB_GRD_FD_RESTART_THRESHOLD
+)"
 rdp_port="${UURB_RDP_PORT:-${saved_rdp_port:-3390}}"
 resolution="${UURB_RESOLUTION:-${saved_resolution:-1920x1080}}"
 bridge_display="${UURB_DISPLAY:-${saved_display:-auto}}"
+grd_fd_restart_threshold="${UURB_GRD_FD_RESTART_THRESHOLD:-${saved_grd_fd_restart_threshold:-4096}}"
 uu_installer=''
 skip_packages=false
 skip_account_login=false
@@ -62,6 +69,9 @@ usage: ./install.sh [options]
   --rdp-port PORT        local GNOME RDP relay port (default: 3390)
   --resolution WxH       relay resolution (default: 1920x1080)
   --display auto|:N      private X display (default: first free from :20)
+  --grd-fd-restart-threshold N
+                         restart before GNOME RDP exhausts descriptors
+                         (default: 4096; 0 disables the guard)
   --skip-packages        do not install Ubuntu/Wine package dependencies
   --skip-account-login   do not open UU for first-time account sign-in
   --unattended           enable TPM-backed startup after an automatic login
@@ -90,6 +100,10 @@ while (($#)); do
             ;;
         --display)
             bridge_display="${2:?--display requires auto or :N}"
+            shift 2
+            ;;
+        --grd-fd-restart-threshold)
+            grd_fd_restart_threshold="${2:?--grd-fd-restart-threshold requires a number}"
             shift 2
             ;;
         --skip-packages)
@@ -160,6 +174,13 @@ if [[ "$bridge_display" != auto &&
     printf 'The private display must be auto or an X display such as :20.\n' >&2
     exit 2
 fi
+if [[ ! "$grd_fd_restart_threshold" =~ ^[0-9]+$ ]] ||
+   ((grd_fd_restart_threshold != 0 &&
+     (grd_fd_restart_threshold < 512 ||
+      grd_fd_restart_threshold > 60000))); then
+    printf 'The GNOME RDP descriptor threshold must be 0 or 512 through 60000.\n' >&2
+    exit 2
+fi
 user_bus="${XDG_RUNTIME_DIR:-/run/user/$UID}/bus"
 if [[ ! -S "$user_bus" ]]; then
     printf 'The systemd user bus is unavailable at %s.\n' "$user_bus" >&2
@@ -204,9 +225,9 @@ install_packages() {
     sudo apt-get install -y \
         acl aria2 ca-certificates cmake crudini curl freerdp3-x11 \
         gcc-mingw-w64-x86-64 \
-        git gnome-remote-desktop jq libsecret-tools ninja-build openbox \
-        openssl p7zip-full python3 python3-gi tar x11-utils xauth xdotool xvfb \
-        zstd
+        git gnome-remote-desktop jq libsecret-tools libxml2-utils meson \
+        ninja-build openbox openssl p7zip-full patch python3 python3-attr \
+        python3-gi python3-jinja2 tar x11-utils xauth xdotool xvfb zstd
     install_winehq
 }
 
@@ -257,7 +278,8 @@ if [[ "$skip_packages" == false ]]; then
     install_packages
 fi
 
-for command in curl sha256sum /usr/bin/systemctl timeout \
+for command in curl meson ninja patch readelf sha256sum /usr/bin/systemctl \
+    timeout \
     "$grdctl_bin" "$openssl_bin" "$python_bin" "$secret_tool_bin" \
     "$wine_bin" "$wineserver_bin" /usr/bin/Xvfb /usr/bin/gsettings \
     /usr/bin/mcookie /usr/bin/openbox /usr/bin/ss /usr/bin/xauth \
@@ -347,8 +369,9 @@ fi
 
 "$repo_dir/scripts/build-compat.sh" "$compat_build"
 "$repo_dir/scripts/build-winpr.sh" "$freerdp_build"
+"$repo_dir/scripts/build-libei.sh" "$libei_build"
 
-mkdir -p "$wine_prefix/compat" "$freerdp_install"
+mkdir -p "$wine_prefix/compat" "$freerdp_install" "$libei_install"
 install -m 0644 "$release_manifest" "$installed_manifest"
 install -m 0755 \
     "$compat_build/uu-input-bridge.dll" \
@@ -364,9 +387,16 @@ install -m 0755 "$freerdp_build/"*.dll "$freerdp_build/sdl-freerdp.exe" \
     "$freerdp_install/"
 install -m 0755 "$compat_build/winpr-sspi-shim.dll" \
     "$freerdp_install/winpr-sspi-shim.dll"
+install -m 0755 "$libei_build/libei.so.1.2.1" \
+    "$libei_install/libei.so.1.2.1"
+ln -sfn libei.so.1.2.1 "$libei_install/libei.so.1"
 mkdir -p "$freerdp_install/ossl-modules"
 install -m 0755 "$freerdp_build/ossl-modules/legacy.dll" \
     "$freerdp_install/ossl-modules/legacy.dll"
+runtime_digest_tmp="$(mktemp "$wine_prefix/compat/.runtime-source-sha256.XXXXXX")"
+"$repo_dir/scripts/runtime-source-digest" >"$runtime_digest_tmp"
+chmod 0644 "$runtime_digest_tmp"
+mv "$runtime_digest_tmp" "$runtime_digest_file"
 
 healthd_backup="$healthd_exe.uu-original"
 healthd_current_hash="$(sha256sum "$healthd_exe" | awk '{print $1}')"
@@ -390,6 +420,8 @@ environment_tmp="$(mktemp "$config_dir/.environment.XXXXXX")"
 printf 'UURB_RDP_PORT=%s\n' "$rdp_port" >"$environment_tmp"
 printf 'UURB_RESOLUTION=%s\n' "$resolution" >>"$environment_tmp"
 printf 'UURB_DISPLAY=%s\n' "$bridge_display" >>"$environment_tmp"
+printf 'UURB_GRD_FD_RESTART_THRESHOLD=%s\n' \
+    "$grd_fd_restart_threshold" >>"$environment_tmp"
 chmod 0600 "$environment_tmp"
 mv "$environment_tmp" "$environment_file"
 install -m 0755 "$repo_dir/scripts/uu-remote-bridge" \

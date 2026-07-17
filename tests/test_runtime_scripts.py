@@ -56,8 +56,13 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("UURB_RDP_PORT=%s", installer)
         self.assertIn("UURB_RESOLUTION=%s", installer)
         self.assertIn("UURB_DISPLAY=%s", installer)
+        self.assertIn("UURB_GRD_FD_RESTART_THRESHOLD=%s", installer)
         self.assertIn("EnvironmentFile=-%h/.config/uu-remote-bridge/environment", unit)
         self.assertIn('bridge_display="${UURB_DISPLAY:-auto}"', launcher)
+        self.assertIn(
+            'grd_fd_restart_threshold="${UURB_GRD_FD_RESTART_THRESHOLD:-4096}"',
+            launcher,
+        )
         self.assertIn("/tmp/.X11-unix/X$display_number", launcher)
         self.assertIn("saved_setting UURB_RDP_PORT", verifier)
         self.assertIn("restore_bridge_after_failure", installer)
@@ -111,7 +116,38 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn('kill -KILL "$pid"', launcher)
         self.assertNotIn('wait "$pid"', launcher)
         self.assertIn('"$lock_pid" == "$xvfb_pid"', launcher)
+        self.assertIn('[[ -r "$display_lock" ]]', launcher)
         self.assertIn('rm -f "$display_lock" "$display_socket"', launcher)
+
+    def test_gnome_rdp_descriptor_exhaustion_is_bounded(self):
+        installer = (REPOSITORY / "install.sh").read_text()
+        launcher = (REPOSITORY / "scripts" / "uu-remote-bridge").read_text()
+        libei_builder = (REPOSITORY / "scripts" / "build-libei.sh").read_text()
+        libei_patch = (
+            REPOSITORY / "patches" / "libei-1.2.1-close-keymap-fd.patch"
+        ).read_text()
+        unit = (REPOSITORY / "systemd" / "uu-remote-bridge.service").read_text()
+        verifier = (REPOSITORY / "scripts" / "verify.sh").read_text()
+
+        self.assertIn("scripts/build-libei.sh", installer)
+        self.assertIn("7e06f06aa4dd1f7d", libei_builder)
+        self.assertIn("xclose (keymap_fd)", libei_patch)
+        self.assertIn('"LD_LIBRARY_PATH=$libei_dir"', launcher)
+        self.assertIn("--grd-fd-restart-threshold", installer)
+        self.assertIn("grd_fd_restart_threshold > 0", launcher)
+        self.assertIn("restarting the relay before exhaustion", launcher)
+        self.assertIn("LimitNOFILE=65536", unit)
+        self.assertIn("GNOME RDP descriptor limit", verifier)
+        self.assertIn("descriptor growth stayed bounded", verifier)
+
+    def test_installed_runtime_drift_is_detected(self):
+        installer = (REPOSITORY / "install.sh").read_text()
+        verifier = (REPOSITORY / "scripts" / "verify.sh").read_text()
+        digest = REPOSITORY / "scripts" / "runtime-source-digest"
+
+        self.assertTrue(digest.exists())
+        self.assertIn(".runtime-source-sha256", installer)
+        self.assertIn("installed runtime matches this source checkout", verifier)
 
     def test_verifier_cannot_confuse_xrdp_with_gnome_rdp(self):
         verifier = (REPOSITORY / "scripts" / "verify.sh").read_text()

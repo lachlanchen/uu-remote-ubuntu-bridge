@@ -78,6 +78,19 @@ Requested ports and fixed displays are checked before use. A conflicting
 non-GNOME listener fails closed, and an installer error restarts a bridge that
 was active before the attempted upgrade.
 
+Ubuntu 24.04's libei 1.2.1 leaks the received keyboard-keymap descriptor after
+duplicating it. The installer builds the exact upstream one-line fix from a
+hash-verified 1.2.1 archive and loads that library only into this bridge's
+GNOME RDP child. A raised child limit and persistent 4096-descriptor relay
+guard remain as defense in depth:
+
+```bash
+./install.sh --skip-packages --skip-account-login \
+  --grd-fd-restart-threshold 4096
+```
+
+Set the threshold to `0` only when deliberately disabling that guard.
+
 ### Update an existing installation
 
 Use the latest supported tag without deleting UU account state or changing the
@@ -160,6 +173,9 @@ Wine denies `SendInput` from UU's service token, a bounded broker repeats the
 same input request from a normal user Wine process.
 
 [Read the complete architecture](docs/architecture.md).
+The [debugging journey](docs/debugging-journey.md) records the failed
+hypotheses, decisive evidence, Unicode keyboard correction, deployment-drift
+check, descriptor protection, and unattended boot dependency chain.
 
 ## Daily commands
 
@@ -174,7 +190,9 @@ scripts/verify.sh
 ```
 
 The full verifier waits 270 seconds and proves the same server PID crosses
-UU's former four-minute failure interval.
+UU's former four-minute failure interval. It also confirms that the installed
+runtime was built from the current checkout and that GNOME RDP remains below
+its guarded descriptor threshold.
 
 ## Updating for a new UU release
 

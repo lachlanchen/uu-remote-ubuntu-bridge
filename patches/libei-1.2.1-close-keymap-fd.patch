@@ -1,0 +1,29 @@
+From ee27dd5c92e4e9496a36ca2d4112049fe02d2269 Mon Sep 17 00:00:00 2001
+From: Jonas Ådahl <jadahl@gmail.com>
+Date: Thu, 22 May 2025 22:43:35 +0200
+Subject: [PATCH] ei-device: Don't leak fd when receiving the keymap
+
+The ei_keymap dups the file descriptor, so close the descriptor received
+from the demarshaller.
+
+Backport of upstream libei commit:
+https://gitlab.freedesktop.org/libinput/libei/-/commit/ee27dd5c92e4e9496a36ca2d4112049fe02d2269
+---
+ src/libei-device.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/libei-device.c b/src/libei-device.c
+index d1dcd7c..11ac2a2 100644
+--- a/src/libei-device.c
++++ b/src/libei-device.c
+@@ -725,6 +725,7 @@ handle_msg_keymap(struct ei_keyboard *keyboard, uint32_t keymap_type, uint32_t k
+ 	struct ei_device *device = ei_keyboard_get_device(keyboard);
+ 
+ 	ei_device_set_keymap(device, keymap_type, keymap_fd, keymap_sz);
++	xclose (keymap_fd);
+ 
+ 	return NULL;
+ }
+-- 
+2.43.0
+
