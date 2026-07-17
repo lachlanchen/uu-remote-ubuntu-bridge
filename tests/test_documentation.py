@@ -57,6 +57,24 @@ class DocumentationTests(unittest.TestCase):
         }
         self.assertEqual(TRANSLATIONS, actual)
 
+    def test_release_handoff_has_required_update_controls(self) -> None:
+        changelog = (REPO_DIR / "CHANGELOG.md").read_text(encoding="utf-8")
+        release = (REPO_DIR / "docs/releases/v0.1.0.md").read_text(
+            encoding="utf-8"
+        )
+        handoff = (REPO_DIR / "docs/update-handoff.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("## [0.1.0] - 2026-07-17", changelog)
+        self.assertIn("git checkout v0.1.0", release)
+        self.assertIn("--skip-account-login", release)
+        self.assertIn("./scripts/verify.sh --quick", release)
+        self.assertIn("git checkout 8a68200", release)
+        self.assertIn("Copy-ready update message", handoff)
+        self.assertIn("abcXYZ123,.!?", handoff)
+        self.assertIn("Do not discard a dirty worktree", handoff)
+
 
 if __name__ == "__main__":
     unittest.main()

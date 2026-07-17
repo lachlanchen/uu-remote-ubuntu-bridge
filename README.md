@@ -78,6 +78,25 @@ Requested ports and fixed displays are checked before use. A conflicting
 non-GNOME listener fails closed, and an installer error restarts a bridge that
 was active before the attempted upgrade.
 
+### Update an existing installation
+
+Use the latest supported tag without deleting UU account state or changing the
+saved relay settings:
+
+```bash
+cd ~/Projects/uu-remote-ubuntu-bridge
+git status --short
+git fetch --tags origin
+git checkout v0.1.0
+./install.sh --skip-packages --skip-account-login
+./scripts/verify.sh --quick
+```
+
+Stop if the status command reports local changes. Installation briefly restarts
+the relay. Read the [v0.1.0 release notes](docs/releases/v0.1.0.md) and use the
+[copy-ready operator handoff](docs/update-handoff.md) when updating another
+authorized machine.
+
 Use an already downloaded installer or a future approved release manifest:
 
 ```bash
@@ -208,6 +227,7 @@ The RDP hop targets loopback and pins GNOME's certificate fingerprint.
 | Path | Purpose |
 | --- | --- |
 | `patches/` | Versioned approved UU identities and patch signatures |
+| `CHANGELOG.md` | Tagged bridge release history and upgrade entry points |
 | `src/` | Input hook, broker, injector, service helper, and SSPI shim |
 | `scripts/gameviewer_patchlib.py` | Generic release-manifest engine |
 | `scripts/patch-gameviewer.py` | Patch, verify, status, field, and restore CLI |
@@ -225,6 +245,9 @@ ID, raw production log, screenshot, or private desktop content is committed.
 ## Documentation
 
 - [Architecture](docs/architecture.md)
+- [Changelog](CHANGELOG.md)
+- [v0.1.0 release notes](docs/releases/v0.1.0.md)
+- [Update handoff for another operator](docs/update-handoff.md)
 - [Unattended startup after reboot](docs/unattended-startup.md)
 - [Methodology and tool inventory](docs/methodology-and-toolkit.md)
 - [Reverse-engineering record with exact `xxd` and `objdump` evidence](docs/reverse-engineering.md)
