@@ -1,12 +1,18 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <wchar.h>
 
 #define INPUT_BRIDGE_MAGIC 0x42525555UL
 #define INPUT_BRIDGE_MAX_INPUTS 64UL
 #define INPUT_BRIDGE_MAX_TRANSLATED_INPUTS (INPUT_BRIDGE_MAX_INPUTS * 8UL)
+#define INPUT_BRIDGE_MAX_SEGMENTS (INPUT_BRIDGE_MAX_INPUTS + 1UL)
 #define INPUT_BRIDGE_PIPE L"\\\\.\\pipe\\uurb-input-v1"
+#define INPUT_BRIDGE_FOCUS_TIMEOUT_MS 300UL
+#define INPUT_BRIDGE_DEFAULT_TEXT_KEY_DELAY_MS 8UL
+#define INPUT_BRIDGE_MAX_TEXT_KEY_DELAY_MS 50UL
 
 typedef struct input_bridge_request {
     DWORD magic;
@@ -19,8 +25,17 @@ typedef struct input_bridge_response {
     DWORD error;
 } input_bridge_response;
 
+typedef struct input_segment {
+    DWORD offset;
+    DWORD count;
+    BOOL text;
+} input_segment;
+
 static HANDLE log_file = INVALID_HANDLE_VALUE;
 static volatile LONG input_call_count;
+static volatile LONG routine_call_count;
+static volatile LONG text_call_count;
+static DWORD text_key_delay_ms = INPUT_BRIDGE_DEFAULT_TEXT_KEY_DELAY_MS;
 
 static void write_log(const char *message)
 {
@@ -29,7 +44,12 @@ static void write_log(const char *message)
     if (log_file == INVALID_HANDLE_VALUE)
         return;
     WriteFile(log_file, message, (DWORD)strlen(message), &written, NULL);
-    FlushFileBuffers(log_file);
+}
+
+static void flush_log(void)
+{
+    if (log_file != INVALID_HANDLE_VALUE)
+        FlushFileBuffers(log_file);
 }
 
 static BOOL write_all(HANDLE handle, const void *buffer, DWORD size)
@@ -138,46 +158,86 @@ static BOOL append_character_chord(WCHAR character, INPUT *inputs,
     return TRUE;
 }
 
+static BOOL append_segment(input_segment *segments, DWORD *segment_count,
+                           DWORD offset, DWORD count, BOOL text)
+{
+    input_segment *segment;
+
+    if (count == 0)
+        return TRUE;
+    if (*segment_count >= INPUT_BRIDGE_MAX_SEGMENTS)
+        return FALSE;
+
+    segment = &segments[*segment_count];
+    segment->offset = offset;
+    segment->count = count;
+    segment->text = text;
+    (*segment_count)++;
+    return TRUE;
+}
+
 static BOOL translate_inputs(DWORD source_count, const INPUT *source,
                              INPUT *translated, DWORD *translated_count,
+                             input_segment *segments, DWORD *segment_count,
                              BOOL *normalized_unicode)
 {
     DWORD index;
+    DWORD ordinary_count = 0;
+    DWORD ordinary_offset = 0;
 
     *translated_count = 0;
+    *segment_count = 0;
     *normalized_unicode = FALSE;
     for (index = 0; index < source_count; index++) {
         const INPUT *input = &source[index];
 
         if (input->type == INPUT_KEYBOARD &&
             (input->ki.dwFlags & KEYEVENTF_UNICODE) != 0) {
+            DWORD chord_offset;
+
             *normalized_unicode = TRUE;
+            if (!append_segment(segments, segment_count, ordinary_offset,
+                                ordinary_count, FALSE))
+                return FALSE;
+            ordinary_count = 0;
             if ((input->ki.dwFlags & KEYEVENTF_KEYUP) != 0)
                 continue;
+            chord_offset = *translated_count;
             if (!append_character_chord((WCHAR)input->ki.wScan, translated,
                                         translated_count))
+                return FALSE;
+            if (!append_segment(segments, segment_count, chord_offset,
+                                *translated_count - chord_offset, TRUE))
                 return FALSE;
             continue;
         }
 
         if (*translated_count >= INPUT_BRIDGE_MAX_TRANSLATED_INPUTS)
             return FALSE;
+        if (ordinary_count == 0)
+            ordinary_offset = *translated_count;
         translated[*translated_count] = *input;
         (*translated_count)++;
+        ordinary_count++;
     }
 
-    return TRUE;
+    return append_segment(segments, segment_count, ordinary_offset,
+                          ordinary_count, FALSE);
 }
 
 static DWORD send_relay_inputs(DWORD source_count, const INPUT *source,
-                               DWORD *error, BOOL *normalized_unicode)
+                               DWORD *error, BOOL *normalized_unicode,
+                               DWORD *paced_characters)
 {
     INPUT translated[INPUT_BRIDGE_MAX_TRANSLATED_INPUTS];
+    input_segment segments[INPUT_BRIDGE_MAX_SEGMENTS];
     DWORD translated_count;
-    UINT sent;
+    DWORD segment_count;
+    DWORD index;
 
+    *paced_characters = 0;
     if (!translate_inputs(source_count, source, translated, &translated_count,
-                          normalized_unicode)) {
+                          segments, &segment_count, normalized_unicode)) {
         *error = ERROR_NO_UNICODE_TRANSLATION;
         return 0;
     }
@@ -187,14 +247,75 @@ static DWORD send_relay_inputs(DWORD source_count, const INPUT *source,
         return source_count;
     }
 
-    SetLastError(ERROR_SUCCESS);
-    sent = SendInput(translated_count, translated, sizeof(INPUT));
-    *error = GetLastError();
-    if (sent != translated_count)
-        return 0;
+    for (index = 0; index < segment_count; index++) {
+        const input_segment *segment = &segments[index];
+        UINT sent;
+
+        SetLastError(ERROR_SUCCESS);
+        sent = SendInput(segment->count, translated + segment->offset,
+                         sizeof(INPUT));
+        *error = GetLastError();
+        if (sent != segment->count)
+            return 0;
+        if (segment->text) {
+            (*paced_characters)++;
+            if (text_key_delay_ms > 0)
+                Sleep(text_key_delay_ms);
+        }
+    }
 
     *error = ERROR_SUCCESS;
     return source_count;
+}
+
+static BOOL request_relay_focus(DWORD *waited_ms)
+{
+    HWND relay = FindWindowW(NULL, L"Ubuntu-Desktop-Relay");
+    DWORD elapsed = 0;
+
+    *waited_ms = 0;
+    if (relay == NULL) {
+        SetLastError(ERROR_NOT_READY);
+        return FALSE;
+    }
+    if (GetForegroundWindow() == relay)
+        return TRUE;
+
+    if (IsIconic(relay))
+        ShowWindow(relay, SW_RESTORE);
+    while (elapsed <= INPUT_BRIDGE_FOCUS_TIMEOUT_MS) {
+        if (elapsed == 0 || elapsed % 50 == 0)
+            SetForegroundWindow(relay);
+        if (GetForegroundWindow() == relay) {
+            *waited_ms = elapsed;
+            return TRUE;
+        }
+        Sleep(5);
+        elapsed += 5;
+    }
+
+    *waited_ms = elapsed;
+    SetLastError(ERROR_NOT_READY);
+    return FALSE;
+}
+
+static DWORD configured_text_key_delay(void)
+{
+    wchar_t value[16];
+    wchar_t *end = NULL;
+    DWORD length;
+    unsigned long parsed;
+
+    length = GetEnvironmentVariableW(L"UURB_TEXT_KEY_DELAY_MS", value,
+                                     ARRAYSIZE(value));
+    if (length == 0 || length >= ARRAYSIZE(value))
+        return INPUT_BRIDGE_DEFAULT_TEXT_KEY_DELAY_MS;
+
+    parsed = wcstoul(value, &end, 10);
+    if (end == value || *end != L'\0' ||
+        parsed > INPUT_BRIDGE_MAX_TEXT_KEY_DELAY_MS)
+        return INPUT_BRIDGE_DEFAULT_TEXT_KEY_DELAY_MS;
+    return (DWORD)parsed;
 }
 
 static void serve_client(HANDLE pipe)
@@ -203,11 +324,14 @@ static void serve_client(HANDLE pipe)
         input_bridge_request request;
         input_bridge_response response;
         INPUT inputs[INPUT_BRIDGE_MAX_INPUTS];
-        HWND relay;
-        char line[256];
+        char line[384];
         DWORD first_type = (DWORD)-1;
         DWORD first_flags = 0;
+        DWORD focus_wait_ms = 0;
+        DWORD paced_characters = 0;
         LONG call_number;
+        LONG category_call_number;
+        BOOL focus_ready;
         BOOL normalized_unicode = FALSE;
 
         if (!read_all(pipe, &request, sizeof(request)))
@@ -219,32 +343,53 @@ static void serve_client(HANDLE pipe)
         if (!read_all(pipe, inputs, request.count * sizeof(INPUT)))
             return;
 
-        relay = FindWindowW(NULL, L"Ubuntu-Desktop-Relay");
-        if (relay != NULL) {
-            SetForegroundWindow(relay);
-            SetFocus(relay);
-        }
+        focus_ready = request_relay_focus(&focus_wait_ms);
+        if (focus_ready) {
+            response.result = send_relay_inputs(request.count, inputs,
+                                                &response.error,
+                                                &normalized_unicode,
+                                                &paced_characters);
+        } else {
+            DWORD index;
 
-        response.result = send_relay_inputs(request.count, inputs,
-                                            &response.error,
-                                            &normalized_unicode);
+            response.result = 0;
+            response.error = GetLastError();
+            for (index = 0; index < request.count; index++) {
+                if (inputs[index].type == INPUT_KEYBOARD &&
+                    (inputs[index].ki.dwFlags & KEYEVENTF_UNICODE) != 0) {
+                    normalized_unicode = TRUE;
+                    break;
+                }
+            }
+        }
         first_type = inputs[0].type;
         if (first_type == INPUT_MOUSE)
             first_flags = inputs[0].mi.dwFlags;
         else if (first_type == INPUT_KEYBOARD)
             first_flags = inputs[0].ki.dwFlags;
         call_number = InterlockedIncrement(&input_call_count);
-        if (call_number <= 500 || response.result != request.count) {
+        category_call_number = InterlockedIncrement(
+            normalized_unicode ? &text_call_count : &routine_call_count);
+        if ((normalized_unicode && category_call_number <= 256) ||
+            (!normalized_unicode && category_call_number <= 64) ||
+            response.result != request.count) {
             _snprintf(
                 line, sizeof(line),
-                "call=%ld count=%lu type=%lu flags=0x%08lx text=%s result=%lu error=%lu\r\n",
-                call_number, (unsigned long)request.count,
+                "call=%ld category-call=%ld count=%lu type=%lu flags=0x%08lx text=%s focus=%s focus-wait-ms=%lu paced=%lu delay-ms=%lu result=%lu error=%lu\r\n",
+                call_number, category_call_number,
+                (unsigned long)request.count,
                 (unsigned long)first_type, (unsigned long)first_flags,
                 normalized_unicode ? "normalized" : "unchanged",
+                focus_ready ? "ready" : "timeout",
+                (unsigned long)focus_wait_ms,
+                (unsigned long)paced_characters,
+                (unsigned long)text_key_delay_ms,
                 (unsigned long)response.result,
                 (unsigned long)response.error);
             line[sizeof(line) - 1] = '\0';
             write_log(line);
+            if (response.result != request.count)
+                flush_log();
         }
         if (!write_all(pipe, &response, sizeof(response)))
             return;
@@ -275,7 +420,18 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous,
     log_file = CreateFileW(log_path, FILE_APPEND_DATA,
                            FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
                            OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    write_log("UU input broker active\r\n");
+    text_key_delay_ms = configured_text_key_delay();
+    {
+        char line[128];
+
+        _snprintf(line, sizeof(line),
+                  "UU input broker active text-delay-ms=%lu focus-timeout-ms=%lu\r\n",
+                  (unsigned long)text_key_delay_ms,
+                  (unsigned long)INPUT_BRIDGE_FOCUS_TIMEOUT_MS);
+        line[sizeof(line) - 1] = '\0';
+        write_log(line);
+        flush_log();
+    }
 
     for (;;) {
         HANDLE pipe = CreateNamedPipeW(

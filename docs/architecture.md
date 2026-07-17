@@ -97,8 +97,10 @@ described in `reverse-engineering.md`.
 The UU service creates GameViewerServer with a token for which Wine rejects
 `SendInput` with error 5. `uu-input-bridge.dll` first calls the original API;
 only when that call fails does it forward the exact bounded `INPUT` array to a
-normal user Wine process over a local named pipe. The broker focuses the relay
-window and calls `SendInput`, returning the real count and error code to UU.
+normal user Wine process over a local named pipe. The broker requests focus for
+the relay window and confirms it became the foreground window within a bounded
+300 ms before calling `SendInput`. It returns the real count and error code to
+UU only after that boundary succeeds.
 
 No key code, Unicode character, clipboard payload, or text is written to the
 diagnostic logs.
@@ -112,9 +114,18 @@ physical scancodes and misreads Wine's synthetic Unicode events, typically as
 one repeated letter or punctuation key. The bridge routes Unicode batches
 directly to the broker, where each representable character is converted with
 `VkKeyScanW` into an ordinary virtual-key chord before it reaches SDL FreeRDP.
-The original request count is returned to UU only after every translated event
-is accepted. Unsupported characters fail explicitly rather than being emitted
-as an unrelated key.
+Character chords are submitted separately with a persistent, configurable 8 ms
+delay so the SDL/RDP event loop can consume each chord before UU sends the next
+one. The original request count is returned to UU only after focus is confirmed
+and every translated event is accepted. Unsupported characters fail explicitly
+rather than being emitted as an unrelated key.
+
+Routine diagnostics use separate bounded quotas for text and non-text calls,
+and successful events are not synchronously forced to disk. This keeps early
+mouse traffic from both adding input latency and hiding later text telemetry.
+Failures are still flushed immediately. Logs contain only counts, route, focus
+state, pacing metadata, and result codes; they never contain the key or
+character value.
 
 The separate RDP `cliprdr` channel remains enabled for normal copy and paste;
 it is not the transport used by UU's native phone keyboard in 4.33.0.8907.

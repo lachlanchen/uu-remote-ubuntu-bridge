@@ -28,6 +28,8 @@ static HANDLE broker_pipe = INVALID_HANDLE_VALUE;
 static CRITICAL_SECTION broker_lock;
 static BOOL broker_lock_initialized;
 static volatile LONG input_call_count;
+static volatile LONG routine_call_count;
+static volatile LONG text_call_count;
 
 static EVT_HANDLE WINAPI safe_evt_open_publisher_metadata(
     EVT_HANDLE session, LPCWSTR publisher_identity, LPCWSTR log_file_path,
@@ -51,7 +53,12 @@ static void write_log(const char *message)
         return;
 
     WriteFile(log_file, message, (DWORD)strlen(message), &written, NULL);
-    FlushFileBuffers(log_file);
+}
+
+static void flush_log(void)
+{
+    if (log_file != INVALID_HANDLE_VALUE)
+        FlushFileBuffers(log_file);
 }
 
 static void open_log(void)
@@ -191,12 +198,11 @@ static UINT WINAPI bridged_send_input(UINT count, LPINPUT inputs, int size)
     DWORD first_flags = 0;
     BOOL used_broker = FALSE;
     BOOL unicode_keyboard;
+    LONG category_call_number;
 
     relay = find_relay_window();
-    if (relay != NULL) {
+    if (relay != NULL)
         SetForegroundWindow(relay);
-        SetFocus(relay);
-    }
 
     if (count > 0 && inputs != NULL && size == (int)sizeof(INPUT)) {
         first_type = inputs[0].type;
@@ -222,16 +228,22 @@ static UINT WINAPI bridged_send_input(UINT count, LPINPUT inputs, int size)
         }
     }
     call_number = InterlockedIncrement(&input_call_count);
+    category_call_number = InterlockedIncrement(
+        unicode_keyboard ? &text_call_count : &routine_call_count);
 
-    if (call_number <= 500 || result != count) {
+    if ((unicode_keyboard && category_call_number <= 256) ||
+        (!unicode_keyboard && category_call_number <= 64) ||
+        result != count) {
         _snprintf(line, sizeof(line),
-                  "call=%ld count=%lu type=%lu flags=0x%08lx route=%s result=%lu error=%lu\r\n",
-                  call_number, (unsigned long)count,
+                  "call=%ld category-call=%ld count=%lu type=%lu flags=0x%08lx route=%s result=%lu error=%lu\r\n",
+                  call_number, category_call_number, (unsigned long)count,
                   (unsigned long)first_type, (unsigned long)first_flags,
                   used_broker ? "broker" : "direct",
                   (unsigned long)result, (unsigned long)error);
         line[sizeof(line) - 1] = '\0';
         write_log(line);
+        if (result != count)
+            flush_log();
     }
 
     return result;
@@ -330,6 +342,7 @@ static DWORD WINAPI initialize_bridge(void *unused)
     write_log(event_log_patched
                   ? "UU Wine event-log compatibility active\r\n"
                   : "UU bridge could not find event-log import\r\n");
+    flush_log();
     return input_patched && event_log_patched ? 0 : 1;
 }
 

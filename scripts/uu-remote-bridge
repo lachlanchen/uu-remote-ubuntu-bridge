@@ -7,6 +7,7 @@ bridge_display="${UURB_DISPLAY:-auto}"
 rdp_port="${UURB_RDP_PORT:-3390}"
 resolution="${UURB_RESOLUTION:-1920x1080}"
 grd_fd_restart_threshold="${UURB_GRD_FD_RESTART_THRESHOLD:-4096}"
+text_key_delay_ms="${UURB_TEXT_KEY_DELAY_MS:-8}"
 manager_display="${DISPLAY:-}"
 manager_wayland="${WAYLAND_DISPLAY:-}"
 manager_session_type="${XDG_SESSION_TYPE:-}"
@@ -21,8 +22,9 @@ if [[ "$bridge_display" != auto &&
       ! "$bridge_display" =~ ^:(0|[1-9][0-9]{0,2})$ ]] ||
    [[ ! "$rdp_port" =~ ^[1-9][0-9]{0,4}$ ]] ||
    [[ ! "$resolution" =~ ^[1-9][0-9]{2,4}x[1-9][0-9]{2,4}$ ]] ||
-   [[ ! "$grd_fd_restart_threshold" =~ ^[0-9]+$ ]]; then
-    printf 'Invalid UURB display, RDP port, resolution, or descriptor setting.\n' >&2
+   [[ ! "$grd_fd_restart_threshold" =~ ^[0-9]+$ ]] ||
+   [[ ! "$text_key_delay_ms" =~ ^[0-9]+$ ]]; then
+    printf 'Invalid UURB display, RDP port, resolution, descriptor, or keyboard setting.\n' >&2
     exit 2
 fi
 resolution_width="${resolution%x*}"
@@ -32,8 +34,9 @@ if ((rdp_port < 1024 || rdp_port > 65535 ||
      resolution_height < 480 || resolution_height > 16384 ||
      (grd_fd_restart_threshold != 0 &&
       (grd_fd_restart_threshold < 512 ||
-       grd_fd_restart_threshold > 60000)))); then
-    printf 'UURB port, resolution, or descriptor threshold is outside the supported range.\n' >&2
+       grd_fd_restart_threshold > 60000)) ||
+     text_key_delay_ms > 50)); then
+    printf 'UURB port, resolution, descriptor threshold, or keyboard delay is outside the supported range.\n' >&2
     exit 2
 fi
 
@@ -67,6 +70,7 @@ export OPENSSL_MODULES='C:\Program Files\FreeRDP\ossl-modules'
 export SDL_RENDER_DRIVER=software
 export UU_INPUT_BRIDGE_LOG="C:\\users\\$bridge_user\\Temp\\uu-input-bridge.log"
 export UU_INPUT_BROKER_LOG="C:\\users\\$bridge_user\\Temp\\uu-input-broker.log"
+export UURB_TEXT_KEY_DELAY_MS="$text_key_delay_ms"
 export PATH="/opt/wine-stable/bin:/usr/bin:/bin"
 
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/uu-remote-bridge"

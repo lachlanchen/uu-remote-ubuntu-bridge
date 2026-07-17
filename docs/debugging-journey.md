@@ -223,3 +223,37 @@ The broad lesson is to test the complete behavior, not the presence of a flag,
 process, or file. Every useful discovery was converted into either a
 fail-closed check, bounded recovery behavior, a regression test, or an
 explicitly documented limitation.
+
+## 10. Do not equate `SendInput` acceptance with delivered text
+
+A later controller test exposed a subtler failure: typing worked, but fast
+phone input needed repeated taps and omitted characters. The current broker
+generation recorded 54 normalized Unicode requests and 446 routine requests;
+all returned their exact source count with `error=0`. Most text requests were
+the expected two-record Unicode down/up pair. There was no current descriptor
+exhaustion and no pipe failure.
+
+That evidence moved the fault boundary downstream of the API return. The
+broker was asking Wine to enqueue whole translated bursts immediately after an
+unchecked `SetForegroundWindow`, then reporting success. It also synchronously
+flushed early routine diagnostics, mostly mouse motion, on the serial input
+path. Neither behavior proves that SDL FreeRDP has focused and consumed a key.
+
+The correction has three parts:
+
+1. confirm that `Ubuntu-Desktop-Relay` is the foreground window, retrying for
+   at most 300 ms and failing explicitly if focus cannot be acquired
+2. preserve request ordering but submit translated text as individual
+   character chords, waiting 8 ms per character by default before acknowledging
+   the source request
+3. use separate bounded text/routine telemetry quotas, buffer successful logs,
+   and flush failures immediately
+
+The delay is persisted as `UURB_TEXT_KEY_DELAY_MS` and can be changed safely:
+
+```bash
+./install.sh --skip-packages --skip-account-login --text-key-delay-ms 8
+```
+
+The diagnostic line records only `focus`, `focus-wait-ms`, `paced`,
+`delay-ms`, counts, and result codes. It does not record what was typed.

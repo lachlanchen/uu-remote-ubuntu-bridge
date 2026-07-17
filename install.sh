@@ -48,10 +48,12 @@ saved_display="$(saved_setting UURB_DISPLAY)"
 saved_grd_fd_restart_threshold="$(
     saved_setting UURB_GRD_FD_RESTART_THRESHOLD
 )"
+saved_text_key_delay_ms="$(saved_setting UURB_TEXT_KEY_DELAY_MS)"
 rdp_port="${UURB_RDP_PORT:-${saved_rdp_port:-3390}}"
 resolution="${UURB_RESOLUTION:-${saved_resolution:-1920x1080}}"
 bridge_display="${UURB_DISPLAY:-${saved_display:-auto}}"
 grd_fd_restart_threshold="${UURB_GRD_FD_RESTART_THRESHOLD:-${saved_grd_fd_restart_threshold:-4096}}"
+text_key_delay_ms="${UURB_TEXT_KEY_DELAY_MS:-${saved_text_key_delay_ms:-8}}"
 uu_installer=''
 skip_packages=false
 skip_account_login=false
@@ -72,6 +74,8 @@ usage: ./install.sh [options]
   --grd-fd-restart-threshold N
                          restart before GNOME RDP exhausts descriptors
                          (default: 4096; 0 disables the guard)
+  --text-key-delay-ms N  pace relayed phone text by 0-50 ms per character
+                         (default: 8)
   --skip-packages        do not install Ubuntu/Wine package dependencies
   --skip-account-login   do not open UU for first-time account sign-in
   --unattended           enable TPM-backed startup after an automatic login
@@ -104,6 +108,10 @@ while (($#)); do
             ;;
         --grd-fd-restart-threshold)
             grd_fd_restart_threshold="${2:?--grd-fd-restart-threshold requires a number}"
+            shift 2
+            ;;
+        --text-key-delay-ms)
+            text_key_delay_ms="${2:?--text-key-delay-ms requires a number}"
             shift 2
             ;;
         --skip-packages)
@@ -179,6 +187,11 @@ if [[ ! "$grd_fd_restart_threshold" =~ ^[0-9]+$ ]] ||
      (grd_fd_restart_threshold < 512 ||
       grd_fd_restart_threshold > 60000))); then
     printf 'The GNOME RDP descriptor threshold must be 0 or 512 through 60000.\n' >&2
+    exit 2
+fi
+if [[ ! "$text_key_delay_ms" =~ ^[0-9]+$ ]] ||
+   ((text_key_delay_ms > 50)); then
+    printf 'The text-key delay must be an integer from 0 through 50 ms.\n' >&2
     exit 2
 fi
 user_bus="${XDG_RUNTIME_DIR:-/run/user/$UID}/bus"
@@ -422,6 +435,8 @@ printf 'UURB_RESOLUTION=%s\n' "$resolution" >>"$environment_tmp"
 printf 'UURB_DISPLAY=%s\n' "$bridge_display" >>"$environment_tmp"
 printf 'UURB_GRD_FD_RESTART_THRESHOLD=%s\n' \
     "$grd_fd_restart_threshold" >>"$environment_tmp"
+printf 'UURB_TEXT_KEY_DELAY_MS=%s\n' \
+    "$text_key_delay_ms" >>"$environment_tmp"
 chmod 0600 "$environment_tmp"
 mv "$environment_tmp" "$environment_file"
 install -m 0755 "$repo_dir/scripts/uu-remote-bridge" \

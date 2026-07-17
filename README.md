@@ -63,11 +63,13 @@ official UU window on the logged-in desktop before starting the private relay.
 Complete account sign-in and close that window. Re-running the same command is
 idempotent; unchanged FreeRDP build outputs are checksum-verified and reused.
 
-Port, resolution, and private-display choices are persistent and can be set
+Port, resolution, private-display, and phone-text pacing choices are persistent
+and can be set
 without editing the service:
 
 ```bash
-./install.sh --rdp-port 3391 --resolution 2560x1440 --display auto
+./install.sh --rdp-port 3391 --resolution 2560x1440 --display auto \
+  --text-key-delay-ms 8
 ```
 
 They are validated and stored in
@@ -77,6 +79,12 @@ sessions. A later plain `./install.sh` preserves these choices.
 Requested ports and fixed displays are checked before use. A conflicting
 non-GNOME listener fails closed, and an installer error restarts a bridge that
 was active before the attempted upgrade.
+
+The default 8 ms text-key delay prevents UU's phone keyboard from overwhelming
+the Wine-to-FreeRDP input boundary. The broker confirms that the relay window
+has focus before acknowledging an input request and sends translated text one
+character chord at a time. Values from 0 through 50 ms are accepted; increase
+the delay only if a high-latency controller still drops characters.
 
 Ubuntu 24.04's libei 1.2.1 leaks the received keyboard-keymap descriptor after
 duplicating it. The installer builds the exact upstream one-line fix from a

@@ -17,6 +17,10 @@ locked by the release manifest.
 
 ### Changed
 
+- pace translated phone text one character chord at a time with a persistent,
+  configurable 8 ms default delay
+- split bounded text and routine input telemetry and avoid synchronous disk
+  flushes for successful events on the serial input path
 - raised the supervised GNOME RDP descriptor limit to 65536
 - extended the bounded GDM/keyring startup wait to 120 seconds and retained a
   visible successful oneshot state
@@ -25,6 +29,8 @@ locked by the release manifest.
 
 ### Fixed
 
+- confirm the FreeRDP relay owns foreground focus before acknowledging brokered
+  input, preventing successful API returns from hiding dropped keystrokes
 - stopped Ubuntu 24.04's libei 1.2.1 from leaking one `mutter-shared`
   descriptor for every received keyboard-keymap message
 - made Xvfb lock-file cleanup silent and ownership-safe when the server removes

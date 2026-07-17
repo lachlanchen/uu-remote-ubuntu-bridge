@@ -57,10 +57,15 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("UURB_RESOLUTION=%s", installer)
         self.assertIn("UURB_DISPLAY=%s", installer)
         self.assertIn("UURB_GRD_FD_RESTART_THRESHOLD=%s", installer)
+        self.assertIn("UURB_TEXT_KEY_DELAY_MS=%s", installer)
         self.assertIn("EnvironmentFile=-%h/.config/uu-remote-bridge/environment", unit)
         self.assertIn('bridge_display="${UURB_DISPLAY:-auto}"', launcher)
         self.assertIn(
             'grd_fd_restart_threshold="${UURB_GRD_FD_RESTART_THRESHOLD:-4096}"',
+            launcher,
+        )
+        self.assertIn(
+            'text_key_delay_ms="${UURB_TEXT_KEY_DELAY_MS:-8}"',
             launcher,
         )
         self.assertIn("/tmp/.X11-unix/X$display_number", launcher)
@@ -181,6 +186,12 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("key_mapping_for_character", broker)
         self.assertIn("VkKeyScanW", broker)
         self.assertIn('normalized_unicode ? "normalized"', broker)
+        self.assertIn("request_relay_focus", broker)
+        self.assertIn("INPUT_BRIDGE_FOCUS_TIMEOUT_MS", broker)
+        self.assertIn("Sleep(text_key_delay_ms)", broker)
+        self.assertIn('L"UURB_TEXT_KEY_DELAY_MS"', broker)
+        self.assertIn("static void flush_log", bridge)
+        self.assertIn("static void flush_log", broker)
 
 
 if __name__ == "__main__":

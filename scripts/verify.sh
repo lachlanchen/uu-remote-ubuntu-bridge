@@ -127,6 +127,20 @@ else
     fail 'local input broker did not initialize'
 fi
 
+saved_text_key_delay_ms="$(saved_setting UURB_TEXT_KEY_DELAY_MS)"
+text_key_delay_ms="${UURB_TEXT_KEY_DELAY_MS:-${saved_text_key_delay_ms:-8}}"
+broker_configuration="$(
+    grep 'UU input broker active text-delay-ms=' "$broker_log" 2>/dev/null | \
+        tail -n 1 || true
+)"
+if [[ "$text_key_delay_ms" =~ ^[0-9]+$ ]] &&
+   ((text_key_delay_ms <= 50)) &&
+   [[ "$broker_configuration" == *"text-delay-ms=$text_key_delay_ms "* ]]; then
+    pass "input broker uses a ${text_key_delay_ms} ms text-key delay"
+else
+    fail 'input broker text-key pacing is missing or differs from saved settings'
+fi
+
 saved_rdp_port="$(saved_setting UURB_RDP_PORT)"
 rdp_port="${UURB_RDP_PORT:-${saved_rdp_port:-3390}}"
 configured_rdp_port="$(
