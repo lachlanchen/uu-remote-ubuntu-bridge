@@ -106,11 +106,18 @@ diagnostic logs.
 ### Phone text input
 
 UU exposes two mobile keyboard paths. Its computer-keyboard panel emits normal
-Windows key events and reaches the input broker above. The phone's native IME
-commits text through UU's clipboard/text path instead. SDL FreeRDP therefore
-enables its `cliprdr` channel so committed text can cross the local RDP hop into
-GNOME. This also explains why native phone typing works through a Windows UU
-host followed by RDP, while physical keys can work without clipboard relay.
+Windows key events and reaches the input broker unchanged. The phone's native
+IME instead submits batches marked `KEYEVENTF_UNICODE`. SDL FreeRDP consumes
+physical scancodes and misreads Wine's synthetic Unicode events, typically as
+one repeated letter or punctuation key. The bridge routes Unicode batches
+directly to the broker, where each representable character is converted with
+`VkKeyScanW` into an ordinary virtual-key chord before it reaches SDL FreeRDP.
+The original request count is returned to UU only after every translated event
+is accepted. Unsupported characters fail explicitly rather than being emitted
+as an unrelated key.
+
+The separate RDP `cliprdr` channel remains enabled for normal copy and paste;
+it is not the transport used by UU's native phone keyboard in 4.33.0.8907.
 
 ### Wine event-log compatibility
 

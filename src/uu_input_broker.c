@@ -5,6 +5,7 @@
 
 #define INPUT_BRIDGE_MAGIC 0x42525555UL
 #define INPUT_BRIDGE_MAX_INPUTS 64UL
+#define INPUT_BRIDGE_MAX_TRANSLATED_INPUTS (INPUT_BRIDGE_MAX_INPUTS * 8UL)
 #define INPUT_BRIDGE_PIPE L"\\\\.\\pipe\\uurb-input-v1"
 
 typedef struct input_bridge_request {
@@ -63,6 +64,139 @@ static BOOL read_all(HANDLE handle, void *buffer, DWORD size)
     return TRUE;
 }
 
+static BOOL append_key_event(INPUT *inputs, DWORD *count, WORD virtual_key,
+                             DWORD flags)
+{
+    INPUT *input;
+
+    if (*count >= INPUT_BRIDGE_MAX_TRANSLATED_INPUTS)
+        return FALSE;
+
+    input = &inputs[*count];
+    ZeroMemory(input, sizeof(*input));
+    input->type = INPUT_KEYBOARD;
+    input->ki.wVk = virtual_key;
+    input->ki.dwFlags = flags;
+    (*count)++;
+    return TRUE;
+}
+
+static SHORT key_mapping_for_character(WCHAR character)
+{
+    switch (character) {
+    case L'\b':
+        return (SHORT)VK_BACK;
+    case L'\t':
+        return (SHORT)VK_TAB;
+    case L'\n':
+    case L'\r':
+        return (SHORT)VK_RETURN;
+    default:
+        return VkKeyScanW(character);
+    }
+}
+
+static BOOL append_character_chord(WCHAR character, INPUT *inputs,
+                                   DWORD *count)
+{
+    SHORT mapping = key_mapping_for_character(character);
+    WORD virtual_key;
+    BYTE shift_state;
+
+    if (mapping == (SHORT)-1)
+        return FALSE;
+
+    virtual_key = LOBYTE((WORD)mapping);
+    shift_state = HIBYTE((WORD)mapping);
+    if ((shift_state & ~7U) != 0)
+        return FALSE;
+
+    if ((shift_state & 2U) != 0 &&
+        !append_key_event(inputs, count, VK_CONTROL, 0))
+        return FALSE;
+    if ((shift_state & 4U) != 0 &&
+        !append_key_event(inputs, count, VK_MENU, 0))
+        return FALSE;
+    if ((shift_state & 1U) != 0 &&
+        !append_key_event(inputs, count, VK_SHIFT, 0))
+        return FALSE;
+
+    if (!append_key_event(inputs, count, virtual_key, 0) ||
+        !append_key_event(inputs, count, virtual_key, KEYEVENTF_KEYUP))
+        return FALSE;
+
+    if ((shift_state & 1U) != 0 &&
+        !append_key_event(inputs, count, VK_SHIFT, KEYEVENTF_KEYUP))
+        return FALSE;
+    if ((shift_state & 4U) != 0 &&
+        !append_key_event(inputs, count, VK_MENU, KEYEVENTF_KEYUP))
+        return FALSE;
+    if ((shift_state & 2U) != 0 &&
+        !append_key_event(inputs, count, VK_CONTROL, KEYEVENTF_KEYUP))
+        return FALSE;
+
+    return TRUE;
+}
+
+static BOOL translate_inputs(DWORD source_count, const INPUT *source,
+                             INPUT *translated, DWORD *translated_count,
+                             BOOL *normalized_unicode)
+{
+    DWORD index;
+
+    *translated_count = 0;
+    *normalized_unicode = FALSE;
+    for (index = 0; index < source_count; index++) {
+        const INPUT *input = &source[index];
+
+        if (input->type == INPUT_KEYBOARD &&
+            (input->ki.dwFlags & KEYEVENTF_UNICODE) != 0) {
+            *normalized_unicode = TRUE;
+            if ((input->ki.dwFlags & KEYEVENTF_KEYUP) != 0)
+                continue;
+            if (!append_character_chord((WCHAR)input->ki.wScan, translated,
+                                        translated_count))
+                return FALSE;
+            continue;
+        }
+
+        if (*translated_count >= INPUT_BRIDGE_MAX_TRANSLATED_INPUTS)
+            return FALSE;
+        translated[*translated_count] = *input;
+        (*translated_count)++;
+    }
+
+    return TRUE;
+}
+
+static DWORD send_relay_inputs(DWORD source_count, const INPUT *source,
+                               DWORD *error, BOOL *normalized_unicode)
+{
+    INPUT translated[INPUT_BRIDGE_MAX_TRANSLATED_INPUTS];
+    DWORD translated_count;
+    UINT sent;
+
+    if (!translate_inputs(source_count, source, translated, &translated_count,
+                          normalized_unicode)) {
+        *error = ERROR_NO_UNICODE_TRANSLATION;
+        return 0;
+    }
+
+    if (translated_count == 0) {
+        *error = ERROR_SUCCESS;
+        return source_count;
+    }
+
+    SetLastError(ERROR_SUCCESS);
+    sent = SendInput(translated_count, translated, sizeof(INPUT));
+    *error = GetLastError();
+    if (sent != translated_count)
+        return 0;
+
+    *error = ERROR_SUCCESS;
+    return source_count;
+}
+
 static void serve_client(HANDLE pipe)
 {
     for (;;) {
@@ -74,6 +208,7 @@ static void serve_client(HANDLE pipe)
         DWORD first_type = (DWORD)-1;
         DWORD first_flags = 0;
         LONG call_number;
+        BOOL normalized_unicode = FALSE;
 
         if (!read_all(pipe, &request, sizeof(request)))
             return;
@@ -90,9 +225,9 @@ static void serve_client(HANDLE pipe)
             SetFocus(relay);
         }
 
-        SetLastError(ERROR_SUCCESS);
-        response.result = SendInput(request.count, inputs, sizeof(INPUT));
-        response.error = GetLastError();
+        response.result = send_relay_inputs(request.count, inputs,
+                                            &response.error,
+                                            &normalized_unicode);
         first_type = inputs[0].type;
         if (first_type == INPUT_MOUSE)
             first_flags = inputs[0].mi.dwFlags;
@@ -102,9 +237,10 @@ static void serve_client(HANDLE pipe)
         if (call_number <= 500 || response.result != request.count) {
             _snprintf(
                 line, sizeof(line),
-                "call=%ld count=%lu type=%lu flags=0x%08lx result=%lu error=%lu\r\n",
+                "call=%ld count=%lu type=%lu flags=0x%08lx text=%s result=%lu error=%lu\r\n",
                 call_number, (unsigned long)request.count,
                 (unsigned long)first_type, (unsigned long)first_flags,
+                normalized_unicode ? "normalized" : "unchanged",
                 (unsigned long)response.result,
                 (unsigned long)response.error);
             line[sizeof(line) - 1] = '\0';

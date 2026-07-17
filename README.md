@@ -26,7 +26,7 @@ local RDP relay, and makes mouse and keyboard control work normally.
 | --- | --- |
 | Desktop video | Live GNOME session at `1920x1080` |
 | Mouse | Motion, buttons, wheel, focus, and clicks through UU |
-| Keyboard | Physical keys, shortcuts, and phone IME text through RDP clipboard |
+| Keyboard | Physical keys, shortcuts, and normalized phone IME text |
 | Recovery | User systemd restart, boot autostart, and DLL re-injection |
 | Stability | One UU server PID beyond the former four-minute failure window |
 | Authentication | Normal UU sign-in and separate GNOME RDP credential |

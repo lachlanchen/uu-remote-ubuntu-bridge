@@ -66,10 +66,11 @@ Diagnostic input logs contain only count, Windows input type, flag bits,
 route, result, and error. They intentionally omit virtual key codes, scan
 codes, Unicode values, mouse coordinates, and clipboard data.
 
-The local FreeRDP `cliprdr` channel is enabled because UU's mobile native
-keyboard uses clipboard-backed text commits. Clipboard content can therefore
-cross between the Wine relay and the logged-in GNOME desktop while a remote
-session is active. The bridge does not persist or log that content.
+The local FreeRDP `cliprdr` channel is enabled for normal copy and paste.
+Clipboard content can therefore cross between the Wine relay and the logged-in
+GNOME desktop while a remote session is active. The bridge does not persist or
+log that content. UU's phone IME uses `KEYEVENTF_UNICODE`, not clipboard data;
+the broker translates those inputs without logging their character values.
 
 ## Binary modification controls
 

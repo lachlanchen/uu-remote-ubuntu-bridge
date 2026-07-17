@@ -130,11 +130,21 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn(".build-recipe", builder)
         self.assertIn("sha256sum -c .build-sha256", builder)
 
-    def test_phone_ime_clipboard_channel_is_enabled(self):
+    def test_clipboard_channel_is_enabled(self):
         launcher = (REPOSITORY / "scripts" / "uu-remote-bridge").read_text()
 
         self.assertIn("+clipboard", launcher)
         self.assertNotIn("-clipboard", launcher)
+
+    def test_phone_ime_unicode_input_is_normalized(self):
+        bridge = (REPOSITORY / "src" / "uu_input_bridge.c").read_text()
+        broker = (REPOSITORY / "src" / "uu_input_broker.c").read_text()
+
+        self.assertIn("contains_unicode_keyboard", bridge)
+        self.assertIn("KEYEVENTF_UNICODE", bridge)
+        self.assertIn("key_mapping_for_character", broker)
+        self.assertIn("VkKeyScanW", broker)
+        self.assertIn('normalized_unicode ? "normalized"', broker)
 
 
 if __name__ == "__main__":

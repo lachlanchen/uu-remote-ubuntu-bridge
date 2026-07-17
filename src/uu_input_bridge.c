@@ -164,6 +164,22 @@ static UINT send_through_broker(UINT count, const INPUT *inputs, int size,
     return result;
 }
 
+static BOOL contains_unicode_keyboard(UINT count, const INPUT *inputs, int size)
+{
+    UINT index;
+
+    if (count == 0 || inputs == NULL || size != (int)sizeof(INPUT))
+        return FALSE;
+
+    for (index = 0; index < count; index++) {
+        if (inputs[index].type == INPUT_KEYBOARD &&
+            (inputs[index].ki.dwFlags & KEYEVENTF_UNICODE) != 0)
+            return TRUE;
+    }
+
+    return FALSE;
+}
+
 static UINT WINAPI bridged_send_input(UINT count, LPINPUT inputs, int size)
 {
     char line[256];
@@ -174,6 +190,7 @@ static UINT WINAPI bridged_send_input(UINT count, LPINPUT inputs, int size)
     DWORD first_type = UINT32_MAX;
     DWORD first_flags = 0;
     BOOL used_broker = FALSE;
+    BOOL unicode_keyboard;
 
     relay = find_relay_window();
     if (relay != NULL) {
@@ -189,13 +206,20 @@ static UINT WINAPI bridged_send_input(UINT count, LPINPUT inputs, int size)
             first_flags = inputs[0].ki.dwFlags;
     }
 
-    SetLastError(ERROR_SUCCESS);
-    result = original_send_input(count, inputs, size);
-    error = GetLastError();
-    if (result != count) {
+    unicode_keyboard = contains_unicode_keyboard(count, inputs, size);
+    if (unicode_keyboard) {
         result = send_through_broker(count, inputs, size, &error);
         used_broker = TRUE;
         SetLastError(error);
+    } else {
+        SetLastError(ERROR_SUCCESS);
+        result = original_send_input(count, inputs, size);
+        error = GetLastError();
+        if (result != count) {
+            result = send_through_broker(count, inputs, size, &error);
+            used_broker = TRUE;
+            SetLastError(error);
+        }
     }
     call_number = InterlockedIncrement(&input_call_count);
 

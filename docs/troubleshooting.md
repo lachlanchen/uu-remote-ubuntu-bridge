@@ -98,17 +98,20 @@ restores both components.
 ## The phone keyboard does not type, but UU's computer keyboard does
 
 These controls use different paths. The computer-keyboard panel sends physical
-key events through `SendInput`; the phone's native IME commits text through
-UU's clipboard path. Confirm that the running SDL FreeRDP command contains
-`+clipboard`:
+key events through `SendInput`; the phone's native IME sends batches marked
+`KEYEVENTF_UNICODE`. SDL FreeRDP expects physical scancodes, so an old broker
+can turn every letter into one repeated key and numbers into punctuation.
+Confirm the broker log reports `text=normalized` for a phone text commit:
 
 ```bash
-pgrep -af sdl-freerdp
+log="$HOME/.local/share/wineprefixes/uu-remote/drive_c/users/$USER/Temp/uu-input-broker.log"
+tail -80 "$log"
 ```
 
-If it still contains `-clipboard`, reinstall or update the bridge and restart
-the service. A Windows UU host followed by RDP can appear to fix the issue
-because the Windows RDP client already relays its clipboard/text channel.
+If Unicode calls appear in `uu-input-bridge.log` with flag `0x00000004` but the
+broker does not report normalization, reinstall or update the bridge and
+restart the service. A Windows UU host followed by RDP appears to fix the issue
+because native Windows converts the Unicode input before RDP handles it.
 
 ## Server restarts every four minutes
 
