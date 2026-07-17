@@ -65,6 +65,9 @@ class DocumentationTests(unittest.TestCase):
         handoff = (REPO_DIR / "docs/update-handoff.md").read_text(
             encoding="utf-8"
         )
+        keyboard_handoff = (
+            REPO_DIR / "docs/mobile-keyboard-parity-handoff.md"
+        ).read_text(encoding="utf-8")
 
         self.assertIn("## [0.1.0] - 2026-07-17", changelog)
         self.assertIn("git checkout v0.1.0", release)
@@ -79,6 +82,11 @@ class DocumentationTests(unittest.TestCase):
         )
         self.assertNotIn("The private repository", handoff)
         self.assertNotIn("repository is private", release.lower())
+        self.assertIn("OptiPlex-7090", keyboard_handoff)
+        self.assertIn("v0.1.0", keyboard_handoff)
+        self.assertIn("abcXYZ123,.!?", keyboard_handoff)
+        self.assertIn("UURB_TEXT_KEY_DELAY_MS", keyboard_handoff)
+        self.assertIn("Do not commit a completed record", keyboard_handoff)
 
 
 if __name__ == "__main__":

@@ -2,6 +2,9 @@
 
 Use this note when transferring `v0.1.0` to another authorized Ubuntu operator.
 It separates the message to send from the maintainer and recipient checklists.
+For a keyboard that works on one host but not another, use the
+[mobile-keyboard parity handoff](mobile-keyboard-parity-handoff.md) to capture
+the known-good baseline, controller variables, and bounded comparison evidence.
 
 ## Copy-ready update message
 
@@ -103,6 +106,9 @@ log="$HOME/.local/share/wineprefixes/uu-remote/drive_c/users/$USER/Temp/uu-input
 tail -80 "$log" | rg 'text=normalized .*error=0'
 ```
 
+Do not accept a test performed only with UU's computer-keyboard panel. It uses
+a different input path from the phone's normal keyboard.
+
 ## Failure handoff
 
 Collect these bounded diagnostics:
@@ -117,6 +123,10 @@ tail -80 ~/.local/state/uu-remote-bridge/freerdp.log
 Report the test time, whether video and the computer-keyboard panel work, and
 the incorrect visible result. Do not send the Wine prefix or proprietary UU
 logs without first removing account and device metadata.
+
+When the same phone keyboard behaves differently across computers, use the
+[detailed parity checklist](mobile-keyboard-parity-handoff.md#collect-a-parity-snapshot)
+and its private handoff record instead of collecting unbounded logs.
 
 ## Rollback and acceptance record
 

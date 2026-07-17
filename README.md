@@ -288,6 +288,7 @@ ID, raw production log, screenshot, or private desktop content is committed.
 - [Changelog](CHANGELOG.md)
 - [v0.1.0 release notes](docs/releases/v0.1.0.md)
 - [Update handoff for another operator](docs/update-handoff.md)
+- [Mobile-keyboard parity handoff](docs/mobile-keyboard-parity-handoff.md)
 - [Unattended startup after reboot](docs/unattended-startup.md)
 - [Methodology and tool inventory](docs/methodology-and-toolkit.md)
 - [Reverse-engineering record with exact `xxd` and `objdump` evidence](docs/reverse-engineering.md)

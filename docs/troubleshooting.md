@@ -121,6 +121,11 @@ differs, pulling was not followed by installation:
 ./install.sh --skip-packages --skip-account-login
 ```
 
+Use the [mobile-keyboard parity handoff](mobile-keyboard-parity-handoff.md) when
+this path works on one Ubuntu host but not another. It records the known-good
+7090 baseline, phone/controller variables, exact acceptance matrix, and bounded
+diagnostics without exposing typed content or UU identity data.
+
 ## Input degrades after a long relay session
 
 Run the quick verifier and inspect only descriptor metadata:
