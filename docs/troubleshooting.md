@@ -95,6 +95,21 @@ UU Wine event-log compatibility active
 Then verify that `uu-input-broker.exe` is running. A service restart normally
 restores both components.
 
+## The phone keyboard does not type, but UU's computer keyboard does
+
+These controls use different paths. The computer-keyboard panel sends physical
+key events through `SendInput`; the phone's native IME commits text through
+UU's clipboard path. Confirm that the running SDL FreeRDP command contains
+`+clipboard`:
+
+```bash
+pgrep -af sdl-freerdp
+```
+
+If it still contains `-clipboard`, reinstall or update the bridge and restart
+the service. A Windows UU host followed by RDP can appear to fix the issue
+because the Windows RDP client already relays its clipboard/text channel.
+
 ## Server restarts every four minutes
 
 Check for Wine's unimplemented event-log abort:

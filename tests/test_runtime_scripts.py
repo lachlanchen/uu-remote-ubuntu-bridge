@@ -130,6 +130,12 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn(".build-recipe", builder)
         self.assertIn("sha256sum -c .build-sha256", builder)
 
+    def test_phone_ime_clipboard_channel_is_enabled(self):
+        launcher = (REPOSITORY / "scripts" / "uu-remote-bridge").read_text()
+
+        self.assertIn("+clipboard", launcher)
+        self.assertNotIn("-clipboard", launcher)
+
 
 if __name__ == "__main__":
     unittest.main()

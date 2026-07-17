@@ -458,7 +458,7 @@ server_pid="$(pgrep -o -u "$UID" -f 'GameViewerServer\.exe')"
     -toggle-fullscreen \
     -decorations \
     -suppress-output \
-    -clipboard \
+    +clipboard \
     +auto-reconnect \
     /auto-reconnect-max-retries:0 \
     /log-level:WARN \

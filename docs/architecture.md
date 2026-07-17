@@ -103,6 +103,15 @@ window and calls `SendInput`, returning the real count and error code to UU.
 No key code, Unicode character, clipboard payload, or text is written to the
 diagnostic logs.
 
+### Phone text input
+
+UU exposes two mobile keyboard paths. Its computer-keyboard panel emits normal
+Windows key events and reaches the input broker above. The phone's native IME
+commits text through UU's clipboard/text path instead. SDL FreeRDP therefore
+enables its `cliprdr` channel so committed text can cross the local RDP hop into
+GNOME. This also explains why native phone typing works through a Windows UU
+host followed by RDP, while physical keys can work without clipboard relay.
+
 ### Wine event-log compatibility
 
 UU periodically calls `EvtOpenPublisherMetadata`. Wine 11 marks that function

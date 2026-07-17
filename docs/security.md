@@ -66,6 +66,11 @@ Diagnostic input logs contain only count, Windows input type, flag bits,
 route, result, and error. They intentionally omit virtual key codes, scan
 codes, Unicode values, mouse coordinates, and clipboard data.
 
+The local FreeRDP `cliprdr` channel is enabled because UU's mobile native
+keyboard uses clipboard-backed text commits. Clipboard content can therefore
+cross between the Wine relay and the logged-in GNOME desktop while a remote
+session is active. The bridge does not persist or log that content.
+
 ## Binary modification controls
 
 `patch-gameviewer.py` loads only manifests whose `review_status` is
