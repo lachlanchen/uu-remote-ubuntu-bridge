@@ -13,10 +13,12 @@ This update fixes the normal mobile keyboard producing repeated letters (often
 relay-recovery hardening. The update is for x86-64 Ubuntu 24.04, GNOME 46, and
 UU Remote 4.33.0.8907 only.
 
-The private repository must be accessible from your GitHub account. Expect a
-brief UU disconnect while the service is rebuilt and restarted. Existing UU
-login state, bridge credentials, resolution, port, and unattended settings are
-preserved.
+The public repository is available at:
+https://github.com/lachlanchen/uu-remote-ubuntu-bridge
+
+Expect a brief UU disconnect while the service is rebuilt and restarted.
+Existing UU login state, bridge credentials, resolution, port, and unattended
+settings are preserved.
 
 Update commands:
 
@@ -35,8 +37,8 @@ online, reconnect the phone and type: abcXYZ123,.!?
 
 - Confirm the recipient is authorized to administer the target computer and UU
   account.
-- Grant the recipient read access to the private
-  `lachlanchen/uu-remote-ubuntu-bridge` repository.
+- Share the official public `v0.1.0` release URL and verify the repository owner
+  is `lachlanchen` before the recipient runs code.
 - Confirm the target is Ubuntu 24.04 x86-64 with GNOME 46 and UU
   `4.33.0.8907`.
 - Ask whether the installation is a direct clone or the parent repository's
@@ -46,10 +48,9 @@ online, reconnect the phone and type: abcXYZ123,.!?
 
 ## Recipient preflight
 
-Authenticate GitHub access and verify a clean checkout:
+Verify the repository remote and a clean checkout:
 
 ```bash
-gh auth status
 cd ~/Projects/uu-remote-ubuntu-bridge
 git status --short
 git remote -v
@@ -59,7 +60,7 @@ For a missing direct clone:
 
 ```bash
 mkdir -p ~/Projects
-gh repo clone lachlanchen/uu-remote-ubuntu-bridge \
+git clone https://github.com/lachlanchen/uu-remote-ubuntu-bridge.git \
   ~/Projects/uu-remote-ubuntu-bridge
 cd ~/Projects/uu-remote-ubuntu-bridge
 git fetch --tags origin

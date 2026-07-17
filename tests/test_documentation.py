@@ -74,6 +74,11 @@ class DocumentationTests(unittest.TestCase):
         self.assertIn("Copy-ready update message", handoff)
         self.assertIn("abcXYZ123,.!?", handoff)
         self.assertIn("Do not discard a dirty worktree", handoff)
+        self.assertIn(
+            "https://github.com/lachlanchen/uu-remote-ubuntu-bridge", handoff
+        )
+        self.assertNotIn("The private repository", handoff)
+        self.assertNotIn("repository is private", release.lower())
 
 
 if __name__ == "__main__":

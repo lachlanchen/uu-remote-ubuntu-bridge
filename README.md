@@ -93,9 +93,10 @@ git checkout v0.1.0
 ```
 
 Stop if the status command reports local changes. Installation briefly restarts
-the relay. Read the [v0.1.0 release notes](docs/releases/v0.1.0.md) and use the
-[copy-ready operator handoff](docs/update-handoff.md) when updating another
-authorized machine.
+the relay. Read the [v0.1.0 release notes](docs/releases/v0.1.0.md), use the
+[public GitHub release](https://github.com/lachlanchen/uu-remote-ubuntu-bridge/releases/tag/v0.1.0),
+and send the [copy-ready operator handoff](docs/update-handoff.md) when updating
+another authorized machine.
 
 Use an already downloaded installer or a future approved release manifest:
 
