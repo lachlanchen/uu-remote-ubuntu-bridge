@@ -6,7 +6,12 @@ locked by the release manifest.
 
 ## [Unreleased]
 
-No changes yet.
+### Documentation
+
+- explain why the old nested input route could accept every sampled
+  `SendInput` call while losing fast keyboard transitions, why slow typing and
+  pointer motion could mask that fault, and why the direct X11 route fixes the
+  local defect without claiming a universal upstream guarantee
 
 ## [0.2.0] - 2026-07-18
 

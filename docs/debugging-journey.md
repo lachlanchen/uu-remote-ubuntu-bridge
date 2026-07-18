@@ -479,3 +479,66 @@ line; every sample used `route=x11`, returned one requested event, and reported
 `error=0`. This closes the main local conversion defect. It does not justify
 host-side retries or a claim that UU's upstream controller/network can never
 omit an event, so the no-replay safety rule remains.
+
+## 16. Explain why the old route looked partly healthy
+
+The former design was not an arbitrary detour. It was the portable route that
+also worked with a Wayland target, where an XTEST helper cannot inject directly
+into the desktop:
+
+```text
+UU controller
+  -> Wine user-token input broker
+  -> Windows SendInput queue
+  -> SDL FreeRDP
+  -> GNOME RDP/libei
+  -> XRDP Xorg desktop
+```
+
+The broker solved the first proven problem—UU's service token received access
+denied—but its successful `SendInput` result described only the beginning of
+that chain. It meant Wine accepted the requested records. It did not prove
+that every later event loop, keyboard conversion, focus boundary, and RDP hop
+delivered every key transition to the final Xorg application.
+
+This distinction explains the otherwise confusing symptoms:
+
+- **Slow typing often worked.** A pause between keys gave the nested queues and
+  event loops time to drain. It reduced the symptom without removing the
+  unreliable conversion boundary.
+- **Fast typing lost letters.** Physical keyboard input consists of discrete
+  key-down and key-up edges, commonly arriving in small separate requests.
+  Losing or delaying either edge changes the result; an intermediate event
+  cannot safely be merged with the next one.
+- **Enter and Ctrl combinations were especially fragile.** A missing Enter
+  edge removes the action completely. A missing modifier press or release can
+  invalidate the complete shortcut or leave transient modifier state behind.
+- **The mouse could still look healthy.** Pointer motion is state-like: many
+  applications can coalesce intermediate coordinates and display the newest
+  position. Mouse clicks also occur much less frequently than a fast stream of
+  keyboard edges. A visually smooth pointer therefore did not prove that the
+  keyboard path was lossless.
+- **More pacing only helped partly.** It lowered burst pressure but retained
+  every conversion and acknowledgement boundary. At 12 ms, all 219 sampled
+  broker calls were still accepted while the operator could reproduce missing
+  keys.
+
+The direct route changes only the failing part:
+
+```text
+UU controller -> normal-token broker -> authenticated X11 helper
+              -> XTEST + XSync -> XRDP Xorg desktop
+```
+
+Video, mouse, clipboard, and phone text remain on the established relay. The
+physical keyboard no longer passes through Wine's input queue and two nested
+RDP keyboard conversions. An isolated test preserved all 58 requested
+press/release transitions, and the accepted live sample contained 256
+successful `route=x11` calls while the operator reported smooth typing.
+
+Those observations localize the dominant workstation defect to the old local
+nested route or its resulting back-pressure. They do not identify one exact
+proprietary UU, Wine, SDL FreeRDP, GNOME RDP, or libei function as the sole
+culprit, and they cannot guarantee that the controller or network upstream of
+the broker will never omit an event. This is why the fix removes the measured
+bad boundary instead of adding retries or making a broader unsupported claim.
