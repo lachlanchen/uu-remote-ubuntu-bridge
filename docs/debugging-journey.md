@@ -397,14 +397,18 @@ Future recovery should therefore reset the client first and restart XRDP only
 when its listener is demonstrably unhealthy.
 
 Creating the fresh desktop also caused the supervised UU bridge to restart and
-attach to that desktop. In the accepted session, the operator confirmed normal
-UU keyboard behavior. Content-free metadata showed successive physical-key
-calls with `focus=ready`, `paced-physical=1`, `physical-delay-ms=8`, matching
-result counts, and `error=0`.
+attach to that desktop. The operator reported a drastic UU keyboard
+improvement, although a few letters could still be omitted at the fastest
+typing speed. Content-free metadata showed that all physical-key calls which
+reached the hook had `focus=ready`, `paced-physical=1`,
+`physical-delay-ms=8`, matching result counts, and `error=0`.
 
-That observation validates the combined fresh-relay and pacing state. It does
-not isolate which change was individually sufficient, because disabling the
-delay after success would disturb a working system without operational value.
+That observation validates the improvement from the combined fresh-relay and
+pacing state, not a complete fix or either change in isolation. Because the
+residual omissions were absent from the hook trace, the next bounded experiment
+was 12 ms of physical-key pacing. A reconnect is required after changing the
+setting; otherwise typing can occur through an older or different path and is
+not evidence about the new value.
 The reusable commands, warnings, and rollback are in
 [XRDP Client Stall and UU Keyboard Recovery](xrdp-and-keyboard-recovery.md).
 

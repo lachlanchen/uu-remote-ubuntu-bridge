@@ -228,7 +228,10 @@ rg 'category=keyboard' "$broker" | tail -n 30
 
 Look for `focus=ready`, `paced-physical=1`, the configured
 `physical-delay-ms`, a matching result count, and `error=0`. Restore the
-original behavior with `--physical-key-delay-ms 0`.
+original behavior with `--physical-key-delay-ms 0`. After changing the value,
+reconnect the UU controller and verify that fresh keyboard records appear after
+the broker startup line for that value. A subjective test made through RDP or
+an unreconnected UU client does not measure the new bridge process.
 
 ## Windows App remains on Configuring
 

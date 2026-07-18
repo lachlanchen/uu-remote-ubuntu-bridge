@@ -153,15 +153,17 @@ payload, address, account identifier, or typed text.
 
 ## What is proven, and what is not
 
-In the accepted run, Windows App was restarted, XRDP created a fresh desktop,
+In the observed run, Windows App was restarted, XRDP created a fresh desktop,
 the supervised UU bridge automatically restarted against that desktop, and
-the 8 ms physical-key setting was active. The operator then confirmed that UU
-keyboard input worked normally. Content-free broker metadata independently
-confirmed that successive physical-key calls were focused, paced, and
-accepted without an error.
+the 8 ms physical-key setting was active. The operator reported a drastic
+improvement, but occasional omissions remained at the fastest typing speed.
+Content-free broker metadata independently confirmed that every physical-key
+call which reached the hook was focused, paced, and accepted without an error.
 
-This proves the combined state. It does not prove that either the fresh XRDP
-desktop or physical-key pacing alone was sufficient, because disabling the
-delay immediately afterward would disturb a working setup and was not needed.
-Keep the validated combination unless a controlled future comparison is
-worth that risk.
+This proves the combined state improved the symptom; it does not prove a full
+fix or isolate either the fresh XRDP desktop or pacing as sufficient by itself.
+It also narrows the residual loss to the path before a call reaches the hook.
+A controlled 12 ms trial was therefore selected as the next conservative
+step. Reconnect UU after changing the setting so the test actually reaches the
+new broker process, and do not claim the new value helped until its startup
+line is followed by fresh `category=keyboard` records.

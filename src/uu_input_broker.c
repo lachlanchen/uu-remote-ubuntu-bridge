@@ -400,8 +400,6 @@ static void serve_client(HANDLE pipe)
         ULONGLONG inject_started_ms = 0;
         DWORD inject_ms = 0;
 
-        started_ms = GetTickCount64();
-
         if (!read_all(pipe, &request, sizeof(request)))
             return;
         if (request.magic != INPUT_BRIDGE_MAGIC || request.count == 0 ||
@@ -411,6 +409,8 @@ static void serve_client(HANDLE pipe)
         if (!read_all(pipe, inputs, request.count * sizeof(INPUT)))
             return;
 
+        /* Measure broker processing, not idle time waiting for a request. */
+        started_ms = GetTickCount64();
         focus_ready = request_relay_focus(&focus_wait_ms);
         if (focus_ready) {
             inject_started_ms = GetTickCount64();

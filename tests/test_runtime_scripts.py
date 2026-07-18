@@ -208,6 +208,14 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn('category = "mouse"', broker)
         self.assertIn("static void flush_log", bridge)
         self.assertIn("static void flush_log", broker)
+        self.assertLess(
+            broker.index("if (!read_all(pipe, inputs"),
+            broker.index("started_ms = GetTickCount64();"),
+        )
+        self.assertLess(
+            broker.index("started_ms = GetTickCount64();"),
+            broker.index("focus_ready = request_relay_focus"),
+        )
 
     def test_routine_input_retains_proven_broker_fallback(self):
         bridge = (REPOSITORY / "src" / "uu_input_bridge.c").read_text()
