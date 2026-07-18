@@ -63,13 +63,14 @@ official UU window on the logged-in desktop before starting the private relay.
 Complete account sign-in and close that window. Re-running the same command is
 idempotent; unchanged FreeRDP build outputs are checksum-verified and reused.
 
-Port, resolution, private-display, phone-text pacing, and an optional UU-only
-network-interface choice are persistent and can be set without editing the
-service:
+Port, resolution, private-display, phone-text pacing, optional physical-key
+pacing, and an optional UU-only network-interface choice are persistent and
+can be set without editing the service:
 
 ```bash
 ./install.sh --rdp-port 3391 --resolution 2560x1440 --display auto \
-  --text-key-delay-ms 8 --network-interface all
+  --text-key-delay-ms 8 --physical-key-delay-ms 0 \
+  --network-interface all
 ```
 
 They are validated and stored in
@@ -85,6 +86,13 @@ the Wine-to-FreeRDP input boundary. The broker confirms that the relay window
 has focus before acknowledging an input request and sends translated text one
 character chord at a time. Values from 0 through 50 ms are accepted; increase
 the delay only if a high-latency controller still drops characters.
+
+Physical-key pacing defaults to `0`, preserving the ordinary path on hosts
+that already work. If slow typing succeeds but fast physical-key input omits
+events, `--physical-key-delay-ms 8` adds bounded back-pressure after each
+accepted broker segment. It never retries or synthesizes a key. See the
+[validated recovery note](docs/xrdp-and-keyboard-recovery.md) before changing
+this host-specific setting.
 
 If individual keys lag or disappear while direct RDP remains responsive, check
 the transport before changing input code:
@@ -310,6 +318,7 @@ ID, raw production log, screenshot, or private desktop content is committed.
 - [v0.1.0 release notes](docs/releases/v0.1.0.md)
 - [Update handoff for another operator](docs/update-handoff.md)
 - [Mobile-keyboard parity handoff](docs/mobile-keyboard-parity-handoff.md)
+- [XRDP client stall and UU keyboard recovery](docs/xrdp-and-keyboard-recovery.md)
 - [Unattended startup after reboot](docs/unattended-startup.md)
 - [Methodology and tool inventory](docs/methodology-and-toolkit.md)
 - [Reverse-engineering record with exact `xxd` and `objdump` evidence](docs/reverse-engineering.md)

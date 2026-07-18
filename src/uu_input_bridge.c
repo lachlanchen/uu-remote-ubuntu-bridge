@@ -28,7 +28,9 @@ static HANDLE broker_pipe = INVALID_HANDLE_VALUE;
 static CRITICAL_SECTION broker_lock;
 static BOOL broker_lock_initialized;
 static volatile LONG input_call_count;
-static volatile LONG routine_call_count;
+static volatile LONG keyboard_call_count;
+static volatile LONG mouse_call_count;
+static volatile LONG other_call_count;
 static volatile LONG text_call_count;
 
 static EVT_HANDLE WINAPI safe_evt_open_publisher_metadata(
@@ -187,9 +189,23 @@ static BOOL contains_unicode_keyboard(UINT count, const INPUT *inputs, int size)
     return FALSE;
 }
 
+static BOOL contains_input_type(UINT count, const INPUT *inputs, int size,
+                                DWORD type)
+{
+    UINT index;
+
+    if (count == 0 || inputs == NULL || size != (int)sizeof(INPUT))
+        return FALSE;
+    for (index = 0; index < count; index++) {
+        if (inputs[index].type == type)
+            return TRUE;
+    }
+    return FALSE;
+}
+
 static UINT WINAPI bridged_send_input(UINT count, LPINPUT inputs, int size)
 {
-    char line[256];
+    char line[512];
     HWND relay;
     UINT result;
     DWORD error;
@@ -198,7 +214,17 @@ static UINT WINAPI bridged_send_input(UINT count, LPINPUT inputs, int size)
     DWORD first_flags = 0;
     BOOL used_broker = FALSE;
     BOOL unicode_keyboard;
+    BOOL physical_keyboard;
+    BOOL mouse_input;
+    const char *category;
     LONG category_call_number;
+    ULONGLONG started_ms;
+    ULONGLONG direct_started_ms;
+    ULONGLONG broker_started_ms;
+    DWORD direct_ms = 0;
+    DWORD broker_ms = 0;
+
+    started_ms = GetTickCount64();
 
     relay = find_relay_window();
     if (relay != NULL)
@@ -213,32 +239,60 @@ static UINT WINAPI bridged_send_input(UINT count, LPINPUT inputs, int size)
     }
 
     unicode_keyboard = contains_unicode_keyboard(count, inputs, size);
+    physical_keyboard = !unicode_keyboard &&
+                        contains_input_type(count, inputs, size,
+                                            INPUT_KEYBOARD);
+    mouse_input = !unicode_keyboard && !physical_keyboard &&
+                  contains_input_type(count, inputs, size, INPUT_MOUSE);
     if (unicode_keyboard) {
+        broker_started_ms = GetTickCount64();
         result = send_through_broker(count, inputs, size, &error);
+        broker_ms = (DWORD)(GetTickCount64() - broker_started_ms);
         used_broker = TRUE;
         SetLastError(error);
     } else {
+        direct_started_ms = GetTickCount64();
         SetLastError(ERROR_SUCCESS);
         result = original_send_input(count, inputs, size);
         error = GetLastError();
+        direct_ms = (DWORD)(GetTickCount64() - direct_started_ms);
         if (result != count) {
+            broker_started_ms = GetTickCount64();
             result = send_through_broker(count, inputs, size, &error);
+            broker_ms = (DWORD)(GetTickCount64() - broker_started_ms);
             used_broker = TRUE;
             SetLastError(error);
         }
     }
     call_number = InterlockedIncrement(&input_call_count);
-    category_call_number = InterlockedIncrement(
-        unicode_keyboard ? &text_call_count : &routine_call_count);
+    if (unicode_keyboard) {
+        category = "text";
+        category_call_number = InterlockedIncrement(&text_call_count);
+    } else if (physical_keyboard) {
+        category = "keyboard";
+        category_call_number = InterlockedIncrement(&keyboard_call_count);
+    } else if (mouse_input) {
+        category = "mouse";
+        category_call_number = InterlockedIncrement(&mouse_call_count);
+    } else {
+        category = "other";
+        category_call_number = InterlockedIncrement(&other_call_count);
+    }
 
     if ((unicode_keyboard && category_call_number <= 256) ||
-        (!unicode_keyboard && category_call_number <= 64) ||
+        (physical_keyboard && category_call_number <= 256) ||
+        (mouse_input && category_call_number <= 32) ||
+        (!unicode_keyboard && !physical_keyboard && !mouse_input &&
+         category_call_number <= 64) ||
         result != count) {
         _snprintf(line, sizeof(line),
-                  "call=%ld category-call=%ld count=%lu type=%lu flags=0x%08lx route=%s result=%lu error=%lu\r\n",
-                  call_number, category_call_number, (unsigned long)count,
+                  "call=%ld category=%s category-call=%ld count=%lu type=%lu flags=0x%08lx route=%s direct-ms=%lu broker-ms=%lu total-ms=%lu result=%lu error=%lu\r\n",
+                  call_number, category, category_call_number,
+                  (unsigned long)count,
                   (unsigned long)first_type, (unsigned long)first_flags,
                   used_broker ? "broker" : "direct",
+                  (unsigned long)direct_ms, (unsigned long)broker_ms,
+                  (unsigned long)(GetTickCount64() - started_ms),
                   (unsigned long)result, (unsigned long)error);
         line[sizeof(line) - 1] = '\0';
         write_log(line);

@@ -247,8 +247,8 @@ The correction has three parts:
 2. preserve request ordering but submit translated text as individual
    character chords, waiting 8 ms per character by default before acknowledging
    the source request
-3. use separate bounded text/routine telemetry quotas, buffer successful logs,
-   and flush failures immediately
+3. use separate bounded text, keyboard, mouse, and other telemetry quotas,
+   buffer successful logs, and flush failures immediately
 
 The delay is persisted as `UURB_TEXT_KEY_DELAY_MS` and can be changed safely:
 
@@ -256,8 +256,8 @@ The delay is persisted as `UURB_TEXT_KEY_DELAY_MS` and can be changed safely:
 ./install.sh --skip-packages --skip-account-login --text-key-delay-ms 8
 ```
 
-The diagnostic line records only `focus`, `focus-wait-ms`, `paced`,
-`delay-ms`, counts, and result codes. It does not record what was typed.
+The diagnostic line records only category, `focus`, `focus-wait-ms`, pacing,
+boundary timing, counts, and result codes. It does not record what was typed.
 
 ## 11. Separate upstream transport loss from local input injection
 
@@ -347,3 +347,78 @@ its bounded health cycle to compare the preferred interface every ten seconds.
 If the default moves, it exits once and lets systemd rebuild the complete relay
 on the new route. This avoids a second watcher while preventing a long-running
 UU process from remaining pinned to a stale adapter.
+
+## 13. Make physical-key experiments observable and reversible
+
+After the preferred adapter reduced aggregate relay delay, the operator still
+reported the same fast-typing loss. That disproved the adapter mismatch as the
+complete explanation. The earlier `routine` diagnostic quota was also
+insufficient: mouse movement consumed it before the first physical-key call,
+so an apparently empty keyboard trace was not evidence that no key arrived.
+
+The bridge and broker now classify calls as `text`, `keyboard`, `mouse`, or
+`other`, with an independent bounded quota for each category. Timing fields
+separate the original API, broker pipe, injection, and total call boundaries.
+They record neither key codes nor typed content.
+
+A second persistent setting adds optional physical-key back-pressure:
+
+```bash
+./install.sh --skip-packages --skip-account-login \
+  --physical-key-delay-ms 8
+```
+
+Its repository default is zero so an already-working host does not change.
+The delay occurs only after the broker has accepted a physical-key segment.
+There is no retry, replay, or inferred key, avoiding duplicate input if an
+original event arrives late. The quick verifier checks that the running broker
+uses the saved value.
+
+## 14. Separate a stale RDP client from an unhealthy desktop
+
+A later macOS Windows App attempt remained on **Configuring**. XRDP had several
+established TCP handlers, and every attempt reached TLS but stopped before
+capability exchange. Xorg, GNOME Shell, and the localhost VNC mirror were still
+alive. A local FreeRDP authentication-only probe advanced through capabilities
+immediately, placing this failure on the controller side rather than in the
+Ubuntu desktop.
+
+Restarting XRDP cleared the handlers, but Ubuntu's unit dependency also
+restarted the main session manager. The old Xorg session initially survived;
+when Windows App later connected, the new manager created another display and
+the configured single-session lifecycle ended the old display. This is why a
+server restart is not the safest first response when VNC mirrors an XRDP
+display.
+
+The decisive recovery was smaller: gracefully quit the several-days-old
+Windows App process and reopen it. The next attempt immediately progressed
+through capabilities, authentication, `login successful`, and `connected ok`.
+Future recovery should therefore reset the client first and restart XRDP only
+when its listener is demonstrably unhealthy.
+
+Creating the fresh desktop also caused the supervised UU bridge to restart and
+attach to that desktop. In the accepted session, the operator confirmed normal
+UU keyboard behavior. Content-free metadata showed successive physical-key
+calls with `focus=ready`, `paced-physical=1`, `physical-delay-ms=8`, matching
+result counts, and `error=0`.
+
+That observation validates the combined fresh-relay and pacing state. It does
+not isolate which change was individually sufficient, because disabling the
+delay after success would disturb a working system without operational value.
+The reusable commands, warnings, and rollback are in
+[XRDP Client Stall and UU Keyboard Recovery](xrdp-and-keyboard-recovery.md).
+
+The fresh XRDP session then changed size dynamically with the Windows App
+window. Its live desktop became smaller than UU's persistent private relay,
+which made UU render the desktop at the left of a larger white canvas. Reducing
+UU to that window size removed the white region but made the desktop too low
+resolution. The correct recovery restored the live XRDP display to
+`1620x1080` with the existing local FreeRDP resize helper, then set UU to the
+same size.
+
+That helper initially printed the complete FreeRDP usage page: FreeRDP 3 now
+rejects its explicit `subtype:0` keyboard option. Omitting that field retains
+the default subtype, preserves the declared Japanese layout and keyboard type,
+and allowed the in-place resize to complete. The GNOME session survived; the
+active RDP viewer could disconnect briefly, and the VNC mirror was reattached
+to the resized display.

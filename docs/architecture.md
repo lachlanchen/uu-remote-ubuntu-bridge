@@ -122,12 +122,16 @@ one. The original request count is returned to UU only after focus is confirmed
 and every translated event is accepted. Unsupported characters fail explicitly
 rather than being emitted as an unrelated key.
 
-Routine diagnostics use separate bounded quotas for text and non-text calls,
-and successful events are not synchronously forced to disk. This keeps early
-mouse traffic from both adding input latency and hiding later text telemetry.
-Failures are still flushed immediately. Logs contain only counts, route, focus
-state, pacing metadata, and result codes; they never contain the key or
-character value.
+Physical-key segments are unchanged by default. An optional 0-50 ms delay can
+add back-pressure after each accepted segment on a host where fast typing
+omits events; it never retries or synthesizes input.
+
+Diagnostics use separate bounded quotas for phone text, physical keyboard,
+mouse, and other calls, and successful events are not synchronously forced to
+disk. This keeps early mouse traffic from both adding input latency and hiding
+later keyboard telemetry. Failures are still flushed immediately. Logs contain
+only category, counts, route, focus state, pacing and boundary timing metadata,
+and result codes; they never contain the key or character value.
 
 The separate RDP `cliprdr` channel remains enabled for normal copy and paste;
 it is not the transport used by UU's native phone keyboard in 4.33.0.8907.

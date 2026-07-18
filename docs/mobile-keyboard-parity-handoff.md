@@ -166,7 +166,7 @@ deployment check.
 
 ```bash
 sed -n -E \
-  '/^UURB_(RDP_PORT|RESOLUTION|DISPLAY|GRD_FD_RESTART_THRESHOLD|TEXT_KEY_DELAY_MS|NETWORK_INTERFACE)=/p' \
+  '/^UURB_(RDP_PORT|RESOLUTION|DISPLAY|GRD_FD_RESTART_THRESHOLD|TEXT_KEY_DELAY_MS|PHYSICAL_KEY_DELAY_MS|NETWORK_INTERFACE)=/p' \
   ~/.config/uu-remote-bridge/environment
 systemctl --user is-enabled uu-remote-bridge.service
 systemctl --user is-active uu-remote-bridge.service
@@ -191,8 +191,10 @@ rg 'route=broker .*error=0' "$bridge" | tail -n 10
 ```
 
 A working normal-phone-keyboard commit has `text=normalized`, a result equal to
-the original count, and `error=0`. Post-release logs also show `focus=ready`,
-`paced=N`, and `delay-ms=N`. Do not require those newer fields from `v0.1.0`.
+the original count, and `error=0`. Post-release text logs also show
+`focus=ready`, `paced-text=N`, and `text-delay-ms=N`; physical-key logs use
+`category=keyboard`, `paced-physical=N`, and `physical-delay-ms=N`. Do not
+require those newer fields from `v0.1.0`.
 
 The bridge-owned logs above are designed to omit content. Do not substitute
 raw NetEase logs, a Wine-prefix archive, or a process dump in a community issue.

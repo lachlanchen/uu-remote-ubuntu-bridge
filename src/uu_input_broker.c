@@ -13,6 +13,8 @@
 #define INPUT_BRIDGE_FOCUS_TIMEOUT_MS 300UL
 #define INPUT_BRIDGE_DEFAULT_TEXT_KEY_DELAY_MS 8UL
 #define INPUT_BRIDGE_MAX_TEXT_KEY_DELAY_MS 50UL
+#define INPUT_BRIDGE_DEFAULT_PHYSICAL_KEY_DELAY_MS 0UL
+#define INPUT_BRIDGE_MAX_PHYSICAL_KEY_DELAY_MS 50UL
 
 typedef struct input_bridge_request {
     DWORD magic;
@@ -33,9 +35,13 @@ typedef struct input_segment {
 
 static HANDLE log_file = INVALID_HANDLE_VALUE;
 static volatile LONG input_call_count;
-static volatile LONG routine_call_count;
+static volatile LONG keyboard_call_count;
+static volatile LONG mouse_call_count;
+static volatile LONG other_call_count;
 static volatile LONG text_call_count;
 static DWORD text_key_delay_ms = INPUT_BRIDGE_DEFAULT_TEXT_KEY_DELAY_MS;
+static DWORD physical_key_delay_ms =
+    INPUT_BRIDGE_DEFAULT_PHYSICAL_KEY_DELAY_MS;
 
 static void write_log(const char *message)
 {
@@ -225,9 +231,38 @@ static BOOL translate_inputs(DWORD source_count, const INPUT *source,
                           ordinary_count, FALSE);
 }
 
+static BOOL inputs_contain_type(DWORD count, const INPUT *inputs, DWORD type)
+{
+    DWORD index;
+
+    for (index = 0; index < count; index++) {
+        if (inputs[index].type == type)
+            return TRUE;
+    }
+    return FALSE;
+}
+
+static BOOL segment_contains_physical_keyboard(const input_segment *segment,
+                                               const INPUT *inputs)
+{
+    DWORD index;
+
+    if (segment->text)
+        return FALSE;
+    for (index = 0; index < segment->count; index++) {
+        const INPUT *input = &inputs[segment->offset + index];
+
+        if (input->type == INPUT_KEYBOARD &&
+            (input->ki.dwFlags & KEYEVENTF_UNICODE) == 0)
+            return TRUE;
+    }
+    return FALSE;
+}
+
 static DWORD send_relay_inputs(DWORD source_count, const INPUT *source,
                                DWORD *error, BOOL *normalized_unicode,
-                               DWORD *paced_characters)
+                               DWORD *paced_characters,
+                               DWORD *paced_physical_segments)
 {
     INPUT translated[INPUT_BRIDGE_MAX_TRANSLATED_INPUTS];
     input_segment segments[INPUT_BRIDGE_MAX_SEGMENTS];
@@ -236,6 +271,7 @@ static DWORD send_relay_inputs(DWORD source_count, const INPUT *source,
     DWORD index;
 
     *paced_characters = 0;
+    *paced_physical_segments = 0;
     if (!translate_inputs(source_count, source, translated, &translated_count,
                           segments, &segment_count, normalized_unicode)) {
         *error = ERROR_NO_UNICODE_TRANSLATION;
@@ -261,6 +297,10 @@ static DWORD send_relay_inputs(DWORD source_count, const INPUT *source,
             (*paced_characters)++;
             if (text_key_delay_ms > 0)
                 Sleep(text_key_delay_ms);
+        } else if (segment_contains_physical_keyboard(segment, translated)) {
+            (*paced_physical_segments)++;
+            if (physical_key_delay_ms > 0)
+                Sleep(physical_key_delay_ms);
         }
     }
 
@@ -318,21 +358,49 @@ static DWORD configured_text_key_delay(void)
     return (DWORD)parsed;
 }
 
+static DWORD configured_physical_key_delay(void)
+{
+    wchar_t value[16];
+    wchar_t *end = NULL;
+    DWORD length;
+    unsigned long parsed;
+
+    length = GetEnvironmentVariableW(L"UURB_PHYSICAL_KEY_DELAY_MS", value,
+                                     ARRAYSIZE(value));
+    if (length == 0 || length >= ARRAYSIZE(value))
+        return INPUT_BRIDGE_DEFAULT_PHYSICAL_KEY_DELAY_MS;
+
+    parsed = wcstoul(value, &end, 10);
+    if (end == value || *end != L'\0' ||
+        parsed > INPUT_BRIDGE_MAX_PHYSICAL_KEY_DELAY_MS)
+        return INPUT_BRIDGE_DEFAULT_PHYSICAL_KEY_DELAY_MS;
+    return (DWORD)parsed;
+}
+
 static void serve_client(HANDLE pipe)
 {
     for (;;) {
         input_bridge_request request;
         input_bridge_response response;
         INPUT inputs[INPUT_BRIDGE_MAX_INPUTS];
-        char line[384];
+        char line[512];
         DWORD first_type = (DWORD)-1;
         DWORD first_flags = 0;
         DWORD focus_wait_ms = 0;
         DWORD paced_characters = 0;
+        DWORD paced_physical_segments = 0;
         LONG call_number;
         LONG category_call_number;
+        const char *category;
         BOOL focus_ready;
         BOOL normalized_unicode = FALSE;
+        BOOL physical_keyboard;
+        BOOL mouse_input;
+        ULONGLONG started_ms;
+        ULONGLONG inject_started_ms = 0;
+        DWORD inject_ms = 0;
+
+        started_ms = GetTickCount64();
 
         if (!read_all(pipe, &request, sizeof(request)))
             return;
@@ -345,10 +413,13 @@ static void serve_client(HANDLE pipe)
 
         focus_ready = request_relay_focus(&focus_wait_ms);
         if (focus_ready) {
+            inject_started_ms = GetTickCount64();
             response.result = send_relay_inputs(request.count, inputs,
                                                 &response.error,
                                                 &normalized_unicode,
-                                                &paced_characters);
+                                                &paced_characters,
+                                                &paced_physical_segments);
+            inject_ms = (DWORD)(GetTickCount64() - inject_started_ms);
         } else {
             DWORD index;
 
@@ -367,16 +438,35 @@ static void serve_client(HANDLE pipe)
             first_flags = inputs[0].mi.dwFlags;
         else if (first_type == INPUT_KEYBOARD)
             first_flags = inputs[0].ki.dwFlags;
+        physical_keyboard = !normalized_unicode &&
+                            inputs_contain_type(request.count, inputs,
+                                                INPUT_KEYBOARD);
+        mouse_input = !normalized_unicode && !physical_keyboard &&
+                      inputs_contain_type(request.count, inputs, INPUT_MOUSE);
         call_number = InterlockedIncrement(&input_call_count);
-        category_call_number = InterlockedIncrement(
-            normalized_unicode ? &text_call_count : &routine_call_count);
+        if (normalized_unicode) {
+            category = "text";
+            category_call_number = InterlockedIncrement(&text_call_count);
+        } else if (physical_keyboard) {
+            category = "keyboard";
+            category_call_number = InterlockedIncrement(&keyboard_call_count);
+        } else if (mouse_input) {
+            category = "mouse";
+            category_call_number = InterlockedIncrement(&mouse_call_count);
+        } else {
+            category = "other";
+            category_call_number = InterlockedIncrement(&other_call_count);
+        }
         if ((normalized_unicode && category_call_number <= 256) ||
-            (!normalized_unicode && category_call_number <= 64) ||
+            (physical_keyboard && category_call_number <= 256) ||
+            (mouse_input && category_call_number <= 32) ||
+            (!normalized_unicode && !physical_keyboard && !mouse_input &&
+             category_call_number <= 64) ||
             response.result != request.count) {
             _snprintf(
                 line, sizeof(line),
-                "call=%ld category-call=%ld count=%lu type=%lu flags=0x%08lx text=%s focus=%s focus-wait-ms=%lu paced=%lu delay-ms=%lu result=%lu error=%lu\r\n",
-                call_number, category_call_number,
+                "call=%ld category=%s category-call=%ld count=%lu type=%lu flags=0x%08lx text=%s focus=%s focus-wait-ms=%lu paced-text=%lu text-delay-ms=%lu paced-physical=%lu physical-delay-ms=%lu inject-ms=%lu total-ms=%lu result=%lu error=%lu\r\n",
+                call_number, category, category_call_number,
                 (unsigned long)request.count,
                 (unsigned long)first_type, (unsigned long)first_flags,
                 normalized_unicode ? "normalized" : "unchanged",
@@ -384,6 +474,10 @@ static void serve_client(HANDLE pipe)
                 (unsigned long)focus_wait_ms,
                 (unsigned long)paced_characters,
                 (unsigned long)text_key_delay_ms,
+                (unsigned long)paced_physical_segments,
+                (unsigned long)physical_key_delay_ms,
+                (unsigned long)inject_ms,
+                (unsigned long)(GetTickCount64() - started_ms),
                 (unsigned long)response.result,
                 (unsigned long)response.error);
             line[sizeof(line) - 1] = '\0';
@@ -421,12 +515,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous,
                            FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
                            OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     text_key_delay_ms = configured_text_key_delay();
+    physical_key_delay_ms = configured_physical_key_delay();
     {
-        char line[128];
+        char line[192];
 
         _snprintf(line, sizeof(line),
-                  "UU input broker active text-delay-ms=%lu focus-timeout-ms=%lu\r\n",
+                  "UU input broker active text-delay-ms=%lu physical-delay-ms=%lu focus-timeout-ms=%lu\r\n",
                   (unsigned long)text_key_delay_ms,
+                  (unsigned long)physical_key_delay_ms,
                   (unsigned long)INPUT_BRIDGE_FOCUS_TIMEOUT_MS);
         line[sizeof(line) - 1] = '\0';
         write_log(line);

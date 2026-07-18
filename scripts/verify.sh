@@ -142,6 +142,16 @@ else
     fail 'input broker text-key pacing is missing or differs from saved settings'
 fi
 
+saved_physical_key_delay_ms="$(saved_setting UURB_PHYSICAL_KEY_DELAY_MS)"
+physical_key_delay_ms="${UURB_PHYSICAL_KEY_DELAY_MS:-${saved_physical_key_delay_ms:-0}}"
+if [[ "$physical_key_delay_ms" =~ ^[0-9]+$ ]] &&
+   ((physical_key_delay_ms <= 50)) &&
+   [[ "$broker_configuration" == *"physical-delay-ms=$physical_key_delay_ms "* ]]; then
+    pass "input broker uses a ${physical_key_delay_ms} ms physical-key delay"
+else
+    fail 'input broker physical-key pacing is missing or differs from saved settings'
+fi
+
 saved_rdp_port="$(saved_setting UURB_RDP_PORT)"
 rdp_port="${UURB_RDP_PORT:-${saved_rdp_port:-3390}}"
 configured_rdp_port="$(

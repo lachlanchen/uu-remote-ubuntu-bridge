@@ -58,6 +58,7 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("UURB_DISPLAY=%s", installer)
         self.assertIn("UURB_GRD_FD_RESTART_THRESHOLD=%s", installer)
         self.assertIn("UURB_TEXT_KEY_DELAY_MS=%s", installer)
+        self.assertIn("UURB_PHYSICAL_KEY_DELAY_MS=%s", installer)
         self.assertIn("UURB_NETWORK_INTERFACE=%s", installer)
         self.assertIn("EnvironmentFile=-%h/.config/uu-remote-bridge/environment", unit)
         self.assertIn('bridge_display="${UURB_DISPLAY:-auto}"', launcher)
@@ -67,6 +68,10 @@ class RuntimeScriptTests(unittest.TestCase):
         )
         self.assertIn(
             'text_key_delay_ms="${UURB_TEXT_KEY_DELAY_MS:-8}"',
+            launcher,
+        )
+        self.assertIn(
+            'physical_key_delay_ms="${UURB_PHYSICAL_KEY_DELAY_MS:-0}"',
             launcher,
         )
         self.assertIn(
@@ -195,6 +200,12 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("INPUT_BRIDGE_FOCUS_TIMEOUT_MS", broker)
         self.assertIn("Sleep(text_key_delay_ms)", broker)
         self.assertIn('L"UURB_TEXT_KEY_DELAY_MS"', broker)
+        self.assertIn("Sleep(physical_key_delay_ms)", broker)
+        self.assertIn('L"UURB_PHYSICAL_KEY_DELAY_MS"', broker)
+        self.assertIn('category = "keyboard"', bridge)
+        self.assertIn('category = "mouse"', bridge)
+        self.assertIn('category = "keyboard"', broker)
+        self.assertIn('category = "mouse"', broker)
         self.assertIn("static void flush_log", bridge)
         self.assertIn("static void flush_log", broker)
 
@@ -202,11 +213,11 @@ class RuntimeScriptTests(unittest.TestCase):
         bridge = (REPOSITORY / "src" / "uu_input_bridge.c").read_text()
 
         self.assertIn("if (unicode_keyboard)", bridge)
-        self.assertIn(
-            "if (result != count) {\n"
-            "            result = send_through_broker",
-            bridge,
+        fallback_condition = bridge.index("if (result != count) {")
+        broker_call = bridge.index(
+            "result = send_through_broker", fallback_condition
         )
+        self.assertLess(fallback_condition, broker_call)
 
     def test_network_diagnosis_is_installed_and_exposed(self):
         installer = (REPOSITORY / "install.sh").read_text()

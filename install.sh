@@ -49,12 +49,14 @@ saved_grd_fd_restart_threshold="$(
     saved_setting UURB_GRD_FD_RESTART_THRESHOLD
 )"
 saved_text_key_delay_ms="$(saved_setting UURB_TEXT_KEY_DELAY_MS)"
+saved_physical_key_delay_ms="$(saved_setting UURB_PHYSICAL_KEY_DELAY_MS)"
 saved_network_interface="$(saved_setting UURB_NETWORK_INTERFACE)"
 rdp_port="${UURB_RDP_PORT:-${saved_rdp_port:-3390}}"
 resolution="${UURB_RESOLUTION:-${saved_resolution:-1920x1080}}"
 bridge_display="${UURB_DISPLAY:-${saved_display:-auto}}"
 grd_fd_restart_threshold="${UURB_GRD_FD_RESTART_THRESHOLD:-${saved_grd_fd_restart_threshold:-4096}}"
 text_key_delay_ms="${UURB_TEXT_KEY_DELAY_MS:-${saved_text_key_delay_ms:-8}}"
+physical_key_delay_ms="${UURB_PHYSICAL_KEY_DELAY_MS:-${saved_physical_key_delay_ms:-0}}"
 network_interface="${UURB_NETWORK_INTERFACE:-${saved_network_interface:-all}}"
 uu_installer=''
 skip_packages=false
@@ -78,6 +80,9 @@ usage: ./install.sh [options]
                          (default: 4096; 0 disables the guard)
   --text-key-delay-ms N  pace relayed phone text by 0-50 ms per character
                          (default: 8)
+  --physical-key-delay-ms N
+                         pace physical key batches by 0-50 ms
+                         (default: 0)
   --network-interface all|default|IFACE
                          use all adapters (the default), Ubuntu's preferred
                          route, or one named interface
@@ -117,6 +122,10 @@ while (($#)); do
             ;;
         --text-key-delay-ms)
             text_key_delay_ms="${2:?--text-key-delay-ms requires a number}"
+            shift 2
+            ;;
+        --physical-key-delay-ms)
+            physical_key_delay_ms="${2:?--physical-key-delay-ms requires a number}"
             shift 2
             ;;
         --network-interface)
@@ -201,6 +210,11 @@ fi
 if [[ ! "$text_key_delay_ms" =~ ^[0-9]+$ ]] ||
    ((text_key_delay_ms > 50)); then
     printf 'The text-key delay must be an integer from 0 through 50 ms.\n' >&2
+    exit 2
+fi
+if [[ ! "$physical_key_delay_ms" =~ ^[0-9]+$ ]] ||
+   ((physical_key_delay_ms > 50)); then
+    printf 'The physical-key delay must be an integer from 0 through 50 ms.\n' >&2
     exit 2
 fi
 if [[ "$network_interface" != all &&
@@ -463,6 +477,8 @@ printf 'UURB_GRD_FD_RESTART_THRESHOLD=%s\n' \
     "$grd_fd_restart_threshold" >>"$environment_tmp"
 printf 'UURB_TEXT_KEY_DELAY_MS=%s\n' \
     "$text_key_delay_ms" >>"$environment_tmp"
+printf 'UURB_PHYSICAL_KEY_DELAY_MS=%s\n' \
+    "$physical_key_delay_ms" >>"$environment_tmp"
 printf 'UURB_NETWORK_INTERFACE=%s\n' \
     "$network_interface" >>"$environment_tmp"
 chmod 0600 "$environment_tmp"

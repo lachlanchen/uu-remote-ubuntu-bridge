@@ -88,6 +88,19 @@ class DocumentationTests(unittest.TestCase):
         self.assertIn("UURB_TEXT_KEY_DELAY_MS", keyboard_handoff)
         self.assertIn("Do not commit a completed record", keyboard_handoff)
 
+    def test_xrdp_keyboard_recovery_preserves_safe_ordering(self) -> None:
+        recovery = (
+            REPO_DIR / "docs/xrdp-and-keyboard-recovery.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("reset the controller application first", recovery)
+        self.assertIn("--physical-key-delay-ms 8", recovery)
+        self.assertIn("--physical-key-delay-ms 0", recovery)
+        self.assertIn("1620x1080", recovery)
+        self.assertIn("subtype:0", recovery)
+        self.assertIn("does not prove", recovery)
+        self.assertIn("never record a key code", recovery)
+
 
 if __name__ == "__main__":
     unittest.main()

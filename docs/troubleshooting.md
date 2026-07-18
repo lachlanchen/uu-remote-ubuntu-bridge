@@ -208,6 +208,83 @@ applications. To restore UU's original all-adapter view:
   --network-interface all
 ```
 
+If the transport and relay are responsive, deliberate slow typing works, and
+fast physical-key input still omits events, test bounded physical-key pacing:
+
+```bash
+./install.sh --skip-packages --skip-account-login \
+  --physical-key-delay-ms 8
+./scripts/verify.sh --quick
+```
+
+The default is `0`. The broker waits only after an accepted physical-key
+segment; it does not retry or synthesize a key. Confirm the accepted test with
+privacy-safe metadata:
+
+```bash
+broker="$HOME/.local/share/wineprefixes/uu-remote/drive_c/users/$USER/Temp/uu-input-broker.log"
+rg 'category=keyboard' "$broker" | tail -n 30
+```
+
+Look for `focus=ready`, `paced-physical=1`, the configured
+`physical-delay-ms`, a matching result count, and `error=0`. Restore the
+original behavior with `--physical-key-delay-ms 0`.
+
+## Windows App remains on Configuring
+
+First determine whether the newest XRDP attempt stops immediately after
+`TLS connection established`:
+
+```bash
+ss -H -tnp 'sport = :3389'
+journalctl -u xrdp.service -u xrdp-sesman.service \
+  --since '-15 min' --no-pager
+tail -n 80 /var/log/xrdp.log
+```
+
+If no capability, authentication, or session-selection line follows, reset
+Windows App on the controlling Mac before touching Ubuntu:
+
+```bash
+osascript -e 'tell application "Windows App" to quit'
+open -a "Windows App"
+```
+
+A localhost VNC mirror on a different RFB port does not conflict with XRDP's
+TCP 3389 listener. Restart `xrdp.service` only if the listener remains unhealthy
+after the client closes. Ubuntu's unit dependencies can restart
+`xrdp-sesman.service` too; the replacement manager may create a new display and
+end the prior XRDP/VNC desktop. The complete evidence and safest ordering are
+in [XRDP Client Stall and UU Keyboard Recovery](xrdp-and-keyboard-recovery.md).
+
+## UU shows the desktop on the left and white space on the right
+
+Compare the active XRDP display with the UU relay setting:
+
+```bash
+DISPLAY=:11 XAUTHORITY="$HOME/.Xauthority" xdpyinfo | rg dimensions
+sed -n 's/^UURB_RESOLUTION=//p' \
+  ~/.config/uu-remote-bridge/environment
+```
+
+Windows App can dynamically resize the XRDP desktop when its window changes.
+Do not shrink UU to a very small window-derived size unless that low resolution
+is intentional. Restore a useful XRDP size first, then match UU. On the
+validated workstation:
+
+```bash
+XRDP_VNC_GEOMETRY=1620x1080 \
+  "$HOME/scripts/xrdp-vnc-bridge.sh" resize
+
+./install.sh --skip-packages --skip-account-login \
+  --resolution 1620x1080
+```
+
+The resize helper may disconnect an attached RDP viewer, but it preserves the
+GNOME session. Only the second command restarts UU. See the
+[recovery note](xrdp-and-keyboard-recovery.md#desktop-uses-only-part-of-the-uu-canvas)
+for the FreeRDP 3 compatibility correction and persistence behavior.
+
 ## Server restarts every four minutes
 
 Check for Wine's unimplemented event-log abort:

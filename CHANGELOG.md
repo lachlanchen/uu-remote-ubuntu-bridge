@@ -15,6 +15,12 @@ locked by the release manifest.
 - verified, bridge-local backport of upstream libei's received-keymap FD fix
 - opt-in, process-local UU adapter selection for multi-homed hosts, with
   `all`, Ubuntu-default-route, and fixed-interface modes
+- opt-in physical-key pacing with a conservative zero default and a persistent
+  `--physical-key-delay-ms` installer setting
+- bounded privacy-safe input categories and per-boundary timing for keyboard,
+  phone text, mouse, and other calls
+- a validated XRDP/Windows App recovery note that puts client reset before a
+  potentially session-replacing server restart
 - a complete debugging journey covering input, lifecycle, deployment, and
   unattended boot discoveries
 
@@ -22,8 +28,8 @@ locked by the release manifest.
 
 - pace translated phone text one character chord at a time with a persistent,
   configurable 8 ms default delay
-- split bounded text and routine input telemetry and avoid synchronous disk
-  flushes for successful events on the serial input path
+- split bounded text, physical-keyboard, mouse, and other input telemetry and
+  avoid synchronous disk flushes for successful events on the serial path
 - raised the supervised GNOME RDP descriptor limit to 65536
 - extended the bounded GDM/keyring startup wait to 120 seconds and retained a
   visible successful oneshot state
