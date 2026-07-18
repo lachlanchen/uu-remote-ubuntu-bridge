@@ -7,9 +7,11 @@ output_dir="${1:-$repo_dir/build/compat}"
 cc="${MINGW_CC:-x86_64-w64-mingw32-gcc}"
 strip="${MINGW_STRIP:-x86_64-w64-mingw32-strip}"
 winegcc="${WINEGCC:-/opt/wine-stable/bin/winegcc}"
+host_cc="${HOST_CC:-gcc}"
+host_strip="${HOST_STRIP:-strip}"
 common=(-std=c11 -O2 -Wall -Wextra -Werror)
 
-for command in "$cc" "$strip" "$winegcc"; do
+for command in "$cc" "$strip" "$winegcc" "$host_cc" "$host_strip"; do
     if ! command -v "$command" >/dev/null 2>&1; then
         printf 'missing build tool: %s\n' "$command" >&2
         exit 1
@@ -36,6 +38,9 @@ mkdir -p "$output_dir"
 "$cc" "${common[@]}" -shared \
     -o "$output_dir/winpr-sspi-shim.dll" \
     "$repo_dir/src/winpr_sspi_shim.c"
+"$host_cc" "${common[@]}" -fPIC -shared \
+    -o "$output_dir/uu-network-filter.so" \
+    "$repo_dir/src/uu_network_filter.c" -ldl -pthread
 
 "$strip" \
     "$output_dir/uu-input-bridge.dll" \
@@ -44,10 +49,11 @@ mkdir -p "$output_dir"
     "$output_dir/uu-service-control.exe" \
     "$output_dir/uu-healthd-stub.exe" \
     "$output_dir/winpr-sspi-shim.dll"
+"$host_strip" "$output_dir/uu-network-filter.so"
 
 rm -f "$output_dir/winlogon.exe" "$output_dir/winlogon.exe.so"
 "$winegcc" -O2 -mwindows -o "$output_dir/winlogon.exe" \
     "$repo_dir/src/winlogon.c"
-strip "$output_dir/winlogon.exe.so"
+"$host_strip" "$output_dir/winlogon.exe.so"
 
 printf 'compatibility tools built in %s\n' "$output_dir"

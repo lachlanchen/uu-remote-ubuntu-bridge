@@ -58,6 +58,7 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("UURB_DISPLAY=%s", installer)
         self.assertIn("UURB_GRD_FD_RESTART_THRESHOLD=%s", installer)
         self.assertIn("UURB_TEXT_KEY_DELAY_MS=%s", installer)
+        self.assertIn("UURB_NETWORK_INTERFACE=%s", installer)
         self.assertIn("EnvironmentFile=-%h/.config/uu-remote-bridge/environment", unit)
         self.assertIn('bridge_display="${UURB_DISPLAY:-auto}"', launcher)
         self.assertIn(
@@ -66,6 +67,10 @@ class RuntimeScriptTests(unittest.TestCase):
         )
         self.assertIn(
             'text_key_delay_ms="${UURB_TEXT_KEY_DELAY_MS:-8}"',
+            launcher,
+        )
+        self.assertIn(
+            'network_interface="${UURB_NETWORK_INTERFACE:-all}"',
             launcher,
         )
         self.assertIn("/tmp/.X11-unix/X$display_number", launcher)
@@ -213,6 +218,23 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("uu-connection-status", uninstaller)
         self.assertIn("network)", command)
         self.assertIn('exec /usr/bin/python3 "$connection_status_bin"', command)
+
+    def test_optional_network_filter_is_scoped_and_fail_open(self):
+        builder = (REPOSITORY / "scripts" / "build-compat.sh").read_text()
+        installer = (REPOSITORY / "install.sh").read_text()
+        launcher = (REPOSITORY / "scripts" / "uu-remote-bridge").read_text()
+        network_filter = (REPOSITORY / "src" / "uu_network_filter.c").read_text()
+
+        self.assertIn("uu-network-filter.so", builder)
+        self.assertIn("--network-interface", installer)
+        self.assertIn("select_network_interface", launcher)
+        self.assertIn('"${wine_host_environment[@]}" "$compat_dir/winlogon.exe"', launcher)
+        self.assertNotIn("export LD_PRELOAD", launcher)
+        self.assertIn("fail-open", network_filter)
+        self.assertIn('strcmp(name, "lo")', network_filter)
+        self.assertIn("if (!selected_found)", network_filter)
+        self.assertIn("*copy = *entry", network_filter)
+        self.assertNotIn("last = entry", network_filter)
 
 
 if __name__ == "__main__":

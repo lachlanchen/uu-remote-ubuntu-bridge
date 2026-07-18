@@ -63,13 +63,13 @@ official UU window on the logged-in desktop before starting the private relay.
 Complete account sign-in and close that window. Re-running the same command is
 idempotent; unchanged FreeRDP build outputs are checksum-verified and reused.
 
-Port, resolution, private-display, and phone-text pacing choices are persistent
-and can be set
-without editing the service:
+Port, resolution, private-display, phone-text pacing, and an optional UU-only
+network-interface choice are persistent and can be set without editing the
+service:
 
 ```bash
 ./install.sh --rdp-port 3391 --resolution 2560x1440 --display auto \
-  --text-key-delay-ms 8
+  --text-key-delay-ms 8 --network-interface all
 ```
 
 They are validated and stored in
@@ -97,6 +97,21 @@ The report shows only aggregate path, delay, P2P, and key-watchdog metadata. It
 never prints addresses, device IDs, account data, or typed text. A forced relay
 near UU's key-watchdog threshold is an upstream network problem; host-side
 retries can duplicate keys that arrive late.
+
+On a host with several active adapters, UU under Wine can choose the first
+enumerated adapter even when Ubuntu routes through a different, faster one.
+If `uu-remote network` and a direct-RDP comparison point to that condition,
+select Ubuntu's preferred default route at each bridge start:
+
+```bash
+./install.sh --skip-packages --skip-account-login \
+  --network-interface default
+```
+
+This loads a fail-open adapter view only into UU's Wine service tree. It does
+not edit routes, NetworkManager, firewall rules, Docker, or system libraries.
+The repository and installer default remains `all`, preserving existing hosts.
+Use `--network-interface all` to remove the restriction.
 
 Ubuntu 24.04's libei 1.2.1 leaks the received keyboard-keymap descriptor after
 duplicating it. The installer builds the exact upstream one-line fix from a
@@ -267,7 +282,7 @@ The RDP hop targets loopback and pins GNOME's certificate fingerprint.
 | --- | --- |
 | `patches/` | Versioned approved UU identities and patch signatures |
 | `CHANGELOG.md` | Tagged bridge release history and upgrade entry points |
-| `src/` | Input hook, broker, injector, service helper, and SSPI shim |
+| `src/` | Input hook, broker, injector, service helper, adapter filter, and SSPI shim |
 | `scripts/gameviewer_patchlib.py` | Generic release-manifest engine |
 | `scripts/patch-gameviewer.py` | Patch, verify, status, field, and restore CLI |
 | `scripts/stage-uu-release.sh` | Private installer staging sandbox |

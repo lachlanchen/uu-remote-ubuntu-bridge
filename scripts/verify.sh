@@ -28,6 +28,7 @@ healthd_original_sha256="$(manifest_field health_monitor.original_sha256)"
 healthd_stub="$repo_dir/build/compat/uu-healthd-stub.exe"
 freerdp="$wine_prefix/drive_c/Program Files/FreeRDP/sdl-freerdp.exe"
 libei_backport="$wine_prefix/compat/libei/libei.so.1.2.1"
+network_filter="$wine_prefix/compat/uu-network-filter.so"
 runtime_digest_file="$wine_prefix/compat/.runtime-source-sha256"
 # GameViewerServer is launched by Wine's service manager, which intentionally
 # does not inherit UU_INPUT_BRIDGE_LOG. The injected DLL therefore uses the
@@ -199,6 +200,31 @@ if [[ -n "$server_pid" ]]; then
     pass "UU server is running as process $server_pid"
 else
     fail 'UU server is not running'
+fi
+
+saved_network_interface="$(saved_setting UURB_NETWORK_INTERFACE)"
+network_interface="${UURB_NETWORK_INTERFACE:-${saved_network_interface:-all}}"
+active_network_interface=''
+if [[ -n "$server_pid" && -r "/proc/$server_pid/environ" ]]; then
+    active_network_interface="$(
+        /usr/bin/tr '\0' '\n' <"/proc/$server_pid/environ" | \
+            /usr/bin/sed -n 's/^UURB_NETWORK_INTERFACE=//p' | \
+            /usr/bin/tail -n 1
+    )"
+fi
+if [[ "$network_interface" == all ]]; then
+    printf 'INFO  UU can use all host network interfaces\n'
+elif [[ ! -f "$network_filter" ]]; then
+    fail 'the configured UU network-interface filter is missing'
+elif [[ -n "$server_pid" ]] &&
+     /usr/bin/grep -Fq "$network_filter" "/proc/$server_pid/maps" &&
+     [[ -n "$active_network_interface" ]] &&
+     [[ -d "/sys/class/net/$active_network_interface" ]] &&
+     { [[ "$network_interface" == default ]] ||
+       [[ "$active_network_interface" == "$network_interface" ]]; }; then
+    pass "UU network-interface filter is active ($network_interface -> $active_network_interface)"
+else
+    fail "UU network-interface filter is not active ($network_interface)"
 fi
 
 account_state="$({

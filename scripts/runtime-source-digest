@@ -22,6 +22,7 @@ runtime_files=(
     src/uu_injector.c
     src/uu_input_bridge.c
     src/uu_input_broker.c
+    src/uu_network_filter.c
     src/uu_service_control.c
     src/winlogon.c
     src/winpr_sspi_shim.c

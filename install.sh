@@ -49,11 +49,13 @@ saved_grd_fd_restart_threshold="$(
     saved_setting UURB_GRD_FD_RESTART_THRESHOLD
 )"
 saved_text_key_delay_ms="$(saved_setting UURB_TEXT_KEY_DELAY_MS)"
+saved_network_interface="$(saved_setting UURB_NETWORK_INTERFACE)"
 rdp_port="${UURB_RDP_PORT:-${saved_rdp_port:-3390}}"
 resolution="${UURB_RESOLUTION:-${saved_resolution:-1920x1080}}"
 bridge_display="${UURB_DISPLAY:-${saved_display:-auto}}"
 grd_fd_restart_threshold="${UURB_GRD_FD_RESTART_THRESHOLD:-${saved_grd_fd_restart_threshold:-4096}}"
 text_key_delay_ms="${UURB_TEXT_KEY_DELAY_MS:-${saved_text_key_delay_ms:-8}}"
+network_interface="${UURB_NETWORK_INTERFACE:-${saved_network_interface:-all}}"
 uu_installer=''
 skip_packages=false
 skip_account_login=false
@@ -76,6 +78,9 @@ usage: ./install.sh [options]
                          (default: 4096; 0 disables the guard)
   --text-key-delay-ms N  pace relayed phone text by 0-50 ms per character
                          (default: 8)
+  --network-interface all|default|IFACE
+                         use all adapters (the default), Ubuntu's preferred
+                         route, or one named interface
   --skip-packages        do not install Ubuntu/Wine package dependencies
   --skip-account-login   do not open UU for first-time account sign-in
   --unattended           enable TPM-backed startup after an automatic login
@@ -112,6 +117,10 @@ while (($#)); do
             ;;
         --text-key-delay-ms)
             text_key_delay_ms="${2:?--text-key-delay-ms requires a number}"
+            shift 2
+            ;;
+        --network-interface)
+            network_interface="${2:?--network-interface requires all, default, or an interface name}"
             shift 2
             ;;
         --skip-packages)
@@ -194,6 +203,19 @@ if [[ ! "$text_key_delay_ms" =~ ^[0-9]+$ ]] ||
     printf 'The text-key delay must be an integer from 0 through 50 ms.\n' >&2
     exit 2
 fi
+if [[ "$network_interface" != all &&
+      "$network_interface" != default &&
+      ! "$network_interface" =~ ^[a-zA-Z0-9_.:-]{1,15}$ ]]; then
+    printf 'The UU network interface must be all, default, or a Linux interface name.\n' >&2
+    exit 2
+fi
+if [[ "$network_interface" != all &&
+      "$network_interface" != default &&
+      ! -d "/sys/class/net/$network_interface" ]]; then
+    printf 'The requested UU network interface does not exist: %s\n' \
+        "$network_interface" >&2
+    exit 2
+fi
 user_bus="${XDG_RUNTIME_DIR:-/run/user/$UID}/bus"
 if [[ ! -S "$user_bus" ]]; then
     printf 'The systemd user bus is unavailable at %s.\n' "$user_bus" >&2
@@ -236,9 +258,10 @@ install_winehq() {
 install_packages() {
     sudo apt-get update
     sudo apt-get install -y \
-        acl aria2 ca-certificates cmake crudini curl freerdp3-x11 \
+        acl aria2 binutils ca-certificates cmake crudini curl freerdp3-x11 \
+        gcc \
         gcc-mingw-w64-x86-64 \
-        git gnome-remote-desktop jq libsecret-tools libxml2-utils meson \
+        git gnome-remote-desktop iproute2 jq libsecret-tools libxml2-utils meson \
         ninja-build openbox openssl p7zip-full patch python3 python3-attr \
         python3-gi python3-jinja2 tar x11-utils xauth xdotool xvfb zstd
     install_winehq
@@ -295,7 +318,8 @@ for command in curl meson ninja patch readelf sha256sum /usr/bin/systemctl \
     timeout \
     "$grdctl_bin" "$openssl_bin" "$python_bin" "$secret_tool_bin" \
     "$wine_bin" "$wineserver_bin" /usr/bin/Xvfb /usr/bin/gsettings \
-    /usr/bin/mcookie /usr/bin/openbox /usr/bin/ss /usr/bin/xauth \
+    /usr/bin/awk /usr/bin/ip /usr/bin/mcookie /usr/bin/openbox \
+    /usr/bin/sort /usr/bin/ss /usr/bin/xauth \
     /usr/bin/xdotool /usr/libexec/gnome-remote-desktop-daemon; do
     if ! command -v "$command" >/dev/null 2>&1; then
         printf 'missing required command: %s\n' "$command" >&2
@@ -392,6 +416,8 @@ install -m 0755 \
     "$compat_build/uu-injector.exe" \
     "$compat_build/uu-service-control.exe" \
     "$wine_prefix/compat/"
+install -m 0755 "$compat_build/uu-network-filter.so" \
+    "$wine_prefix/compat/uu-network-filter.so"
 install -m 0755 "$compat_build/winlogon.exe" \
     "$wine_prefix/compat/winlogon.exe"
 install -m 0755 "$compat_build/winlogon.exe.so" \
@@ -437,6 +463,8 @@ printf 'UURB_GRD_FD_RESTART_THRESHOLD=%s\n' \
     "$grd_fd_restart_threshold" >>"$environment_tmp"
 printf 'UURB_TEXT_KEY_DELAY_MS=%s\n' \
     "$text_key_delay_ms" >>"$environment_tmp"
+printf 'UURB_NETWORK_INTERFACE=%s\n' \
+    "$network_interface" >>"$environment_tmp"
 chmod 0600 "$environment_tmp"
 mv "$environment_tmp" "$environment_file"
 install -m 0755 "$repo_dir/scripts/uu-remote-bridge" \

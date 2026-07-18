@@ -166,7 +166,7 @@ deployment check.
 
 ```bash
 sed -n -E \
-  '/^UURB_(RDP_PORT|RESOLUTION|DISPLAY|GRD_FD_RESTART_THRESHOLD|TEXT_KEY_DELAY_MS)=/p' \
+  '/^UURB_(RDP_PORT|RESOLUTION|DISPLAY|GRD_FD_RESTART_THRESHOLD|TEXT_KEY_DELAY_MS|NETWORK_INTERFACE)=/p' \
   ~/.config/uu-remote-bridge/environment
 systemctl --user is-enabled uu-remote-bridge.service
 systemctl --user is-active uu-remote-bridge.service
@@ -174,10 +174,10 @@ uu-remote status
 ./scripts/configure-unattended.sh status
 ```
 
-The last two environment keys do not exist in the original `v0.1.0` release.
-Their absence is expected on the 7090 reference. Use `uu-remote status`; do not
-run `scripts/uu-remote-bridge` directly because that file is the systemd daemon,
-not the operator CLI.
+The descriptor, text-delay, and network-interface keys do not exist in the
+original `v0.1.0` release. Their absence is expected on the 7090 reference.
+Use `uu-remote status`; do not run `scripts/uu-remote-bridge` directly because
+that file is the systemd daemon, not the operator CLI.
 
 ### Content-free input evidence
 
@@ -255,6 +255,7 @@ app/IME and language, network type, and whether UU reports P2P or relay mode.
 | Every phone letter becomes `d`; numbers become `.` | Old or undeployed Unicode normalizer | Install `v0.1.0`, reconnect, require `text=normalized ... error=0` |
 | Computer-keyboard panel works; normal phone keyboard does not | Native IME path only | Compare installed broker revision and Wine layout |
 | Text is correct but keys lag or disappear | UU transport, focus, or text pacing | Compare direct RDP, controller route, and post-release metadata |
+| Multi-homed host binds a nonpreferred adapter | UU selected Wine's first adapter instead of Ubuntu's route | Test the post-release `--network-interface default` mode |
 | Mouse and both keyboard modes fail | Injection hook, broker, or relay focus | Run the quick verifier and inspect bounded bridge metadata |
 | Input works after restart, then degrades over hours | GNOME RDP/libei descriptor exhaustion | Inspect FD count and use the reviewed post-release backport |
 | ASCII works but a language-specific character fails | Character unavailable in active Wine layout | Match the intended layout or use the physical-key/clipboard path |

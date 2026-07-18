@@ -287,3 +287,59 @@ printing IP addresses, client IDs, account data, or typed content. It also
 retains the important counterexample: earlier automatic sessions may show P2P
 punching blocked by NAT/firewall and an even slower relay fallback. Connection
 mode should be selected from measured delay, not from the word “P2P” alone.
+
+## 12. Check which adapter UU actually binds
+
+A second Ubuntu host remained smooth on the supported `v0.1.0` runtime, while
+this workstation lost fast physical-key events. Reinstalling that exact runtime
+did not change the symptom. Timing instrumentation then put a strict boundary
+around the local path: bridge and broker calls normally completed in 0-4 ms,
+the observed maximum was 17 ms, every observed call returned its requested
+count with `error=0`, and some missing key-downs never reached the hook at all.
+
+That ruled out broker pacing, GNOME RDP, CPU load, and local pipe latency as the
+cause of those missing events. UU's 300 ms key watchdog was also not the source
+of the key-down loss: disassembly and live logs showed that it repairs stale
+pressed-key state after transport loss. Lowering its registry interval would
+make held keys and modifiers less reliable, so the temporary override was
+removed.
+
+The machine-specific difference was its adapter topology. Ubuntu had two
+active default routes and correctly preferred the lower-metric route. Wine's
+adapter list put the other interface first, and UU selected that first entry
+instead of Ubuntu's route. UU therefore bound a slower path whose source address
+could be routed asymmetrically through the preferred interface.
+
+A controlled process-local A/B test changed only UU's visible adapter list. It
+made UU bind the preferred interface, reduced room-login time from about 577 ms
+to 315-384 ms, and improved the UDP probe from 1,135 of 1,140 replies to
+1,138-1,140. In the best filtered run all replies arrived before the timeout.
+No route, firewall, NetworkManager, Docker, desktop, or input code changed.
+
+The permanent filter wraps `getifaddrs()` and `if_nameindex()` only inside UU's
+Wine service tree. It exposes the selected interface plus loopback and keeps a
+copied view so the original libc allocations remain intact. It is deliberately
+fail-open: an absent setting, invalid value, unavailable interface, missing
+default route, or allocation failure leaves the original adapter list visible.
+The default installation mode remains `all`, preserving the known-good host.
+
+On an affected multi-homed host, choose Ubuntu's lowest-metric default route at
+each service start:
+
+```bash
+./install.sh --skip-packages --skip-account-login \
+  --network-interface default
+```
+
+A fixed Linux interface name is also accepted. Roll back without removing the
+bridge or account state:
+
+```bash
+./install.sh --skip-packages --skip-account-login \
+  --network-interface all
+```
+
+`verify.sh` now checks both the mapped filter and the concrete interface in the
+running UU server environment. There is no route watcher or retry loop; after
+an intentional default-route change, restart the bridge once so `default` is
+resolved again.

@@ -13,6 +13,8 @@ locked by the release manifest.
   cannot be mistaken for deployed compatibility binaries
 - persistent GNOME RDP descriptor threshold with bounded relay recovery
 - verified, bridge-local backport of upstream libei's received-keymap FD fix
+- opt-in, process-local UU adapter selection for multi-homed hosts, with
+  `all`, Ubuntu-default-route, and fixed-interface modes
 - a complete debugging journey covering input, lifecycle, deployment, and
   unattended boot discoveries
 
@@ -39,6 +41,8 @@ locked by the release manifest.
   descriptor for every received keyboard-keymap message
 - made Xvfb lock-file cleanup silent and ownership-safe when the server removes
   its lock during a supervised restart
+- stopped UU from binding the first Wine-enumerated adapter instead of
+  Ubuntu's preferred route on an affected multi-homed host
 
 ## [0.1.0] - 2026-07-17
 

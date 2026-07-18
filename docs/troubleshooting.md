@@ -174,6 +174,33 @@ must retain its proven original-call-then-broker fallback for ordinary input.
 Do not select that route from service-side relay-window visibility: Wine may
 hide the window from that token even while the relay is healthy.
 
+On a multi-homed host, also compare Ubuntu's defaults with the address UU chose:
+
+```bash
+ip -4 route show default
+./scripts/verify.sh --quick
+```
+
+UU under Wine can bind the first enumerated adapter rather than the interface
+on Ubuntu's lowest-metric default route. If logs and a controlled comparison
+confirm that mismatch, enable the opt-in process-local filter:
+
+```bash
+./install.sh --skip-packages --skip-account-login \
+  --network-interface default
+```
+
+The verifier must report `default -> INTERFACE`. This setting is resolved once
+per service start and introduces no monitoring loop. Restart the bridge after
+an intentional route change. It is fail-open if no usable default exists, and
+it does not modify host routes or other applications. To restore UU's original
+all-adapter view:
+
+```bash
+./install.sh --skip-packages --skip-account-login \
+  --network-interface all
+```
+
 ## Server restarts every four minutes
 
 Check for Wine's unimplemented event-log abort:
