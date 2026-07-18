@@ -47,6 +47,8 @@ locked by the release manifest.
   interface change, so `default` does not remain pinned to a stale adapter
 - order completed transport reports by their embedded timestamp and label
   reports older than five minutes as stale
+- report cross-region relay selection without exposing either endpoint's
+  location, so controller VPN/proxy routing is distinguishable from host input
 
 ## [0.1.0] - 2026-07-17
 

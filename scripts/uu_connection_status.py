@@ -94,6 +94,13 @@ def summarize(log_dir: Path) -> tuple[list[str], int]:
     maximum = report.get("max_delay")
     p90_rtt = report.get("streamer_p90_rtt")
     p2p_attempted = report.get("need_to_p2p_punch") == 1
+    publisher_country = str(report.get("publisher_country", "")).strip()
+    subscriber_country = str(report.get("subscriber_country", "")).strip()
+    cross_region = bool(
+        publisher_country
+        and subscriber_country
+        and publisher_country != subscriber_country
+    )
     prior_p2p_blocked = any(
         item.get("punch_stopped_by_firewall") == 1
         for _, item, _ in reports
@@ -112,6 +119,11 @@ def summarize(log_dir: Path) -> tuple[list[str], int]:
         f"  p90 RTT: {format_number(p90_rtt)}",
         f"  P2P attempted: {'yes' if p2p_attempted else 'no'}",
     ]
+    if publisher_country and subscriber_country:
+        lines.append(
+            "  controller/host relay geography: "
+            f"{'cross-region' if cross_region else 'same-region'}"
+        )
     if watchdog_events:
         threshold = watchdog_events[-1][0]
         max_observed = max(delay for _, delay in watchdog_events)
@@ -143,6 +155,12 @@ def summarize(log_dir: Path) -> tuple[list[str], int]:
         lines.append(
             "Note: earlier automatic sessions recorded P2P blocked by NAT/firewall, "
             "so compare both modes rather than assuming P2P will be faster."
+        )
+    if cross_region and high_delay:
+        lines.append(
+            "Note: the controller and host used different relay regions; "
+            "check the controlling device's VPN, proxy, and exit network "
+            "before changing host input code."
         )
     if age_seconds >= 300:
         lines.append(

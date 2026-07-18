@@ -96,9 +96,10 @@ uu-remote network
 The report shows only aggregate path, delay, P2P, and key-watchdog metadata. It
 never prints addresses, device IDs, account data, or typed text. It includes
 the completion time and labels reports older than five minutes as stale, so an
-old session is not mistaken for the current idle bridge. A forced relay near
-UU's key-watchdog threshold is an upstream network problem; host-side retries
-can duplicate keys that arrive late.
+old session is not mistaken for the current idle bridge. It also reports only
+whether controller and host relay geography matched, without printing either
+location. A forced relay near UU's key-watchdog threshold is an upstream
+network problem; host-side retries can duplicate keys that arrive late.
 
 On a host with several active adapters, UU under Wine can choose the first
 enumerated adapter even when Ubuntu routes through a different, faster one.

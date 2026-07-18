@@ -28,6 +28,8 @@ class ConnectionStatusTests(unittest.TestCase):
                 "punch_stopped_by_firewall": 0,
                 "local_ip": "192.0.2.10",
                 "remote_client_id": "private-id",
+                "publisher_country": "private-host-region",
+                "subscriber_country": "private-controller-region",
             }
             (log_dir / "streamer_log_1.txt").write_text(
                 "prefix report json " + json.dumps(report) + "\n"
@@ -45,8 +47,12 @@ class ConnectionStatusTests(unittest.TestCase):
             self.assertIn("average delay: 346 ms", output)
             self.assertIn("threshold 300 ms", output)
             self.assertIn("network-bound input loss is likely", output)
+            self.assertIn("relay geography: cross-region", output)
+            self.assertIn("check the controlling device's VPN", output)
             self.assertNotIn("192.0.2.10", output)
             self.assertNotIn("private-id", output)
+            self.assertNotIn("private-host-region", output)
+            self.assertNotIn("private-controller-region", output)
 
     def test_prior_p2p_block_is_preserved_as_context(self):
         with tempfile.TemporaryDirectory() as temporary:

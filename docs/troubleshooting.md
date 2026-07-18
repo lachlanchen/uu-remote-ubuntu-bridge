@@ -161,7 +161,9 @@ uu-remote network
 
 The output includes the completed session time. A `stale` note means it is
 historical evidence and does not describe the current idle or newly restarted
-bridge.
+bridge. `controller/host relay geography: cross-region` means the controlling
+device's VPN, proxy, or internet exit may have sent the two ends to distant
+relay regions. The command reports only the match status, not either location.
 
 This distinction matters. Direct RDP bypasses UU's controller-to-host network
 path, while the UU route adds its own P2P or relay transport before the local
