@@ -151,7 +151,7 @@ A paced successful call reports `category=keyboard`, `focus=ready`,
 count, and `error=0`. The logs never record a key code, character, clipboard
 payload, address, account identifier, or typed text.
 
-## Direct X11 physical-key route
+## Direct X11 keyboard route
 
 Pacing improved this workstation but did not remove every omission. A later
 12 ms capture recorded 219 physical-key broker calls; every recorded call
@@ -167,9 +167,10 @@ therefore bypass the lossy nested keyboard conversion while preserving all
 other working channels:
 
 ```text
-UU physical key -> Wine hook -> user-token broker -> X11 helper -> Xorg
+UU physical key or normalized phone text
+  -> Wine hook -> user-token broker -> X11 helper -> Xorg
 
-UU video/mouse/text -> existing SDL FreeRDP -> GNOME RDP -> desktop
+UU video/mouse/clipboard -> existing SDL FreeRDP -> GNOME RDP -> desktop
 ```
 
 Enable this route only on a verified Xorg/XRDP target:
@@ -180,14 +181,15 @@ Enable this route only on a verified Xorg/XRDP target:
 ./scripts/verify.sh --quick
 ```
 
-The native helper uses XTEST on the discovered desktop, accepts only physical
-keyboard arrays over an authenticated loopback socket, and is supervised by
-the existing service. It preflights each complete array. Unavailable or
-unsupported input falls back before injection; a failure after possible
-injection is returned without replay, avoiding duplicate keys. Disconnect
-releases tracked held keys. With the direct route, the physical delay is a
-minimum key-hold interval rather than a delay after every down and up event;
-zero keeps the path non-blocking.
+The native helper uses XTEST on the discovered desktop and accepts only
+physical keyboard arrays over an authenticated loopback socket. Phone Unicode
+is converted into those ordinary key chords inside the broker before crossing
+that boundary. The helper is supervised by the existing service and preflights
+each complete array. Unavailable or unsupported input falls back before
+injection; a failure after possible injection is returned without replay,
+avoiding duplicate keys. Disconnect releases tracked held keys. With the
+direct route, the physical delay is a minimum key-hold interval rather than a
+delay after every down and up event; zero keeps the path non-blocking.
 
 Restore the universally compatible path without deleting UU state:
 
@@ -205,6 +207,11 @@ Before live deployment, an isolated Xvfb test sent the full alphabet together
 with Ctrl+A and Enter as one fast stream. XTEST observed all 58 transitions in
 order: 29 key presses and 29 key releases, including both Ctrl and Enter
 transitions.
+
+A later isolated phone-text test sent a fixed 26-letter Unicode batch through
+the Windows broker. It returned all 52 source records on `route=x11-text`, and
+XTEST delivered all 26 presses and 26 releases in exact order. Reproduce this
+without touching the live desktop with `./scripts/test-x11-phone-text.sh`.
 
 The subsequent real UU controller test reached the newly restarted broker, not
 an older RDP process: all 256 sampled physical-key records reported
@@ -228,5 +235,6 @@ fix or isolate either the fresh XRDP desktop or pacing as sufficient by itself.
 A controlled 12 ms trial was the final pacing experiment. It retained
 occasional omissions despite successful broker results, so further delay was
 rejected in favor of the direct X11 route above. Reconnect UU after any route
-change and require fresh `category=keyboard route=x11 result=1 error=0`
-records before attributing a manual test to that route.
+change and require fresh `category=keyboard route=x11 ... error=0` and, for
+the normal phone keyboard, `category=text route=x11-text ... error=0` records
+before attributing a manual test to that route.

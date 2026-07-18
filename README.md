@@ -95,12 +95,14 @@ Requested ports and fixed displays are checked before use. A conflicting
 non-GNOME listener fails closed, and an installer error restarts a bridge that
 was active before the attempted upgrade.
 
-For a new installation, the default 8 ms text-key delay prevents UU's phone
-keyboard from overwhelming the Wine-to-FreeRDP input boundary. An upgrade from
-`v0.1.0` preserves that release's unpaced behavior as `0`. The broker confirms
-that the relay window has focus before acknowledging an input request and sends
-translated text one character chord at a time. Values from 0 through 50 ms are
-accepted; change the delay only when a controlled test supports it.
+On the compatible `rdp` route, the default 8 ms text-key delay prevents UU's
+phone keyboard from overwhelming the Wine-to-FreeRDP input boundary. An
+upgrade from `v0.1.0` preserves that release's unpaced behavior as `0`. The
+broker confirms that the relay window has focus before acknowledging an input
+request and sends translated text one character chord at a time. Values from 0
+through 50 ms are accepted; change the delay only when a controlled test
+supports it. The opt-in `x11` route bypasses this RDP pacing boundary after it
+has normalized the complete representable phone-text request.
 
 Physical-key pacing defaults to `0`, preserving the ordinary path on hosts
 that already work. If slow typing succeeds but fast physical-key input omits
@@ -109,22 +111,24 @@ accepted broker segment. It never retries or synthesizes a key. See the
 [validated recovery note](docs/xrdp-and-keyboard-recovery.md) before changing
 this host-specific setting.
 
-If broker metadata shows accepted physical-key calls but the nested
-Wine/FreeRDP route still loses fast keys on an Xorg or XRDP desktop, the
-opt-in direct route removes only that final keyboard hop:
+If broker metadata shows accepted physical-key or normalized phone-text calls
+but the nested Wine/FreeRDP route still loses fast keys on an Xorg or XRDP
+desktop, the opt-in direct route removes only that final keyboard hop:
 
 ```bash
 ./install.sh --skip-packages --skip-account-login \
   --keyboard-route x11 --physical-key-delay-ms 0
 ```
 
-Mouse, video, clipboard, and Unicode phone text continue through the proven
-RDP relay. Physical keys alone go through an authenticated loopback helper and
-XTEST into the selected X11 desktop. The global default remains `rdp`; `auto`
-selects the direct route only for an X11 target. If preflight cannot verify the
-target display or helper, startup retains the compatible RDP route and the
-verifier reports that an explicitly requested X11 route is inactive. No event
-is replayed after an ambiguous partial injection.
+Mouse, video, and clipboard continue through the proven RDP relay. Physical
+keys and layout-representable phone text go through an authenticated loopback
+helper and XTEST into the selected X11 desktop. Phone text is still normalized
+into ordinary virtual-key chords before that boundary; unsupported Unicode
+fails explicitly rather than becoming an unrelated key. The global default
+remains `rdp`; `auto` selects the direct route only for an X11 target. If
+preflight cannot verify the target display or helper before injection, the
+request safely uses the compatible RDP route. No event is replayed after an
+ambiguous partial injection.
 
 On the validated XRDP workstation, the first live direct-UU run produced 256
 content-free sampled physical-key calls on `route=x11`; every sampled call
@@ -132,6 +136,19 @@ returned its requested single event with `error=0`. The operator reported that
 typing became very smooth and that almost all prior omissions were resolved.
 This is strong practical acceptance, while deliberately not claiming that an
 upstream controller can never omit an event under every network condition.
+Post-`v0.2.0` source also includes an isolated phone-text acceptance test. A
+fixed 26-letter Unicode batch crossed the Wine broker on `route=x11-text` and
+arrived as all 52 ordered X11 press/release transitions. Run it without
+touching the live desktop:
+
+```bash
+./scripts/test-x11-phone-text.sh
+```
+
+After live deployment, the operator confirmed that normal phone-keyboard
+typing was fixed. The first 72 bounded phone-text calls all used
+`route=x11-text`, returned their complete requested counts with `error=0`, and
+completed in 0-2 ms. The logs contained no character values or typed content.
 
 If individual keys lag or disappear while direct RDP remains responsive, check
 the transport before changing input code:
@@ -240,6 +257,7 @@ Phone / Windows / macOS UU controller
    Ubuntu-Desktop-Relay   bounded named-pipe broker
        SDL FreeRDP          |             |
              |              | RDP         | optional physical keys
+             |              |             | + normalized phone text
              +--------------+             v
                     |             native X11/XTEST helper
              RDP on 127.0.0.1              |
@@ -257,10 +275,11 @@ UU sees one ordinary Windows desktop window. SDL FreeRDP relays that window to
 GNOME Remote Desktop, which owns supported GNOME capture and input. The
 launcher discovers the D-Bus of the live GNOME Shell, including XRDP sessions
 that use a private session bus, and keeps the RDP hop local to the host. When
-Wine denies `SendInput` from UU's service token, a bounded broker repeats the
-same input request from a normal user Wine process. On an explicitly selected
-X11 target, physical keys can instead bypass the nested RDP input conversion;
-all other channels keep the original relay.
+Wine denies `SendInput` from UU's service token, so a bounded broker repeats
+the same input request from a normal user Wine process. On an explicitly
+selected X11 target, physical keys and normalized, layout-representable phone
+text can instead bypass the nested RDP input conversion; video, mouse,
+clipboard, and all non-keyboard channels keep the original relay.
 
 [Read the complete architecture](docs/architecture.md).
 The [debugging journey](docs/debugging-journey.md) records the failed

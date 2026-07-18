@@ -104,21 +104,23 @@ window and confirms it became the foreground window within a bounded 300 ms
 before calling `SendInput`. It returns the real count and error code to UU only
 after that boundary succeeds.
 
-On an X11 target with `UURB_KEYBOARD_ROUTE=x11`, the broker recognizes only
-bounded, non-Unicode keyboard-only arrays and sends their physical scan events
-to `uu-x11-input` over a token-authenticated loopback socket. The native helper
-preflights the whole array, maps the established XFree86 scan-code set to X11
-keycodes, and uses XTEST on the discovered live desktop. Mouse, mixed arrays,
-and Unicode phone text remain on the RDP route. A helper that is absent,
-unreachable before injection, or presented with an unsupported event safely
-falls back to RDP. A communication failure after injection begins returns an
-error without replay, preventing duplicate keys. Held keys are released when
-the broker disconnects, and helper exit restarts the supervised bridge.
+On an X11 target with `UURB_KEYBOARD_ROUTE=x11`, the broker sends bounded
+keyboard-only arrays to `uu-x11-input` over a token-authenticated loopback
+socket. Physical arrays are mapped directly. Unicode phone-text arrays are
+first normalized into ordinary virtual-key chords, so neither Unicode values
+nor text cross the helper protocol. The native helper preflights the complete
+translated array, maps the established XFree86 scan-code set to X11 keycodes,
+and uses XTEST on the discovered live desktop. Mouse and mixed arrays remain
+on the RDP route. A helper that is absent, unreachable before injection, or
+presented with an unsupported event safely falls back to RDP. A communication
+failure after injection begins returns an error without replay, preventing
+duplicate keys. Held keys are released when the broker disconnects, and
+helper exit restarts the supervised bridge.
 
 The direct route removes two conversions—Wine `SendInput` into SDL FreeRDP and
-FreeRDP into GNOME RDP—for the one category that remained lossy on the affected
-XRDP workstation. It is not enabled globally because the original RDP route is
-known-good on other hosts and is still required for Wayland targets.
+FreeRDP into GNOME RDP—for the keyboard categories that remained lossy on the
+affected XRDP workstation. It is not enabled globally because the original RDP
+route is known-good on other hosts and is still required for Wayland targets.
 
 No key code, Unicode character, clipboard payload, or text is written to the
 diagnostic logs.
@@ -131,12 +133,14 @@ IME instead submits batches marked `KEYEVENTF_UNICODE`. SDL FreeRDP consumes
 physical scancodes and misreads Wine's synthetic Unicode events, typically as
 one repeated letter or punctuation key. The bridge routes Unicode batches
 directly to the broker, where each representable character is converted with
-`VkKeyScanW` into an ordinary virtual-key chord before it reaches SDL FreeRDP.
-Character chords are submitted separately with a persistent, configurable 8 ms
-delay so the SDL/RDP event loop can consume each chord before UU sends the next
-one. The original request count is returned to UU only after focus is confirmed
-and every translated event is accepted. Unsupported characters fail explicitly
-rather than being emitted as an unrelated key.
+`VkKeyScanW` into an ordinary virtual-key chord. On `rdp`, character chords are
+submitted separately with a persistent, configurable 8 ms delay so the
+SDL/RDP event loop can consume each chord before UU sends the next one. On
+`x11`, the complete translated request is preflighted and injected through the
+authenticated XTEST helper, bypassing both nested RDP keyboard conversions.
+The original request count is returned to UU only after every translated event
+is accepted. Unsupported characters fail explicitly rather than being emitted
+as an unrelated key.
 
 Physical-key segments are unchanged by default. On the RDP route, an optional
 0-50 ms delay can add back-pressure after each accepted segment. On the direct

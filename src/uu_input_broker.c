@@ -186,6 +186,7 @@ static BOOL connect_x11_input(void)
     struct sockaddr_in address;
     uurb_x11_handshake handshake;
     uurb_x11_response response;
+    BOOL no_delay = TRUE;
     DWORD socket_timeout_ms = 1000;
     WSADATA data;
 
@@ -208,6 +209,8 @@ static BOOL connect_x11_input(void)
     setsockopt(x11_input_socket, SOL_SOCKET, SO_RCVTIMEO,
                (const char *)&socket_timeout_ms,
                sizeof(socket_timeout_ms));
+    setsockopt(x11_input_socket, IPPROTO_TCP, TCP_NODELAY,
+               (const char *)&no_delay, sizeof(no_delay));
     ZeroMemory(&address, sizeof(address));
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
@@ -266,8 +269,10 @@ static BOOL input_to_x11_event(const INPUT *input,
 static x11_route_result send_x11_inputs(DWORD count, const INPUT *inputs,
                                         DWORD *error, BOOL *considered)
 {
-    uurb_x11_key_event events[INPUT_BRIDGE_MAX_INPUTS];
-    uurb_x11_request request;
+    struct {
+        uurb_x11_request request;
+        uurb_x11_key_event events[INPUT_BRIDGE_MAX_INPUTS];
+    } packet;
     uurb_x11_response response;
     DWORD index;
 
@@ -282,26 +287,27 @@ static x11_route_result send_x11_inputs(DWORD count, const INPUT *inputs,
     }
     *considered = TRUE;
     for (index = 0; index < count; index++) {
-        if (!input_to_x11_event(&inputs[index], &events[index]))
+        if (!input_to_x11_event(&inputs[index], &packet.events[index]))
             return X11_ROUTE_NOT_USED;
     }
     if (!connect_x11_input())
         return X11_ROUTE_NOT_USED;
 
-    request.magic = UURB_X11_INPUT_MAGIC;
-    request.sequence = (uint32_t)InterlockedIncrement(&x11_sequence);
-    request.count = count;
-    request.reserved = 0;
-    if (!socket_write_all(x11_input_socket, &request, sizeof(request)) ||
-        !socket_write_all(x11_input_socket, events,
-                          (int)(count * sizeof(events[0]))) ||
+    packet.request.magic = UURB_X11_INPUT_MAGIC;
+    packet.request.sequence = (uint32_t)InterlockedIncrement(&x11_sequence);
+    packet.request.count = count;
+    packet.request.reserved = 0;
+    if (!socket_write_all(
+            x11_input_socket, &packet,
+            (int)(sizeof(packet.request) +
+                  count * sizeof(packet.events[0]))) ||
         !socket_read_all(x11_input_socket, &response, sizeof(response))) {
         close_x11_input_socket();
         *error = ERROR_CONNECTION_ABORTED;
         return X11_ROUTE_FAILED;
     }
     if (response.magic != UURB_X11_INPUT_MAGIC ||
-        response.sequence != request.sequence) {
+        response.sequence != packet.request.sequence) {
         close_x11_input_socket();
         *error = ERROR_INVALID_DATA;
         return X11_ROUTE_FAILED;
@@ -510,32 +516,6 @@ static DWORD send_relay_inputs(DWORD source_count, const INPUT *source,
     *focus_wait_ms = 0;
     *route = "rdp";
 
-    x11_result = send_x11_inputs(source_count, source, error,
-                                 &x11_considered);
-    if (x11_result == X11_ROUTE_SUCCESS) {
-        *route = "x11";
-        return source_count;
-    }
-    if (x11_result == X11_ROUTE_FAILED) {
-        *route = "x11-error";
-        return 0;
-    }
-    if (x11_considered)
-        *route = "rdp-fallback";
-
-    *focus_ready = request_relay_focus(focus_wait_ms);
-    if (!*focus_ready) {
-        *error = GetLastError();
-        for (index = 0; index < source_count; index++) {
-            if (source[index].type == INPUT_KEYBOARD &&
-                (source[index].ki.dwFlags & KEYEVENTF_UNICODE) != 0) {
-                *normalized_unicode = TRUE;
-                break;
-            }
-        }
-        return 0;
-    }
-
     if (!translate_inputs(source_count, source, translated, &translated_count,
                           segments, &segment_count, normalized_unicode)) {
         *error = ERROR_NO_UNICODE_TRANSLATION;
@@ -545,6 +525,40 @@ static DWORD send_relay_inputs(DWORD source_count, const INPUT *source,
     if (translated_count == 0) {
         *error = ERROR_SUCCESS;
         return source_count;
+    }
+
+    /*
+     * Unicode phone text is normalized into ordinary key chords before this
+     * boundary.  Sending those complete chords through the same authenticated
+     * X11 helper as physical keys avoids the nested Wine/FreeRDP keyboard hop.
+     * If preflight cannot use X11, no event has been injected and the existing
+     * RDP route remains a safe fallback.  A partial/ambiguous X11 failure is
+     * never replayed.
+     */
+    x11_result = send_x11_inputs(translated_count, translated, error,
+                                 &x11_considered);
+    if (x11_result == X11_ROUTE_SUCCESS) {
+        if (*normalized_unicode)
+            *route = "x11-text";
+        else
+            *route = "x11";
+        return source_count;
+    }
+    if (x11_result == X11_ROUTE_FAILED) {
+        if (*normalized_unicode)
+            *route = "x11-text-error";
+        else
+            *route = "x11-error";
+        return 0;
+    }
+    if (x11_considered)
+        *route = *normalized_unicode ? "rdp-text-fallback" :
+                                       "rdp-fallback";
+
+    *focus_ready = request_relay_focus(focus_wait_ms);
+    if (!*focus_ready) {
+        *error = GetLastError();
+        return 0;
     }
 
     for (index = 0; index < segment_count; index++) {
@@ -724,7 +738,8 @@ static void serve_client(HANDLE pipe)
                 (unsigned long)first_type, (unsigned long)first_flags,
                 normalized_unicode ? "normalized" : "unchanged",
                 route,
-                strcmp(route, "x11") == 0 ? "bypassed" :
+                (strcmp(route, "x11") == 0 ||
+                 strcmp(route, "x11-text") == 0) ? "bypassed" :
                 (focus_ready ? "ready" : "timeout"),
                 (unsigned long)focus_wait_ms,
                 (unsigned long)paced_characters,

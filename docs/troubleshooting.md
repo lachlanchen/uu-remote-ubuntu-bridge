@@ -243,12 +243,14 @@ delay. On a verified Xorg/XRDP target, select the native physical-key route:
 ./scripts/verify.sh --quick
 ```
 
-The verifier must report `direct X11 physical-key helper is active`, and a
-fresh UU computer-keyboard event must report `category=keyboard route=x11`
-with a matching result and `error=0`. Mouse, video, clipboard, and phone text
-remain on RDP. If explicit X11 preflight cannot verify the target display, the
-service remains usable on RDP but verification fails so the fallback is not
-mistaken for the requested test. Restore the baseline with:
+The verifier must report `direct X11 physical-key helper is active`. A fresh
+UU computer-keyboard event must report `category=keyboard route=x11`, while a
+representable normal-phone-keyboard commit reports
+`category=text route=x11-text`; both require a matching result and `error=0`.
+Mouse, video, and clipboard remain on RDP. If explicit X11 preflight cannot
+verify the target display, the service remains usable on RDP but verification
+fails so the fallback is not mistaken for the requested test. Restore the
+baseline with:
 
 ```bash
 ./install.sh --skip-packages --skip-account-login \

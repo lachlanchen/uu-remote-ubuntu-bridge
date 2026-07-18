@@ -125,10 +125,13 @@ and the target session is confirmed X11:
 ```
 
 Reconnect UU, type the alphabet rapidly, press Enter, and test Ctrl+A/C/V.
-Require both the visible result and a fresh content-free
-`category=keyboard route=x11 ... result=1 error=0` record. Restore
+Then repeat the ASCII acceptance string with the phone's normal keyboard.
+Require both visible results plus fresh content-free
+`category=keyboard route=x11 ... error=0` and
+`category=text route=x11-text ... error=0` records. Restore
 `--keyboard-route rdp` if the target is Wayland or the helper cannot preflight
-the display.
+the display. The isolated fixed-alphabet acceptance can be repeated without
+touching the live desktop with `./scripts/test-x11-phone-text.sh`.
 
 ## Failure handoff
 

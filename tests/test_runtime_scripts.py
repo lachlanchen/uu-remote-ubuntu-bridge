@@ -206,6 +206,16 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("INPUT_BRIDGE_FOCUS_TIMEOUT_MS", broker)
         self.assertIn("Sleep(text_key_delay_ms)", broker)
         self.assertIn('L"UURB_TEXT_KEY_DELAY_MS"', broker)
+        self.assertIn('"x11-text"', broker)
+        self.assertIn('"rdp-text-fallback"', broker)
+        self.assertIn("TCP_NODELAY", broker)
+        translated = broker.index("if (!translate_inputs")
+        direct_x11 = broker.index("x11_result = send_x11_inputs", translated)
+        relay_focus = broker.index(
+            "*focus_ready = request_relay_focus", direct_x11
+        )
+        self.assertLess(translated, direct_x11)
+        self.assertLess(direct_x11, relay_focus)
         self.assertIn("Sleep(physical_key_delay_ms)", broker)
         self.assertIn('L"UURB_PHYSICAL_KEY_DELAY_MS"', broker)
         self.assertIn('category = "keyboard"', bridge)

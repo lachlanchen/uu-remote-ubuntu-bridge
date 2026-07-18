@@ -530,11 +530,12 @@ UU controller -> normal-token broker -> authenticated X11 helper
               -> XTEST + XSync -> XRDP Xorg desktop
 ```
 
-Video, mouse, clipboard, and phone text remain on the established relay. The
-physical keyboard no longer passes through Wine's input queue and two nested
-RDP keyboard conversions. An isolated test preserved all 58 requested
-press/release transitions, and the accepted live sample contained 256
-successful `route=x11` calls while the operator reported smooth typing.
+At the `v0.2.0` acceptance boundary, video, mouse, clipboard, and phone text
+remained on the established relay. The physical keyboard no longer passed
+through Wine's input queue and two nested RDP keyboard conversions. An
+isolated test preserved all 58 requested press/release transitions, and the
+accepted live sample contained 256 successful `route=x11` calls while the
+operator reported smooth typing.
 
 Those observations localize the dominant workstation defect to the old local
 nested route or its resulting back-pressure. They do not identify one exact
@@ -542,3 +543,47 @@ proprietary UU, Wine, SDL FreeRDP, GNOME RDP, or libei function as the sole
 culprit, and they cannot guarantee that the controller or network upstream of
 the broker will never omit an event. This is why the fix removes the measured
 bad boundary instead of adding retries or making a broader unsupported claim.
+
+## 17. Reuse the proven direct route for normalized phone text
+
+A later live A/B test made the remaining boundary equally clear. The UU
+computer-keyboard panel was exact through `route=x11`, while the phone's normal
+keyboard visibly omitted several characters. For one fixed 13-character ASCII
+trial, all 13 text requests reached the current broker, each was normalized,
+and every call returned its complete source count with `error=0`. Only eleven
+characters appeared in the target. The controller and broker had therefore
+done their work; loss remained after Wine accepted the translated chords on
+the nested RDP route.
+
+The narrow correction keeps `VkKeyScanW` normalization unchanged, then offers
+the complete translated keyboard-only array to the already authenticated X11
+helper before requesting relay focus or calling `SendInput`. A failure known
+to happen during preflight can still use RDP because nothing was injected. An
+ambiguous partial X11 failure returns an error and is never replayed.
+
+The broker also used to send the small request header and event array in two
+loopback TCP writes. Nagle/delayed-ACK interaction made otherwise healthy X11
+requests take about 41 ms. The request is now one packet and the socket enables
+`TCP_NODELAY`; new live physical-key metadata measured 0 ms broker/helper
+round trips without changing event semantics.
+
+An isolated acceptance test sent a fixed 26-letter Unicode batch into the
+Windows broker. The broker reported `route=x11-text`, returned all 52 source
+records with `error=0`, and the X11 target observed exactly 26 presses and 26
+releases in order. The reusable test is:
+
+```bash
+./scripts/test-x11-phone-text.sh
+```
+
+This improves layout-representable text. It does not turn XTEST into a general
+Unicode or IME protocol: a character that `VkKeyScanW` cannot represent still
+fails explicitly, and Wayland hosts retain the compatible RDP route.
+
+The deployed workstation then completed the real acceptance test through the
+phone's normal keyboard. The operator reported that typing was fixed. The
+first 72 bounded live text records independently used `route=x11-text`, each
+returned its complete source count with `error=0`, and broker/helper processing
+took 0-2 ms. No typed character or key value was recorded. This confirms that
+the successful visible result came from the new route rather than the still-
+available RDP fallback or the computer-keyboard panel.
