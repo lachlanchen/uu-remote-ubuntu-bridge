@@ -43,6 +43,10 @@ locked by the release manifest.
   its lock during a supervised restart
 - stopped UU from binding the first Wine-enumerated adapter instead of
   Ubuntu's preferred route on an affected multi-homed host
+- restart the existing bridge supervisor after a debounced preferred-route
+  interface change, so `default` does not remain pinned to a stale adapter
+- order completed transport reports by their embedded timestamp and label
+  reports older than five minutes as stale
 
 ## [0.1.0] - 2026-07-17
 

@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+from datetime import datetime
 from pathlib import Path
 
 
@@ -14,6 +15,9 @@ WATCHDOG_RE = re.compile(
     r"current polinttime is:\s*(?P<threshold>\d+).*?"
     r"delay time is:\s*(?P<delay>\d+)"
 )
+LOG_TIMESTAMP_RE = re.compile(
+    r"^\[(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?)\]"
+)
 
 
 def latest_file(log_dir: Path, pattern: str) -> Path | None:
@@ -21,8 +25,10 @@ def latest_file(log_dir: Path, pattern: str) -> Path | None:
     return max(files, key=lambda path: path.stat().st_mtime, default=None)
 
 
-def load_reports(log_dir: Path) -> list[tuple[Path, dict[str, object]]]:
-    reports: list[tuple[Path, dict[str, object]]] = []
+def load_reports(
+    log_dir: Path,
+) -> list[tuple[Path, dict[str, object], datetime]]:
+    reports: list[tuple[Path, dict[str, object], datetime]] = []
     for path in sorted(log_dir.glob("streamer_log_*.txt")):
         with path.open(errors="replace") as stream:
             for line in stream:
@@ -34,8 +40,17 @@ def load_reports(log_dir: Path) -> list[tuple[Path, dict[str, object]]]:
                 except json.JSONDecodeError:
                     continue
                 if isinstance(report, dict) and "forced_relay" in report:
-                    reports.append((path, report))
-    return reports
+                    timestamp_match = LOG_TIMESTAMP_RE.match(line)
+                    if timestamp_match:
+                        completed_at = datetime.fromisoformat(
+                            timestamp_match.group("timestamp")
+                        )
+                    else:
+                        completed_at = datetime.fromtimestamp(
+                            path.stat().st_mtime
+                        )
+                    reports.append((path, report, completed_at))
+    return sorted(reports, key=lambda item: item[2])
 
 
 def load_watchdog_events(server_log: Path | None) -> list[tuple[int, int]]:
@@ -63,7 +78,7 @@ def summarize(log_dir: Path) -> tuple[list[str], int]:
     if not reports:
         return (["No completed UU stream report was found."], 1)
 
-    stream_log, report = reports[-1]
+    stream_log, report, completed_at = reports[-1]
     matching_server_log = stream_log.with_name(
         stream_log.name.removeprefix("streamer_")
     )
@@ -80,11 +95,17 @@ def summarize(log_dir: Path) -> tuple[list[str], int]:
     p90_rtt = report.get("streamer_p90_rtt")
     p2p_attempted = report.get("need_to_p2p_punch") == 1
     prior_p2p_blocked = any(
-        item.get("punch_stopped_by_firewall") == 1 for _, item in reports
+        item.get("punch_stopped_by_firewall") == 1
+        for _, item, _ in reports
     )
+
+    age_seconds = max(0, int((datetime.now() - completed_at).total_seconds()))
+    age_minutes = age_seconds // 60
 
     lines = [
         "UU connection summary (latest completed session)",
+        f"  completed: {completed_at:%Y-%m-%d %H:%M:%S}",
+        f"  age: {age_minutes} minute(s)",
         f"  path: {candidate}{' (forced by controller)' if forced else ''}",
         f"  average delay: {format_number(average)}",
         f"  maximum delay: {format_number(maximum)}",
@@ -122,6 +143,11 @@ def summarize(log_dir: Path) -> tuple[list[str], int]:
         lines.append(
             "Note: earlier automatic sessions recorded P2P blocked by NAT/firewall, "
             "so compare both modes rather than assuming P2P will be faster."
+        )
+    if age_seconds >= 300:
+        lines.append(
+            "Note: this completed session is stale and does not describe a "
+            "newly started or currently idle bridge."
         )
     return lines, 0
 

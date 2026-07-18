@@ -159,6 +159,10 @@ Run:
 uu-remote network
 ```
 
+The output includes the completed session time. A `stale` note means it is
+historical evidence and does not describe the current idle or newly restarted
+bridge.
+
 This distinction matters. Direct RDP bypasses UU's controller-to-host network
 path, while the UU route adds its own P2P or relay transport before the local
 Wine-to-RDP bridge. If the report says `relay (forced by controller)` and its
@@ -190,11 +194,12 @@ confirm that mismatch, enable the opt-in process-local filter:
   --network-interface default
 ```
 
-The verifier must report `default -> INTERFACE`. This setting is resolved once
-per service start and introduces no monitoring loop. Restart the bridge after
-an intentional route change. It is fail-open if no usable default exists, and
-it does not modify host routes or other applications. To restore UU's original
-all-adapter view:
+The verifier must report `default -> INTERFACE`. The setting is resolved at
+service start and the existing supervisor compares it with Ubuntu's preferred
+interface every ten seconds. A genuine change causes one complete relay
+restart on the new route; no second loop or service is added. It is fail-open
+if no usable default exists, and it does not modify host routes or other
+applications. To restore UU's original all-adapter view:
 
 ```bash
 ./install.sh --skip-packages --skip-account-login \

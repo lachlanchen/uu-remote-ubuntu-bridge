@@ -283,10 +283,12 @@ that fallback. The lesson is to optimize only after measuring the boundary in
 the same Wine token and window station that executes it.
 
 `uu-remote network` summarizes the latest completed transport report without
-printing IP addresses, client IDs, account data, or typed content. It also
-retains the important counterexample: earlier automatic sessions may show P2P
-punching blocked by NAT/firewall and an even slower relay fallback. Connection
-mode should be selected from measured delay, not from the word “P2P” alone.
+printing IP addresses, client IDs, account data, or typed content. Reports are
+ordered by their embedded completion timestamp rather than filename, and a
+report older than five minutes is explicitly marked stale. It also retains the
+important counterexample: earlier automatic sessions may show P2P punching
+blocked by NAT/firewall and an even slower relay fallback. Connection mode
+should be selected from measured delay, not from the word “P2P” alone.
 
 ## 12. Check which adapter UU actually binds
 
@@ -340,6 +342,8 @@ bridge or account state:
 ```
 
 `verify.sh` now checks both the mapped filter and the concrete interface in the
-running UU server environment. There is no route watcher or retry loop; after
-an intentional default-route change, restart the bridge once so `default` is
-resolved again.
+running UU server environment. The existing quarter-second supervisor reuses
+its bounded health cycle to compare the preferred interface every ten seconds.
+If the default moves, it exits once and lets systemd rebuild the complete relay
+on the new route. This avoids a second watcher while preventing a long-running
+UU process from remaining pinned to a stale adapter.

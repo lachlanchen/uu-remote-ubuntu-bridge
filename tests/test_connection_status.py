@@ -2,6 +2,7 @@ import importlib.util
 import json
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 
 
@@ -71,6 +72,41 @@ class ConnectionStatusTests(unittest.TestCase):
 
             self.assertEqual(status, 0)
             self.assertIn("earlier automatic sessions", "\n".join(lines))
+
+    def test_latest_report_is_selected_by_log_timestamp_and_stale_is_visible(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            log_dir = Path(temporary)
+            old_time = datetime.now() - timedelta(hours=1)
+            new_time = datetime.now() - timedelta(minutes=10)
+            old = {
+                "forced_relay": 0,
+                "candidate_type": "relay",
+                "average_delay": 900,
+            }
+            new = {
+                "forced_relay": 0,
+                "candidate_type": "host",
+                "average_delay": 20,
+            }
+            # Lexical file order deliberately disagrees with session time.
+            (log_dir / "streamer_log_z.txt").write_text(
+                f"[{old_time:%Y-%m-%d %H:%M:%S.%f}] report json "
+                + json.dumps(old)
+                + "\n"
+            )
+            (log_dir / "streamer_log_a.txt").write_text(
+                f"[{new_time:%Y-%m-%d %H:%M:%S.%f}] report json "
+                + json.dumps(new)
+                + "\n"
+            )
+
+            lines, status = MODULE.summarize(log_dir)
+            output = "\n".join(lines)
+
+            self.assertEqual(status, 0)
+            self.assertIn("path: host", output)
+            self.assertIn("average delay: 20 ms", output)
+            self.assertIn("session is stale", output)
 
 
 if __name__ == "__main__":

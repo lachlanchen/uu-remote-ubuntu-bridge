@@ -94,9 +94,11 @@ uu-remote network
 ```
 
 The report shows only aggregate path, delay, P2P, and key-watchdog metadata. It
-never prints addresses, device IDs, account data, or typed text. A forced relay
-near UU's key-watchdog threshold is an upstream network problem; host-side
-retries can duplicate keys that arrive late.
+never prints addresses, device IDs, account data, or typed text. It includes
+the completion time and labels reports older than five minutes as stale, so an
+old session is not mistaken for the current idle bridge. A forced relay near
+UU's key-watchdog threshold is an upstream network problem; host-side retries
+can duplicate keys that arrive late.
 
 On a host with several active adapters, UU under Wine can choose the first
 enumerated adapter even when Ubuntu routes through a different, faster one.
@@ -111,7 +113,10 @@ select Ubuntu's preferred default route at each bridge start:
 This loads a fail-open adapter view only into UU's Wine service tree. It does
 not edit routes, NetworkManager, firewall rules, Docker, or system libraries.
 The repository and installer default remains `all`, preserving existing hosts.
-Use `--network-interface all` to remove the restriction.
+While `default` is active, the existing bridge supervisor checks the preferred
+interface every ten seconds. If it changes, the whole relay is rebuilt once on
+the new route; no additional watcher or service is installed. Use
+`--network-interface all` to remove the restriction.
 
 Ubuntu 24.04's libei 1.2.1 leaks the received keyboard-keymap descriptor after
 duplicating it. The installer builds the exact upstream one-line fix from a
