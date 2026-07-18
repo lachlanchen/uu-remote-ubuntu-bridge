@@ -4,6 +4,8 @@ set -Eeuo pipefail
 umask 077
 
 repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/runtime-settings.sh
+source "$repo_dir/scripts/runtime-settings.sh"
 bridge_user="${USER:-$(id -un)}"
 wine_prefix="${WINEPREFIX:-$HOME/.local/share/wineprefixes/uu-remote}"
 config_dir="$HOME/.config/uu-remote-bridge"
@@ -55,7 +57,8 @@ rdp_port="${UURB_RDP_PORT:-${saved_rdp_port:-3390}}"
 resolution="${UURB_RESOLUTION:-${saved_resolution:-1920x1080}}"
 bridge_display="${UURB_DISPLAY:-${saved_display:-auto}}"
 grd_fd_restart_threshold="${UURB_GRD_FD_RESTART_THRESHOLD:-${saved_grd_fd_restart_threshold:-4096}}"
-text_key_delay_ms="${UURB_TEXT_KEY_DELAY_MS:-${saved_text_key_delay_ms:-8}}"
+text_key_delay_ms="$(resolve_text_key_delay \
+    "$environment_file" "$saved_text_key_delay_ms")"
 physical_key_delay_ms="${UURB_PHYSICAL_KEY_DELAY_MS:-${saved_physical_key_delay_ms:-0}}"
 network_interface="${UURB_NETWORK_INTERFACE:-${saved_network_interface:-all}}"
 uu_installer=''
@@ -79,7 +82,7 @@ usage: ./install.sh [options]
                          restart before GNOME RDP exhausts descriptors
                          (default: 4096; 0 disables the guard)
   --text-key-delay-ms N  pace relayed phone text by 0-50 ms per character
-                         (default: 8)
+                         (new install: 8; v0.1.0 upgrade: preserve 0)
   --physical-key-delay-ms N
                          pace physical key batches by 0-50 ms
                          (default: 0)

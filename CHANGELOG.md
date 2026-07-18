@@ -6,6 +6,13 @@ locked by the release manifest.
 
 ## [Unreleased]
 
+No changes yet.
+
+## [0.2.0] - 2026-07-18
+
+Union release that preserves the `v0.1.0` fallback while packaging the later
+stability, diagnostics, and opt-in host-specific extensions.
+
 ### Added
 
 - privacy-safe `uu-remote network` transport and key-watchdog diagnosis
@@ -55,6 +62,8 @@ locked by the release manifest.
   reports older than five minutes as stale
 - report cross-region relay selection without exposing either endpoint's
   location, so controller VPN/proxy routing is distinguishable from host input
+- preserve a `v0.1.0` installation's unpaced text setting during upgrade;
+  fresh installations retain the robust 8 ms text default
 
 ## [0.1.0] - 2026-07-17
 
@@ -92,3 +101,4 @@ Follow the [v0.1.0 release notes](docs/releases/v0.1.0.md) or the
 without deleting the Wine prefix or signing into UU again.
 
 [0.1.0]: https://github.com/lachlanchen/uu-remote-ubuntu-bridge/releases/tag/v0.1.0
+[0.2.0]: https://github.com/lachlanchen/uu-remote-ubuntu-bridge/releases/tag/v0.2.0

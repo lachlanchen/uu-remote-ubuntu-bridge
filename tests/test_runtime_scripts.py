@@ -60,6 +60,7 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("UURB_TEXT_KEY_DELAY_MS=%s", installer)
         self.assertIn("UURB_PHYSICAL_KEY_DELAY_MS=%s", installer)
         self.assertIn("UURB_NETWORK_INTERFACE=%s", installer)
+        self.assertIn("resolve_text_key_delay", installer)
         self.assertIn("EnvironmentFile=-%h/.config/uu-remote-bridge/environment", unit)
         self.assertIn('bridge_display="${UURB_DISPLAY:-auto}"', launcher)
         self.assertIn(
@@ -216,6 +217,40 @@ class RuntimeScriptTests(unittest.TestCase):
             broker.index("started_ms = GetTickCount64();"),
             broker.index("focus_ready = request_relay_focus"),
         )
+
+    def test_text_delay_migration_preserves_v010_behavior(self):
+        resolver = REPOSITORY / "scripts" / "runtime-settings.sh"
+
+        with tempfile.TemporaryDirectory() as temporary:
+            environment_file = Path(temporary) / "environment"
+
+            def resolve(saved="", explicit=None):
+                environment = os.environ.copy()
+                environment.pop("UURB_TEXT_KEY_DELAY_MS", None)
+                if explicit is not None:
+                    environment["UURB_TEXT_KEY_DELAY_MS"] = explicit
+                result = subprocess.run(
+                    [
+                        "bash",
+                        "-c",
+                        'source "$1"; resolve_text_key_delay "$2" "$3"',
+                        "bash",
+                        str(resolver),
+                        str(environment_file),
+                        saved,
+                    ],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    env=environment,
+                )
+                return result.stdout.strip()
+
+            self.assertEqual(resolve(), "8")
+            environment_file.touch()
+            self.assertEqual(resolve(), "0")
+            self.assertEqual(resolve(saved="6"), "6")
+            self.assertEqual(resolve(saved="6", explicit="11"), "11")
 
     def test_routine_input_retains_proven_broker_fallback(self):
         bridge = (REPOSITORY / "src" / "uu_input_bridge.c").read_text()

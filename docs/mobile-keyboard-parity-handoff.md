@@ -110,13 +110,13 @@ Stop if `git status --short` prints local changes. Installation intentionally
 restarts the bridge and briefly disconnects UU. For a first installation, run
 `./install.sh` without the skip options and complete the official UU sign-in.
 
-Post-`v0.1.0` `main` includes an 8 ms per-character pacing option, foreground
+`v0.2.0` includes an 8 ms per-character pacing option, foreground
 focus confirmation, installed-runtime digest checks, privacy-safe transport
 diagnostics, and an isolated libei keymap-descriptor fix. It also retains the
-proven original-call-then-broker fallback at commit `54a7d4c`. Those changes are
-unreleased in this snapshot. Do not describe a moving `main` checkout as
-`v0.1.0`; pin and record an exact reviewed commit when a maintainer deliberately
-tests unreleased code.
+proven original-call-then-broker fallback restored at commit `54a7d4c`. The
+union release preserves an upgraded `v0.1.0` environment's missing text-delay
+field as `0`; fresh installations use 8 ms. Do not describe a moving `main`
+checkout as either release; pin and record an exact tag.
 
 The known-good 7090 did not have the 8 ms option deployed, so pacing is not a
 proven explanation for the difference between the two computers.

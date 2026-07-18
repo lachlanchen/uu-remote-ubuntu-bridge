@@ -38,6 +38,19 @@ The supported host is x86-64 Ubuntu 24.04 with a logged-in GNOME 46 desktop
 (physical, Wayland, Xorg, or XRDP). The installer checks this boundary and
 fails before making partial changes on an unsupported OS or architecture.
 
+## Compatible release tracks
+
+| Tag | Purpose | Default input behavior |
+| --- | --- | --- |
+| `v0.1.0` | Immutable known-good baseline from the original working host | Original unpaced phone text and physical-key path |
+| `v0.2.0` | Union release with the baseline fallback plus optional host-specific extensions | New installs pace phone text by 8 ms; physical pacing is off and all network adapters remain visible |
+
+The `v0.1.0` tag is never moved or rewritten. Upgrading an existing `v0.1.0`
+installation preserves its missing text-delay field as `0`, so merely
+installing `v0.2.0` does not change the timing of that known-good host. A new
+installation starts at 8 ms. In both cases, an explicit saved or command-line
+setting takes precedence.
+
 ## Quick start
 
 Run from the logged-in Ubuntu GNOME desktop session:
@@ -81,11 +94,12 @@ Requested ports and fixed displays are checked before use. A conflicting
 non-GNOME listener fails closed, and an installer error restarts a bridge that
 was active before the attempted upgrade.
 
-The default 8 ms text-key delay prevents UU's phone keyboard from overwhelming
-the Wine-to-FreeRDP input boundary. The broker confirms that the relay window
-has focus before acknowledging an input request and sends translated text one
-character chord at a time. Values from 0 through 50 ms are accepted; increase
-the delay only if a high-latency controller still drops characters.
+For a new installation, the default 8 ms text-key delay prevents UU's phone
+keyboard from overwhelming the Wine-to-FreeRDP input boundary. An upgrade from
+`v0.1.0` preserves that release's unpaced behavior as `0`. The broker confirms
+that the relay window has focus before acknowledging an input request and sends
+translated text one character chord at a time. Values from 0 through 50 ms are
+accepted; change the delay only when a controlled test supports it.
 
 Physical-key pacing defaults to `0`, preserving the ordinary path on hosts
 that already work. If slow typing succeeds but fast physical-key input omits
@@ -149,14 +163,14 @@ saved relay settings:
 cd ~/Projects/uu-remote-ubuntu-bridge
 git status --short
 git fetch --tags origin
-git checkout v0.1.0
+git switch --detach v0.2.0
 ./install.sh --skip-packages --skip-account-login
 ./scripts/verify.sh --quick
 ```
 
 Stop if the status command reports local changes. Installation briefly restarts
-the relay. Read the [v0.1.0 release notes](docs/releases/v0.1.0.md), use the
-[public GitHub release](https://github.com/lachlanchen/uu-remote-ubuntu-bridge/releases/tag/v0.1.0),
+the relay. Read the [v0.2.0 release notes](docs/releases/v0.2.0.md), use the
+[public GitHub release](https://github.com/lachlanchen/uu-remote-ubuntu-bridge/releases/tag/v0.2.0),
 and send the [copy-ready operator handoff](docs/update-handoff.md) when updating
 another authorized machine.
 
@@ -315,6 +329,7 @@ ID, raw production log, screenshot, or private desktop content is committed.
 
 - [Architecture](docs/architecture.md)
 - [Changelog](CHANGELOG.md)
+- [v0.2.0 union release notes](docs/releases/v0.2.0.md)
 - [v0.1.0 release notes](docs/releases/v0.1.0.md)
 - [Update handoff for another operator](docs/update-handoff.md)
 - [Mobile-keyboard parity handoff](docs/mobile-keyboard-parity-handoff.md)
