@@ -59,6 +59,7 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("UURB_GRD_FD_RESTART_THRESHOLD=%s", installer)
         self.assertIn("UURB_TEXT_KEY_DELAY_MS=%s", installer)
         self.assertIn("UURB_PHYSICAL_KEY_DELAY_MS=%s", installer)
+        self.assertIn("UURB_KEYBOARD_ROUTE=%s", installer)
         self.assertIn("UURB_NETWORK_INTERFACE=%s", installer)
         self.assertIn("resolve_text_key_delay", installer)
         self.assertIn("EnvironmentFile=-%h/.config/uu-remote-bridge/environment", unit)
@@ -73,6 +74,10 @@ class RuntimeScriptTests(unittest.TestCase):
         )
         self.assertIn(
             'physical_key_delay_ms="${UURB_PHYSICAL_KEY_DELAY_MS:-0}"',
+            launcher,
+        )
+        self.assertIn(
+            'keyboard_route="${UURB_KEYBOARD_ROUTE:-rdp}"',
             launcher,
         )
         self.assertIn(
@@ -213,10 +218,55 @@ class RuntimeScriptTests(unittest.TestCase):
             broker.index("if (!read_all(pipe, inputs"),
             broker.index("started_ms = GetTickCount64();"),
         )
+        serve_client = broker.index("static void serve_client(HANDLE pipe)")
         self.assertLess(
-            broker.index("started_ms = GetTickCount64();"),
-            broker.index("focus_ready = request_relay_focus"),
+            broker.index("started_ms = GetTickCount64();", serve_client),
+            broker.index("response.result = send_relay_inputs", serve_client),
         )
+
+    def test_direct_x11_keyboard_route_is_opt_in_and_fail_safe(self):
+        builder = (REPOSITORY / "scripts" / "build-compat.sh").read_text()
+        installer = (REPOSITORY / "install.sh").read_text()
+        launcher = (REPOSITORY / "scripts" / "uu-remote-bridge").read_text()
+        verifier = (REPOSITORY / "scripts" / "verify.sh").read_text()
+        broker = (REPOSITORY / "src" / "uu_input_broker.c").read_text()
+        helper = (REPOSITORY / "src" / "uu_x11_input.c").read_text()
+
+        self.assertIn("uu-x11-input", builder)
+        self.assertIn("-lws2_32", builder)
+        self.assertIn("--keyboard-route rdp|x11|auto", installer)
+        self.assertIn("start_x11_input_helper", launcher)
+        self.assertIn('active_keyboard_route="rdp"', launcher)
+        self.assertIn("UURB_X11_INPUT_PORT", launcher)
+        self.assertIn("UURB_X11_INPUT_TOKEN", launcher)
+        self.assertIn("direct X11 physical-key helper is active", verifier)
+        self.assertIn("send_x11_inputs", broker)
+        self.assertIn('route = "x11-error"', broker)
+        self.assertIn("ERROR_CONNECTION_ABORTED", broker)
+        self.assertIn("release_pressed_keys", helper)
+        self.assertIn("minimum_hold_ms", helper)
+        self.assertNotIn("XTestFakeButtonEvent", helper)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "uu-x11-input"
+            subprocess.run(
+                [
+                    "gcc",
+                    "-std=c11",
+                    "-O2",
+                    "-Wall",
+                    "-Wextra",
+                    "-Werror",
+                    "-I",
+                    str(REPOSITORY / "src"),
+                    "-o",
+                    str(output),
+                    str(REPOSITORY / "src" / "uu_x11_input.c"),
+                    "-ldl",
+                ],
+                check=True,
+                cwd=REPOSITORY,
+            )
 
     def test_text_delay_migration_preserves_v010_behavior(self):
         resolver = REPOSITORY / "scripts" / "runtime-settings.sh"

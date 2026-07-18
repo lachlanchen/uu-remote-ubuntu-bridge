@@ -43,7 +43,7 @@ fails before making partial changes on an unsupported OS or architecture.
 | Tag | Purpose | Default input behavior |
 | --- | --- | --- |
 | `v0.1.0` | Immutable known-good baseline from the original working host | Original unpaced phone text and physical-key path |
-| `v0.2.0` | Union release with the baseline fallback plus optional host-specific extensions | New installs pace phone text by 8 ms; physical pacing is off and all network adapters remain visible |
+| `v0.2.0` | Union release with the baseline fallback plus optional host-specific extensions | New installs pace phone text by 8 ms; physical pacing is off, the compatible RDP keyboard route remains selected, and all network adapters remain visible |
 
 The `v0.1.0` tag is never moved or rewritten. Upgrading an existing `v0.1.0`
 installation preserves its missing text-delay field as `0`, so merely
@@ -77,12 +77,13 @@ Complete account sign-in and close that window. Re-running the same command is
 idempotent; unchanged FreeRDP build outputs are checksum-verified and reused.
 
 Port, resolution, private-display, phone-text pacing, optional physical-key
-pacing, and an optional UU-only network-interface choice are persistent and
-can be set without editing the service:
+pacing, physical-key route, and an optional UU-only network-interface choice
+are persistent and can be set without editing the service:
 
 ```bash
 ./install.sh --rdp-port 3391 --resolution 2560x1440 --display auto \
   --text-key-delay-ms 8 --physical-key-delay-ms 0 \
+  --keyboard-route rdp \
   --network-interface all
 ```
 
@@ -107,6 +108,23 @@ events, `--physical-key-delay-ms 8` adds bounded back-pressure after each
 accepted broker segment. It never retries or synthesizes a key. See the
 [validated recovery note](docs/xrdp-and-keyboard-recovery.md) before changing
 this host-specific setting.
+
+If broker metadata shows accepted physical-key calls but the nested
+Wine/FreeRDP route still loses fast keys on an Xorg or XRDP desktop, the
+opt-in direct route removes only that final keyboard hop:
+
+```bash
+./install.sh --skip-packages --skip-account-login \
+  --keyboard-route x11 --physical-key-delay-ms 0
+```
+
+Mouse, video, clipboard, and Unicode phone text continue through the proven
+RDP relay. Physical keys alone go through an authenticated loopback helper and
+XTEST into the selected X11 desktop. The global default remains `rdp`; `auto`
+selects the direct route only for an X11 target. If preflight cannot verify the
+target display or helper, startup retains the compatible RDP route and the
+verifier reports that an explicitly requested X11 route is inactive. No event
+is replayed after an ambiguous partial injection.
 
 If individual keys lag or disappear while direct RDP remains responsive, check
 the transport before changing input code:
@@ -213,19 +231,19 @@ Phone / Windows / macOS UU controller
              |                 |
              v                 v
    Ubuntu-Desktop-Relay   bounded named-pipe broker
-       SDL FreeRDP              |
-             |                  |
-             +------------------+
-                  Wine/X11 input
-                         |
-                 RDP on 127.0.0.1
-                         |
-                         v
-              GNOME Remote Desktop
-                         |
-                         v
-             logged-in GNOME desktop
-              (Wayland or Xorg/XRDP)
+       SDL FreeRDP          |             |
+             |              | RDP         | optional physical keys
+             +--------------+             v
+                    |             native X11/XTEST helper
+             RDP on 127.0.0.1              |
+                    |                      |
+                    v                      |
+         GNOME Remote Desktop              |
+                    |                      |
+                    +----------+-----------+
+                               v
+                    logged-in GNOME desktop
+                     (Wayland or Xorg/XRDP)
 ```
 
 UU sees one ordinary Windows desktop window. SDL FreeRDP relays that window to
@@ -233,7 +251,9 @@ GNOME Remote Desktop, which owns supported GNOME capture and input. The
 launcher discovers the D-Bus of the live GNOME Shell, including XRDP sessions
 that use a private session bus, and keeps the RDP hop local to the host. When
 Wine denies `SendInput` from UU's service token, a bounded broker repeats the
-same input request from a normal user Wine process.
+same input request from a normal user Wine process. On an explicitly selected
+X11 target, physical keys can instead bypass the nested RDP input conversion;
+all other channels keep the original relay.
 
 [Read the complete architecture](docs/architecture.md).
 The [debugging journey](docs/debugging-journey.md) records the failed

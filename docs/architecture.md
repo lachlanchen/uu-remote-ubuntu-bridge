@@ -104,6 +104,22 @@ window and confirms it became the foreground window within a bounded 300 ms
 before calling `SendInput`. It returns the real count and error code to UU only
 after that boundary succeeds.
 
+On an X11 target with `UURB_KEYBOARD_ROUTE=x11`, the broker recognizes only
+bounded, non-Unicode keyboard-only arrays and sends their physical scan events
+to `uu-x11-input` over a token-authenticated loopback socket. The native helper
+preflights the whole array, maps the established XFree86 scan-code set to X11
+keycodes, and uses XTEST on the discovered live desktop. Mouse, mixed arrays,
+and Unicode phone text remain on the RDP route. A helper that is absent,
+unreachable before injection, or presented with an unsupported event safely
+falls back to RDP. A communication failure after injection begins returns an
+error without replay, preventing duplicate keys. Held keys are released when
+the broker disconnects, and helper exit restarts the supervised bridge.
+
+The direct route removes two conversions—Wine `SendInput` into SDL FreeRDP and
+FreeRDP into GNOME RDP—for the one category that remained lossy on the affected
+XRDP workstation. It is not enabled globally because the original RDP route is
+known-good on other hosts and is still required for Wayland targets.
+
 No key code, Unicode character, clipboard payload, or text is written to the
 diagnostic logs.
 
@@ -122,9 +138,10 @@ one. The original request count is returned to UU only after focus is confirmed
 and every translated event is accepted. Unsupported characters fail explicitly
 rather than being emitted as an unrelated key.
 
-Physical-key segments are unchanged by default. An optional 0-50 ms delay can
-add back-pressure after each accepted segment on a host where fast typing
-omits events; it never retries or synthesizes input.
+Physical-key segments are unchanged by default. On the RDP route, an optional
+0-50 ms delay can add back-pressure after each accepted segment. On the direct
+X11 route, that value is only a minimum down-to-up hold time. Neither route
+retries or synthesizes input.
 
 Diagnostics use separate bounded quotas for phone text, physical keyboard,
 mouse, and other calls, and successful events are not synchronously forced to

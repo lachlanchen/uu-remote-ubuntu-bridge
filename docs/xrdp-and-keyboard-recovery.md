@@ -151,6 +151,61 @@ A paced successful call reports `category=keyboard`, `focus=ready`,
 count, and `error=0`. The logs never record a key code, character, clipboard
 payload, address, account identifier, or typed text.
 
+## Direct X11 physical-key route
+
+Pacing improved this workstation but did not remove every omission. A later
+12 ms capture recorded 219 physical-key broker calls; every recorded call
+returned the requested count with `error=0`, while the operator still observed
+missing fast letters, Enter presses, and Ctrl chords. This ruled out broker
+API failure as the explanation for those recorded calls. It did not prove that
+the controller emitted every intended event, because privacy-safe logs cannot
+reconstruct typed content, but it made adding more delay a poor next step.
+
+The affected desktop is XRDP Xorg. Its XTEST extension is available and its
+standard scan-code-to-X-keycode map was verified directly. The bridge can
+therefore bypass the lossy nested keyboard conversion while preserving all
+other working channels:
+
+```text
+UU physical key -> Wine hook -> user-token broker -> X11 helper -> Xorg
+
+UU video/mouse/text -> existing SDL FreeRDP -> GNOME RDP -> desktop
+```
+
+Enable this route only on a verified Xorg/XRDP target:
+
+```bash
+./install.sh --skip-packages --skip-account-login \
+  --keyboard-route x11 --physical-key-delay-ms 0
+./scripts/verify.sh --quick
+```
+
+The native helper uses XTEST on the discovered desktop, accepts only physical
+keyboard arrays over an authenticated loopback socket, and is supervised by
+the existing service. It preflights each complete array. Unavailable or
+unsupported input falls back before injection; a failure after possible
+injection is returned without replay, avoiding duplicate keys. Disconnect
+releases tracked held keys. With the direct route, the physical delay is a
+minimum key-hold interval rather than a delay after every down and up event;
+zero keeps the path non-blocking.
+
+Restore the universally compatible path without deleting UU state:
+
+```bash
+./install.sh --skip-packages --skip-account-login \
+  --keyboard-route rdp --physical-key-delay-ms 0
+```
+
+The repository default remains `rdp`, so the known-good Wayland host and all
+existing installations retain their old route. `auto` chooses direct input
+only when the discovered target is X11. The verifier fails if an explicitly
+requested X11 route could not become active.
+
+Before live deployment, an isolated Xvfb test sent the full alphabet together
+with Ctrl+A and Enter as one fast stream. XTEST observed all 58 transitions in
+order: 29 key presses and 29 key releases, including both Ctrl and Enter
+transitions.
+
 ## What is proven, and what is not
 
 In the observed run, Windows App was restarted, XRDP created a fresh desktop,
@@ -162,8 +217,8 @@ call which reached the hook was focused, paced, and accepted without an error.
 
 This proves the combined state improved the symptom; it does not prove a full
 fix or isolate either the fresh XRDP desktop or pacing as sufficient by itself.
-It also narrows the residual loss to the path before a call reaches the hook.
-A controlled 12 ms trial was therefore selected as the next conservative
-step. Reconnect UU after changing the setting so the test actually reaches the
-new broker process, and do not claim the new value helped until its startup
-line is followed by fresh `category=keyboard` records.
+A controlled 12 ms trial was the final pacing experiment. It retained
+occasional omissions despite successful broker results, so further delay was
+rejected in favor of the direct X11 route above. Reconnect UU after any route
+change and require fresh `category=keyboard route=x11 result=1 error=0`
+records before attributing a manual test to that route.

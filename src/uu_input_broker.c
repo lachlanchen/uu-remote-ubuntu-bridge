@@ -1,9 +1,12 @@
 #define WIN32_LEAN_AND_MEAN
+#include <winsock2.h>
 #include <windows.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
+
+#include "x11_input_protocol.h"
 
 #define INPUT_BRIDGE_MAGIC 0x42525555UL
 #define INPUT_BRIDGE_MAX_INPUTS 64UL
@@ -33,6 +36,12 @@ typedef struct input_segment {
     BOOL text;
 } input_segment;
 
+typedef enum x11_route_result {
+    X11_ROUTE_NOT_USED,
+    X11_ROUTE_SUCCESS,
+    X11_ROUTE_FAILED
+} x11_route_result;
+
 static HANDLE log_file = INVALID_HANDLE_VALUE;
 static volatile LONG input_call_count;
 static volatile LONG keyboard_call_count;
@@ -42,6 +51,12 @@ static volatile LONG text_call_count;
 static DWORD text_key_delay_ms = INPUT_BRIDGE_DEFAULT_TEXT_KEY_DELAY_MS;
 static DWORD physical_key_delay_ms =
     INPUT_BRIDGE_DEFAULT_PHYSICAL_KEY_DELAY_MS;
+static BOOL x11_input_configured;
+static BOOL winsock_initialized;
+static SOCKET x11_input_socket = INVALID_SOCKET;
+static unsigned short x11_input_port;
+static char x11_input_token[UURB_X11_INPUT_TOKEN_SIZE + 1];
+static volatile LONG x11_sequence;
 
 static void write_log(const char *message)
 {
@@ -88,6 +103,218 @@ static BOOL read_all(HANDLE handle, void *buffer, DWORD size)
     }
 
     return TRUE;
+}
+
+static void close_x11_input_socket(void)
+{
+    if (x11_input_socket != INVALID_SOCKET) {
+        closesocket(x11_input_socket);
+        x11_input_socket = INVALID_SOCKET;
+    }
+}
+
+static BOOL socket_write_all(SOCKET socket_handle, const void *buffer,
+                             int size)
+{
+    const char *position = (const char *)buffer;
+
+    while (size > 0) {
+        int written = send(socket_handle, position, size, 0);
+
+        if (written == SOCKET_ERROR || written == 0)
+            return FALSE;
+        position += written;
+        size -= written;
+    }
+    return TRUE;
+}
+
+static BOOL socket_read_all(SOCKET socket_handle, void *buffer, int size)
+{
+    char *position = (char *)buffer;
+
+    while (size > 0) {
+        int received = recv(socket_handle, position, size, 0);
+
+        if (received == SOCKET_ERROR || received == 0)
+            return FALSE;
+        position += received;
+        size -= received;
+    }
+    return TRUE;
+}
+
+static BOOL configure_x11_input(void)
+{
+    wchar_t port_value[16];
+    wchar_t token_value[UURB_X11_INPUT_TOKEN_SIZE + 1];
+    wchar_t *end = NULL;
+    DWORD port_length;
+    DWORD token_length;
+    unsigned long parsed_port;
+    DWORD index;
+
+    port_length = GetEnvironmentVariableW(L"UURB_X11_INPUT_PORT", port_value,
+                                           ARRAYSIZE(port_value));
+    token_length = GetEnvironmentVariableW(L"UURB_X11_INPUT_TOKEN",
+                                            token_value,
+                                            ARRAYSIZE(token_value));
+    if (port_length == 0 || port_length >= ARRAYSIZE(port_value) ||
+        token_length != UURB_X11_INPUT_TOKEN_SIZE)
+        return FALSE;
+
+    parsed_port = wcstoul(port_value, &end, 10);
+    if (end == port_value || *end != L'\0' || parsed_port == 0 ||
+        parsed_port > 65535)
+        return FALSE;
+    for (index = 0; index < UURB_X11_INPUT_TOKEN_SIZE; index++) {
+        wchar_t character = token_value[index];
+
+        if (!((character >= L'0' && character <= L'9') ||
+              (character >= L'a' && character <= L'f') ||
+              (character >= L'A' && character <= L'F')))
+            return FALSE;
+        x11_input_token[index] = (char)character;
+    }
+    x11_input_token[UURB_X11_INPUT_TOKEN_SIZE] = '\0';
+    x11_input_port = (unsigned short)parsed_port;
+    return TRUE;
+}
+
+static BOOL connect_x11_input(void)
+{
+    struct sockaddr_in address;
+    uurb_x11_handshake handshake;
+    uurb_x11_response response;
+    DWORD socket_timeout_ms = 1000;
+    WSADATA data;
+
+    if (!x11_input_configured)
+        return FALSE;
+    if (x11_input_socket != INVALID_SOCKET)
+        return TRUE;
+    if (!winsock_initialized) {
+        if (WSAStartup(MAKEWORD(2, 2), &data) != 0)
+            return FALSE;
+        winsock_initialized = TRUE;
+    }
+
+    x11_input_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (x11_input_socket == INVALID_SOCKET)
+        return FALSE;
+    setsockopt(x11_input_socket, SOL_SOCKET, SO_SNDTIMEO,
+               (const char *)&socket_timeout_ms,
+               sizeof(socket_timeout_ms));
+    setsockopt(x11_input_socket, SOL_SOCKET, SO_RCVTIMEO,
+               (const char *)&socket_timeout_ms,
+               sizeof(socket_timeout_ms));
+    ZeroMemory(&address, sizeof(address));
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    address.sin_port = htons(x11_input_port);
+    if (connect(x11_input_socket, (struct sockaddr *)&address,
+                sizeof(address)) == SOCKET_ERROR) {
+        close_x11_input_socket();
+        return FALSE;
+    }
+
+    ZeroMemory(&handshake, sizeof(handshake));
+    handshake.magic = UURB_X11_INPUT_MAGIC;
+    handshake.version = UURB_X11_INPUT_VERSION;
+    memcpy(handshake.token, x11_input_token, UURB_X11_INPUT_TOKEN_SIZE);
+    if (!socket_write_all(x11_input_socket, &handshake, sizeof(handshake)) ||
+        !socket_read_all(x11_input_socket, &response, sizeof(response)) ||
+        response.magic != UURB_X11_INPUT_MAGIC || response.sequence != 0 ||
+        response.result != 1 || response.error != 0) {
+        close_x11_input_socket();
+        return FALSE;
+    }
+    return TRUE;
+}
+
+static BOOL input_to_x11_event(const INPUT *input,
+                               uurb_x11_key_event *event)
+{
+    UINT mapped;
+    DWORD flags;
+    WORD scan;
+
+    if (input->type != INPUT_KEYBOARD ||
+        (input->ki.dwFlags & KEYEVENTF_UNICODE) != 0)
+        return FALSE;
+
+    flags = input->ki.dwFlags;
+    if ((flags & KEYEVENTF_SCANCODE) != 0) {
+        scan = input->ki.wScan;
+    } else {
+        mapped = MapVirtualKeyW(input->ki.wVk, MAPVK_VK_TO_VSC_EX);
+        if (mapped == 0)
+            return FALSE;
+        scan = (WORD)(mapped & 0xffU);
+        if ((mapped & 0xff00U) == 0xe000U)
+            flags |= KEYEVENTF_EXTENDEDKEY;
+    }
+    if (scan == 0)
+        return FALSE;
+
+    event->virtual_key = input->ki.wVk;
+    event->scan_code = scan;
+    event->flags = flags;
+    return TRUE;
+}
+
+static x11_route_result send_x11_inputs(DWORD count, const INPUT *inputs,
+                                        DWORD *error, BOOL *considered)
+{
+    uurb_x11_key_event events[INPUT_BRIDGE_MAX_INPUTS];
+    uurb_x11_request request;
+    uurb_x11_response response;
+    DWORD index;
+
+    *considered = FALSE;
+    if (!x11_input_configured || count == 0 ||
+        count > INPUT_BRIDGE_MAX_INPUTS)
+        return X11_ROUTE_NOT_USED;
+    for (index = 0; index < count; index++) {
+        if (inputs[index].type != INPUT_KEYBOARD ||
+            (inputs[index].ki.dwFlags & KEYEVENTF_UNICODE) != 0)
+            return X11_ROUTE_NOT_USED;
+    }
+    *considered = TRUE;
+    for (index = 0; index < count; index++) {
+        if (!input_to_x11_event(&inputs[index], &events[index]))
+            return X11_ROUTE_NOT_USED;
+    }
+    if (!connect_x11_input())
+        return X11_ROUTE_NOT_USED;
+
+    request.magic = UURB_X11_INPUT_MAGIC;
+    request.sequence = (uint32_t)InterlockedIncrement(&x11_sequence);
+    request.count = count;
+    request.reserved = 0;
+    if (!socket_write_all(x11_input_socket, &request, sizeof(request)) ||
+        !socket_write_all(x11_input_socket, events,
+                          (int)(count * sizeof(events[0]))) ||
+        !socket_read_all(x11_input_socket, &response, sizeof(response))) {
+        close_x11_input_socket();
+        *error = ERROR_CONNECTION_ABORTED;
+        return X11_ROUTE_FAILED;
+    }
+    if (response.magic != UURB_X11_INPUT_MAGIC ||
+        response.sequence != request.sequence) {
+        close_x11_input_socket();
+        *error = ERROR_INVALID_DATA;
+        return X11_ROUTE_FAILED;
+    }
+    if (response.result == count && response.error == 0) {
+        *error = ERROR_SUCCESS;
+        return X11_ROUTE_SUCCESS;
+    }
+    if (response.result == 0 &&
+        response.error == UURB_X11_ERROR_UNSUPPORTED)
+        return X11_ROUTE_NOT_USED;
+    *error = ERROR_GEN_FAILURE;
+    return X11_ROUTE_FAILED;
 }
 
 static BOOL append_key_event(INPUT *inputs, DWORD *count, WORD virtual_key,
@@ -259,19 +486,56 @@ static BOOL segment_contains_physical_keyboard(const input_segment *segment,
     return FALSE;
 }
 
+static BOOL request_relay_focus(DWORD *waited_ms);
+
 static DWORD send_relay_inputs(DWORD source_count, const INPUT *source,
                                DWORD *error, BOOL *normalized_unicode,
                                DWORD *paced_characters,
-                               DWORD *paced_physical_segments)
+                               DWORD *paced_physical_segments,
+                               BOOL *focus_ready, DWORD *focus_wait_ms,
+                               const char **route)
 {
     INPUT translated[INPUT_BRIDGE_MAX_TRANSLATED_INPUTS];
     input_segment segments[INPUT_BRIDGE_MAX_SEGMENTS];
+    x11_route_result x11_result;
+    BOOL x11_considered;
     DWORD translated_count;
     DWORD segment_count;
     DWORD index;
 
+    *normalized_unicode = FALSE;
     *paced_characters = 0;
     *paced_physical_segments = 0;
+    *focus_ready = TRUE;
+    *focus_wait_ms = 0;
+    *route = "rdp";
+
+    x11_result = send_x11_inputs(source_count, source, error,
+                                 &x11_considered);
+    if (x11_result == X11_ROUTE_SUCCESS) {
+        *route = "x11";
+        return source_count;
+    }
+    if (x11_result == X11_ROUTE_FAILED) {
+        *route = "x11-error";
+        return 0;
+    }
+    if (x11_considered)
+        *route = "rdp-fallback";
+
+    *focus_ready = request_relay_focus(focus_wait_ms);
+    if (!*focus_ready) {
+        *error = GetLastError();
+        for (index = 0; index < source_count; index++) {
+            if (source[index].type == INPUT_KEYBOARD &&
+                (source[index].ki.dwFlags & KEYEVENTF_UNICODE) != 0) {
+                *normalized_unicode = TRUE;
+                break;
+            }
+        }
+        return 0;
+    }
+
     if (!translate_inputs(source_count, source, translated, &translated_count,
                           segments, &segment_count, normalized_unicode)) {
         *error = ERROR_NO_UNICODE_TRANSLATION;
@@ -383,7 +647,7 @@ static void serve_client(HANDLE pipe)
         input_bridge_request request;
         input_bridge_response response;
         INPUT inputs[INPUT_BRIDGE_MAX_INPUTS];
-        char line[512];
+        char line[640];
         DWORD first_type = (DWORD)-1;
         DWORD first_flags = 0;
         DWORD focus_wait_ms = 0;
@@ -392,6 +656,7 @@ static void serve_client(HANDLE pipe)
         LONG call_number;
         LONG category_call_number;
         const char *category;
+        const char *route = "rdp";
         BOOL focus_ready;
         BOOL normalized_unicode = FALSE;
         BOOL physical_keyboard;
@@ -411,28 +676,16 @@ static void serve_client(HANDLE pipe)
 
         /* Measure broker processing, not idle time waiting for a request. */
         started_ms = GetTickCount64();
-        focus_ready = request_relay_focus(&focus_wait_ms);
-        if (focus_ready) {
-            inject_started_ms = GetTickCount64();
-            response.result = send_relay_inputs(request.count, inputs,
-                                                &response.error,
-                                                &normalized_unicode,
-                                                &paced_characters,
-                                                &paced_physical_segments);
-            inject_ms = (DWORD)(GetTickCount64() - inject_started_ms);
-        } else {
-            DWORD index;
-
-            response.result = 0;
-            response.error = GetLastError();
-            for (index = 0; index < request.count; index++) {
-                if (inputs[index].type == INPUT_KEYBOARD &&
-                    (inputs[index].ki.dwFlags & KEYEVENTF_UNICODE) != 0) {
-                    normalized_unicode = TRUE;
-                    break;
-                }
-            }
-        }
+        inject_started_ms = GetTickCount64();
+        response.result = send_relay_inputs(request.count, inputs,
+                                            &response.error,
+                                            &normalized_unicode,
+                                            &paced_characters,
+                                            &paced_physical_segments,
+                                            &focus_ready,
+                                            &focus_wait_ms,
+                                            &route);
+        inject_ms = (DWORD)(GetTickCount64() - inject_started_ms);
         first_type = inputs[0].type;
         if (first_type == INPUT_MOUSE)
             first_flags = inputs[0].mi.dwFlags;
@@ -465,12 +718,14 @@ static void serve_client(HANDLE pipe)
             response.result != request.count) {
             _snprintf(
                 line, sizeof(line),
-                "call=%ld category=%s category-call=%ld count=%lu type=%lu flags=0x%08lx text=%s focus=%s focus-wait-ms=%lu paced-text=%lu text-delay-ms=%lu paced-physical=%lu physical-delay-ms=%lu inject-ms=%lu total-ms=%lu result=%lu error=%lu\r\n",
+                "call=%ld category=%s category-call=%ld count=%lu type=%lu flags=0x%08lx text=%s route=%s focus=%s focus-wait-ms=%lu paced-text=%lu text-delay-ms=%lu paced-physical=%lu physical-delay-ms=%lu inject-ms=%lu total-ms=%lu result=%lu error=%lu\r\n",
                 call_number, category, category_call_number,
                 (unsigned long)request.count,
                 (unsigned long)first_type, (unsigned long)first_flags,
                 normalized_unicode ? "normalized" : "unchanged",
-                focus_ready ? "ready" : "timeout",
+                route,
+                strcmp(route, "x11") == 0 ? "bypassed" :
+                (focus_ready ? "ready" : "timeout"),
                 (unsigned long)focus_wait_ms,
                 (unsigned long)paced_characters,
                 (unsigned long)text_key_delay_ms,
@@ -516,14 +771,16 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous,
                            OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     text_key_delay_ms = configured_text_key_delay();
     physical_key_delay_ms = configured_physical_key_delay();
+    x11_input_configured = configure_x11_input();
     {
-        char line[192];
+        char line[256];
 
         _snprintf(line, sizeof(line),
-                  "UU input broker active text-delay-ms=%lu physical-delay-ms=%lu focus-timeout-ms=%lu\r\n",
+                  "UU input broker active text-delay-ms=%lu physical-delay-ms=%lu focus-timeout-ms=%lu keyboard-route=%s\r\n",
                   (unsigned long)text_key_delay_ms,
                   (unsigned long)physical_key_delay_ms,
-                  (unsigned long)INPUT_BRIDGE_FOCUS_TIMEOUT_MS);
+                  (unsigned long)INPUT_BRIDGE_FOCUS_TIMEOUT_MS,
+                  x11_input_configured ? "x11" : "rdp");
         line[sizeof(line) - 1] = '\0';
         write_log(line);
         flush_log();

@@ -52,6 +52,7 @@ saved_grd_fd_restart_threshold="$(
 )"
 saved_text_key_delay_ms="$(saved_setting UURB_TEXT_KEY_DELAY_MS)"
 saved_physical_key_delay_ms="$(saved_setting UURB_PHYSICAL_KEY_DELAY_MS)"
+saved_keyboard_route="$(saved_setting UURB_KEYBOARD_ROUTE)"
 saved_network_interface="$(saved_setting UURB_NETWORK_INTERFACE)"
 rdp_port="${UURB_RDP_PORT:-${saved_rdp_port:-3390}}"
 resolution="${UURB_RESOLUTION:-${saved_resolution:-1920x1080}}"
@@ -60,6 +61,7 @@ grd_fd_restart_threshold="${UURB_GRD_FD_RESTART_THRESHOLD:-${saved_grd_fd_restar
 text_key_delay_ms="$(resolve_text_key_delay \
     "$environment_file" "$saved_text_key_delay_ms")"
 physical_key_delay_ms="${UURB_PHYSICAL_KEY_DELAY_MS:-${saved_physical_key_delay_ms:-0}}"
+keyboard_route="${UURB_KEYBOARD_ROUTE:-${saved_keyboard_route:-rdp}}"
 network_interface="${UURB_NETWORK_INTERFACE:-${saved_network_interface:-all}}"
 uu_installer=''
 skip_packages=false
@@ -86,6 +88,10 @@ usage: ./install.sh [options]
   --physical-key-delay-ms N
                          pace physical key batches by 0-50 ms
                          (default: 0)
+  --keyboard-route rdp|x11|auto
+                         route physical keys through the compatible RDP path,
+                         directly into an X11 desktop, or auto-detect X11
+                         (default: rdp; x11 is opt-in)
   --network-interface all|default|IFACE
                          use all adapters (the default), Ubuntu's preferred
                          route, or one named interface
@@ -129,6 +135,10 @@ while (($#)); do
             ;;
         --physical-key-delay-ms)
             physical_key_delay_ms="${2:?--physical-key-delay-ms requires a number}"
+            shift 2
+            ;;
+        --keyboard-route)
+            keyboard_route="${2:?--keyboard-route requires rdp, x11, or auto}"
             shift 2
             ;;
         --network-interface)
@@ -220,6 +230,11 @@ if [[ ! "$physical_key_delay_ms" =~ ^[0-9]+$ ]] ||
     printf 'The physical-key delay must be an integer from 0 through 50 ms.\n' >&2
     exit 2
 fi
+if [[ "$keyboard_route" != rdp && "$keyboard_route" != x11 &&
+      "$keyboard_route" != auto ]]; then
+    printf 'The keyboard route must be rdp, x11, or auto.\n' >&2
+    exit 2
+fi
 if [[ "$network_interface" != all &&
       "$network_interface" != default &&
       ! "$network_interface" =~ ^[a-zA-Z0-9_.:-]{1,15}$ ]]; then
@@ -278,7 +293,8 @@ install_packages() {
         acl aria2 binutils ca-certificates cmake crudini curl freerdp3-x11 \
         gcc \
         gcc-mingw-w64-x86-64 \
-        git gnome-remote-desktop iproute2 jq libsecret-tools libxml2-utils meson \
+        git gnome-remote-desktop iproute2 jq libsecret-tools libx11-6 \
+        libxml2-utils libxtst6 meson \
         ninja-build openbox openssl p7zip-full patch python3 python3-attr \
         python3-gi python3-jinja2 tar x11-utils xauth xdotool xvfb zstd
     install_winehq
@@ -435,6 +451,8 @@ install -m 0755 \
     "$wine_prefix/compat/"
 install -m 0755 "$compat_build/uu-network-filter.so" \
     "$wine_prefix/compat/uu-network-filter.so"
+install -m 0755 "$compat_build/uu-x11-input" \
+    "$wine_prefix/compat/uu-x11-input"
 install -m 0755 "$compat_build/winlogon.exe" \
     "$wine_prefix/compat/winlogon.exe"
 install -m 0755 "$compat_build/winlogon.exe.so" \
@@ -482,6 +500,8 @@ printf 'UURB_TEXT_KEY_DELAY_MS=%s\n' \
     "$text_key_delay_ms" >>"$environment_tmp"
 printf 'UURB_PHYSICAL_KEY_DELAY_MS=%s\n' \
     "$physical_key_delay_ms" >>"$environment_tmp"
+printf 'UURB_KEYBOARD_ROUTE=%s\n' \
+    "$keyboard_route" >>"$environment_tmp"
 printf 'UURB_NETWORK_INTERFACE=%s\n' \
     "$network_interface" >>"$environment_tmp"
 chmod 0600 "$environment_tmp"

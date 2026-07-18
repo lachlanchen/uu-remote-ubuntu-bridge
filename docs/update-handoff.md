@@ -15,7 +15,9 @@ This backward-compatible union release keeps the v0.1.0 input fallback and adds
 bounded pacing, privacy-safe diagnostics, and relay-recovery hardening. An
 upgrade from v0.1.0 preserves that host's unpaced text behavior; physical-key
 pacing and network filtering remain off unless explicitly selected. The update
-is for x86-64 Ubuntu 24.04, GNOME 46, and UU Remote 4.33.0.8907 only.
+also includes an opt-in direct X11 physical-key route; the compatible RDP route
+remains the default. The update is for x86-64 Ubuntu 24.04, GNOME 46, and UU
+Remote 4.33.0.8907 only.
 
 The public repository is available at:
 https://github.com/lachlanchen/uu-remote-ubuntu-bridge
@@ -109,6 +111,24 @@ tail -80 "$log" | rg 'text=normalized .*error=0'
 
 Do not accept a test performed only with UU's computer-keyboard panel. It uses
 a different input path from the phone's normal keyboard.
+
+## Optional physical-key acceptance on Xorg/XRDP
+
+Do not enable this on a host whose default RDP route already works. If fast
+computer-keyboard input remains incomplete despite successful broker records,
+and the target session is confirmed X11:
+
+```bash
+./install.sh --skip-packages --skip-account-login \
+  --keyboard-route x11 --physical-key-delay-ms 0
+./scripts/verify.sh --quick
+```
+
+Reconnect UU, type the alphabet rapidly, press Enter, and test Ctrl+A/C/V.
+Require both the visible result and a fresh content-free
+`category=keyboard route=x11 ... result=1 error=0` record. Restore
+`--keyboard-route rdp` if the target is Wayland or the helper cannot preflight
+the display.
 
 ## Failure handoff
 

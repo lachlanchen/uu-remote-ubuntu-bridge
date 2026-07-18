@@ -233,6 +233,28 @@ reconnect the UU controller and verify that fresh keyboard records appear after
 the broker startup line for that value. A subjective test made through RDP or
 an unreconnected UU client does not measure the new bridge process.
 
+If 8-12 ms pacing improves but does not solve the symptom, and fresh broker
+records still show matching counts with `error=0`, do not keep increasing the
+delay. On a verified Xorg/XRDP target, select the native physical-key route:
+
+```bash
+./install.sh --skip-packages --skip-account-login \
+  --keyboard-route x11 --physical-key-delay-ms 0
+./scripts/verify.sh --quick
+```
+
+The verifier must report `direct X11 physical-key helper is active`, and a
+fresh UU computer-keyboard event must report `category=keyboard route=x11`
+with a matching result and `error=0`. Mouse, video, clipboard, and phone text
+remain on RDP. If explicit X11 preflight cannot verify the target display, the
+service remains usable on RDP but verification fails so the fallback is not
+mistaken for the requested test. Restore the baseline with:
+
+```bash
+./install.sh --skip-packages --skip-account-login \
+  --keyboard-route rdp --physical-key-delay-ms 0
+```
+
 ## Windows App remains on Configuring
 
 First determine whether the newest XRDP attempt stops immediately after

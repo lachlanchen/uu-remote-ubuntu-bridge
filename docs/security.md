@@ -14,6 +14,9 @@ that the same setup script can reverse.
 - The Wine prefix is under `~/.local/share/wineprefixes/uu-remote`.
 - Xvfb uses an Xauthority cookie and does not listen on TCP.
 - The input broker pipe exists inside that Wine prefix's wineserver namespace.
+- The optional X11 physical-key helper binds an ephemeral loopback-only port,
+  requires a fresh 256-bit token from the supervised launcher, and publishes
+  its port only in the user's mode-0700 runtime directory.
 - The FreeRDP hop targets `127.0.0.1` only and pins GNOME's configured TLS
   certificate by SHA-256 fingerprint.
 - The systemd unit is a user unit and has no root privileges.
@@ -65,6 +68,12 @@ signaling endpoints, and account metadata.
 Diagnostic input logs contain only count, Windows input type, flag bits,
 route, result, and error. They intentionally omit virtual key codes, scan
 codes, Unicode values, mouse coordinates, and clipboard data.
+
+The X11 helper accepts physical keyboard records only. It cannot inject mouse
+events or phone-text payloads, preflights each complete bounded request before
+the first XTEST call, and releases all tracked held keys when its authenticated
+broker connection closes. The token is supplied through inherited process
+environments, not a command-line argument or persistent configuration file.
 
 The local FreeRDP `cliprdr` channel is enabled for normal copy and paste.
 Clipboard content can therefore cross between the Wine relay and the logged-in

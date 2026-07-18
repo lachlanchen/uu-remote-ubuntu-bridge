@@ -12,6 +12,7 @@ runtime_files=(
     scripts/build-libei.sh
     scripts/build-winpr.sh
     scripts/configure-unattended.sh
+    scripts/runtime-settings.sh
     scripts/runtime-source-digest
     scripts/stop-wine-prefix
     scripts/uu_connection_status.py
@@ -24,8 +25,10 @@ runtime_files=(
     src/uu_input_broker.c
     src/uu_network_filter.c
     src/uu_service_control.c
+    src/uu_x11_input.c
     src/winlogon.c
     src/winpr_sspi_shim.c
+    src/x11_input_protocol.h
     systemd/uu-keyring-unlock.service
     systemd/uu-remote-bridge-unattended.conf
     systemd/uu-remote-bridge.service
