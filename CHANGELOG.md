@@ -72,6 +72,15 @@ stability, diagnostics, and opt-in host-specific extensions.
 - release tracked modifiers when the direct helper disconnects and refuse to
   replay any request after an ambiguous partial injection
 
+### Validation
+
+- all 40 source, shell, documentation, migration, and helper-build tests pass
+- an isolated Xvfb/XTEST run captured all 58 requested Ctrl, Enter, and
+  alphabet press/release transitions
+- a live direct-UU run sampled 256 successful `route=x11` physical-key calls
+  with no broker errors; the operator reported very smooth typing with almost
+  all former omissions resolved
+
 ## [0.1.0] - 2026-07-17
 
 First supported handoff release.

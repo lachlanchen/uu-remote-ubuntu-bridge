@@ -206,6 +206,14 @@ with Ctrl+A and Enter as one fast stream. XTEST observed all 58 transitions in
 order: 29 key presses and 29 key releases, including both Ctrl and Enter
 transitions.
 
+The subsequent real UU controller test reached the newly restarted broker, not
+an older RDP process: all 256 sampled physical-key records reported
+`route=x11`, a matching one-event result, and `error=0`. The operator described
+typing as very smooth and said almost all earlier loss was fixed. Because the
+diagnostic quota intentionally stops after a bounded sample and does not record
+typed content, this is documented as a strong practical improvement rather
+than a universal zero-loss guarantee.
+
 ## What is proven, and what is not
 
 In the observed run, Windows App was restarted, XRDP created a fresh desktop,

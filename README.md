@@ -126,6 +126,13 @@ target display or helper, startup retains the compatible RDP route and the
 verifier reports that an explicitly requested X11 route is inactive. No event
 is replayed after an ambiguous partial injection.
 
+On the validated XRDP workstation, the first live direct-UU run produced 256
+content-free sampled physical-key calls on `route=x11`; every sampled call
+returned its requested single event with `error=0`. The operator reported that
+typing became very smooth and that almost all prior omissions were resolved.
+This is strong practical acceptance, while deliberately not claiming that an
+upstream controller can never omit an event under every network condition.
+
 If individual keys lag or disappear while direct RDP remains responsive, check
 the transport before changing input code:
 

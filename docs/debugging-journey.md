@@ -471,3 +471,11 @@ deployed with:
 
 The verifier confirmed that the native helper, broker route, target Xorg
 display, runtime digest, and all pre-existing relay components were active.
+
+The operator then reconnected through direct UU and reported very smooth
+typing, with almost all prior omissions resolved. The bounded broker sample
+independently contained 256 physical-key calls after the final X11 startup
+line; every sample used `route=x11`, returned one requested event, and reported
+`error=0`. This closes the main local conversion defect. It does not justify
+host-side retries or a claim that UU's upstream controller/network can never
+omit an event, so the no-replay safety rule remains.
