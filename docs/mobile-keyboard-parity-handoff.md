@@ -191,8 +191,10 @@ rg 'route=broker .*error=0' "$bridge" | tail -n 10
 ```
 
 A working normal-phone-keyboard commit has `text=normalized`, a result equal to
-the original count, and `error=0`. Post-release text logs also show
-`focus=ready`, `paced-text=N`, and `text-delay-ms=N`; physical-key logs use
+the original count, and `error=0`. On the compatible RDP route, post-release
+text logs also show `focus=ready`, `paced-text=N`, and `text-delay-ms=N`. On a
+post-`v0.2.0` direct X11 route, representable text instead reports
+`route=x11-text` and `focus=bypassed`. Physical-key logs use
 `category=keyboard`, `route=rdp|x11`, `paced-physical=N`, and
 `physical-delay-ms=N`. Do not require those newer fields from `v0.1.0`.
 

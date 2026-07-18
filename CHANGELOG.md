@@ -13,6 +13,24 @@ locked by the release manifest.
   pointer motion could mask that fault, and why the direct X11 route fixes the
   local defect without claiming a universal upstream guarantee
 
+### Fixed
+
+- route layout-representable UU native-phone-keyboard text through the
+  authenticated X11/XTEST helper after Unicode normalization, avoiding the
+  same nested RDP keyboard conversion that lost accepted physical keys
+- coalesce each helper request and enable `TCP_NODELAY`, removing the observed
+  roughly 41 ms loopback request delay without changing input semantics
+
+### Validation
+
+- all 40 source, shell, documentation, migration, and helper-build tests pass
+- an isolated fixed-alphabet Unicode request returned all 52 source records on
+  `route=x11-text`, while X11 observed all 52 press/release transitions in the
+  exact expected order
+- the operator confirmed normal phone-keyboard typing was fixed; the first 72
+  bounded live text calls all used `route=x11-text`, matched their requested
+  counts, returned `error=0`, and completed in 0-2 ms
+
 ## [0.2.0] - 2026-07-18
 
 Union release that preserves the `v0.1.0` fallback while packaging the later
