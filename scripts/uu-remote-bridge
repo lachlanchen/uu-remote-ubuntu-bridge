@@ -9,10 +9,12 @@ resolution="${UURB_RESOLUTION:-1920x1080}"
 grd_fd_restart_threshold="${UURB_GRD_FD_RESTART_THRESHOLD:-4096}"
 text_key_delay_ms="${UURB_TEXT_KEY_DELAY_MS:-8}"
 physical_key_delay_ms="${UURB_PHYSICAL_KEY_DELAY_MS:-0}"
+keyboard_route="${UURB_KEYBOARD_ROUTE:-rdp}"
 network_interface="${UURB_NETWORK_INTERFACE:-all}"
 manager_display="${DISPLAY:-}"
 manager_wayland="${WAYLAND_DISPLAY:-}"
 manager_session_type="${XDG_SESSION_TYPE:-}"
+manager_xauthority="${XAUTHORITY:-}"
 manager_bus="${DBUS_SESSION_BUS_ADDRESS:-unix:path=${XDG_RUNTIME_DIR:-/run/user/$UID}/bus}"
 systemctl_user=(
     /usr/bin/env
@@ -27,6 +29,9 @@ if [[ "$bridge_display" != auto &&
    [[ ! "$grd_fd_restart_threshold" =~ ^[0-9]+$ ]] ||
    [[ ! "$text_key_delay_ms" =~ ^[0-9]+$ ]] ||
    [[ ! "$physical_key_delay_ms" =~ ^[0-9]+$ ]] ||
+   [[ "$keyboard_route" != rdp &&
+      "$keyboard_route" != x11 &&
+      "$keyboard_route" != auto ]] ||
    [[ "$network_interface" != all &&
       "$network_interface" != default &&
       ! "$network_interface" =~ ^[a-zA-Z0-9_.:-]{1,15}$ ]]; then
@@ -87,11 +92,13 @@ libei_dir="$compat_dir/libei"
 freerdp_exe="$WINEPREFIX/drive_c/Program Files/FreeRDP/sdl-freerdp.exe"
 input_bridge_dll="$compat_dir/uu-input-bridge.dll"
 input_broker_exe="$compat_dir/uu-input-broker.exe"
+x11_input_helper="$compat_dir/uu-x11-input"
 network_filter="$compat_dir/uu-network-filter.so"
 input_injector_exe="$compat_dir/uu-injector.exe"
 service_control_exe="$compat_dir/uu-service-control.exe"
 uu_app_dir="$WINEPREFIX/drive_c/Program Files/Netease/GameViewer"
 xauth_file="$runtime_dir/Xauthority"
+x11_input_ready_file="$runtime_dir/x11-input.port"
 wine_stop_bin="$HOME/.local/libexec/uu-remote-stop-wine-prefix"
 
 if [[ ! -x "$libei_dir/libei.so.1.2.1" ||
@@ -106,13 +113,18 @@ grd_pid=""
 freerdp_pid=""
 winlogon_pid=""
 input_broker_pid=""
+x11_input_pid=""
 server_supervisor_pid=""
 grd_user_service_was_active=false
 desktop_bus=""
 desktop_display=""
 desktop_wayland=""
 desktop_session_type=""
+desktop_xauthority=""
 active_network_interface=""
+active_keyboard_route="rdp"
+x11_input_port=""
+x11_input_token=""
 
 log() {
     printf '%s %s\n' "$(date --iso-8601=seconds)" "$*"
@@ -165,6 +177,7 @@ cleanup() {
     for pid in \
         "$server_supervisor_pid" \
         "$input_broker_pid" \
+        "$x11_input_pid" \
         "$winlogon_pid" \
         "$freerdp_pid" \
         "$grd_pid" \
@@ -180,6 +193,7 @@ cleanup() {
         for pid in \
             "$server_supervisor_pid" \
             "$input_broker_pid" \
+            "$x11_input_pid" \
             "$winlogon_pid" \
             "$freerdp_pid" \
             "$grd_pid" \
@@ -197,6 +211,7 @@ cleanup() {
     for pid in \
         "$server_supervisor_pid" \
         "$input_broker_pid" \
+        "$x11_input_pid" \
         "$winlogon_pid" \
         "$freerdp_pid" \
         "$grd_pid" \
@@ -227,7 +242,7 @@ cleanup() {
             >/dev/null 2>&1 || true
     fi
 
-    rm -f "$xauth_file"
+    rm -f "$xauth_file" "$x11_input_ready_file"
 }
 
 trap cleanup EXIT
@@ -248,10 +263,12 @@ discover_desktop_session() {
     local candidate_session_id
     local candidate_state
     local candidate_wayland
+    local candidate_xauthority
     local fallback_bus=""
     local fallback_display=""
     local fallback_session_type=""
     local fallback_wayland=""
+    local fallback_xauthority=""
     local pid
 
     while read -r pid; do
@@ -260,6 +277,7 @@ discover_desktop_session() {
             DBUS_SESSION_BUS_ADDRESS "$pid")"
         candidate_display="$(process_environment_value DISPLAY "$pid")"
         candidate_wayland="$(process_environment_value WAYLAND_DISPLAY "$pid")"
+        candidate_xauthority="$(process_environment_value XAUTHORITY "$pid")"
         candidate_session_type="$(process_environment_value \
             XDG_SESSION_TYPE "$pid")"
         [[ -n "$candidate_bus" ]] || continue
@@ -267,6 +285,7 @@ discover_desktop_session() {
             candidate_display="${candidate_display:-$manager_display}"
             candidate_wayland="${candidate_wayland:-$manager_wayland}"
             candidate_session_type="${candidate_session_type:-$manager_session_type}"
+            candidate_xauthority="${candidate_xauthority:-$manager_xauthority}"
         fi
         [[ -n "$candidate_display" || -n "$candidate_wayland" ]] || continue
         candidate_session_id="$(
@@ -288,6 +307,7 @@ discover_desktop_session() {
             fallback_display="$candidate_display"
             fallback_wayland="$candidate_wayland"
             fallback_session_type="$candidate_session_type"
+            fallback_xauthority="$candidate_xauthority"
         fi
         if [[ -n "$manager_display" && \
               "$candidate_display" == "$manager_display" ]]; then
@@ -295,6 +315,7 @@ discover_desktop_session() {
             desktop_display="$candidate_display"
             desktop_wayland="$candidate_wayland"
             desktop_session_type="$candidate_session_type"
+            desktop_xauthority="$candidate_xauthority"
             return 0
         fi
     done < <(/usr/bin/pgrep -u "$UID" -x gnome-shell | /usr/bin/sort -nr)
@@ -304,6 +325,7 @@ discover_desktop_session() {
         desktop_display="$fallback_display"
         desktop_wayland="$fallback_wayland"
         desktop_session_type="$fallback_session_type"
+        desktop_xauthority="$fallback_xauthority"
         return 0
     fi
     return 1
@@ -375,6 +397,77 @@ start_desktop_relay() {
     return 1
 }
 
+start_x11_input_helper() {
+    local selected_xauthority
+
+    active_keyboard_route="rdp"
+    if [[ "$keyboard_route" == rdp ]]; then
+        return 0
+    fi
+    if [[ "$desktop_session_type" != x11 || -z "$desktop_display" ]]; then
+        log "Direct X11 keyboard input is unavailable for the selected ${desktop_session_type:-unknown} desktop; retaining the RDP input route."
+        return 0
+    fi
+    if [[ ! -x "$x11_input_helper" ]]; then
+        log 'The optional direct X11 keyboard helper is missing; retaining the RDP input route.'
+        return 0
+    fi
+
+    selected_xauthority="$desktop_xauthority"
+    if [[ -z "$selected_xauthority" && -f "$HOME/.Xauthority" ]]; then
+        selected_xauthority="$HOME/.Xauthority"
+    fi
+    if ! /usr/bin/env DISPLAY="$desktop_display" \
+        XAUTHORITY="$selected_xauthority" \
+        /usr/bin/xdpyinfo >/dev/null 2>&1; then
+        log 'The target X11 desktop authorization could not be verified; retaining the RDP input route.'
+        return 0
+    fi
+
+    rm -f "$x11_input_ready_file"
+    x11_input_token="$(/usr/bin/openssl rand -hex 32)"
+    /usr/bin/env \
+        DISPLAY="$desktop_display" \
+        XAUTHORITY="$selected_xauthority" \
+        UURB_X11_INPUT_TOKEN="$x11_input_token" \
+        "$x11_input_helper" \
+        --ready-file "$x11_input_ready_file" \
+        --min-hold-ms "$physical_key_delay_ms" \
+        >>"$state_dir/x11-input.log" 2>&1 &
+    x11_input_pid=$!
+
+    for _ in {1..50}; do
+        if [[ -s "$x11_input_ready_file" ]] && \
+           kill -0 "$x11_input_pid" >/dev/null 2>&1; then
+            read -r x11_input_port <"$x11_input_ready_file"
+            if [[ "$x11_input_port" =~ ^[1-9][0-9]{0,4}$ ]] && \
+               ((x11_input_port <= 65535)); then
+                active_keyboard_route="x11"
+                log "Physical keyboard input uses direct X11 injection on $desktop_display (minimum hold ${physical_key_delay_ms} ms)."
+                return 0
+            fi
+        fi
+        if ! kill -0 "$x11_input_pid" >/dev/null 2>&1; then
+            break
+        fi
+        sleep 0.1
+    done
+
+    log 'The direct X11 keyboard helper did not become ready; retaining the RDP input route.'
+    kill "$x11_input_pid" >/dev/null 2>&1 || true
+    for _ in {1..10}; do
+        kill -0 "$x11_input_pid" >/dev/null 2>&1 || break
+        sleep 0.1
+    done
+    if kill -0 "$x11_input_pid" >/dev/null 2>&1; then
+        kill -KILL "$x11_input_pid" >/dev/null 2>&1 || true
+    fi
+    x11_input_pid=""
+    x11_input_port=""
+    x11_input_token=""
+    rm -f "$x11_input_ready_file"
+}
+
 mkdir -p \
     "$state_dir" \
     "$runtime_dir" \
@@ -390,6 +483,7 @@ fi
 if ! start_desktop_relay; then
     exit 1
 fi
+start_x11_input_helper
 
 touch "$xauth_file"
 chmod 600 "$xauth_file"
@@ -497,7 +591,14 @@ if [[ "$uu_ready" != true ]]; then
     exit 1
 fi
 
-/opt/wine-stable/bin/wine "$input_broker_exe" \
+broker_environment=(/usr/bin/env)
+if [[ "$active_keyboard_route" == x11 ]]; then
+    broker_environment+=(
+        "UURB_X11_INPUT_PORT=$x11_input_port"
+        "UURB_X11_INPUT_TOKEN=$x11_input_token"
+    )
+fi
+"${broker_environment[@]}" /opt/wine-stable/bin/wine "$input_broker_exe" \
     >>"$state_dir/input-broker.log" 2>&1 &
 input_broker_pid=$!
 
@@ -652,17 +753,22 @@ supervise_server() {
 supervise_server "$server_pid" &
 server_supervisor_pid=$!
 
-log "UU Remote and the Windows RDP relay share DISPLAY=$DISPLAY."
+log "UU Remote and the Windows RDP relay share DISPLAY=$DISPLAY; physical keyboard route=$active_keyboard_route."
 
 set +e
-wait -n \
-    "$xvfb_pid" \
-    "$openbox_pid" \
-    "$grd_pid" \
-    "$freerdp_pid" \
-    "$winlogon_pid" \
-    "$input_broker_pid" \
+critical_pids=(
+    "$xvfb_pid"
+    "$openbox_pid"
+    "$grd_pid"
+    "$freerdp_pid"
+    "$winlogon_pid"
+    "$input_broker_pid"
     "$server_supervisor_pid"
+)
+if [[ -n "$x11_input_pid" ]]; then
+    critical_pids+=("$x11_input_pid")
+fi
+wait -n "${critical_pids[@]}"
 set -e
 log 'A bridge process exited; systemd will restart the complete relay.'
 exit 1

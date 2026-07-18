@@ -62,6 +62,9 @@ class DocumentationTests(unittest.TestCase):
         release = (REPO_DIR / "docs/releases/v0.1.0.md").read_text(
             encoding="utf-8"
         )
+        union_release = (REPO_DIR / "docs/releases/v0.2.0.md").read_text(
+            encoding="utf-8"
+        )
         handoff = (REPO_DIR / "docs/update-handoff.md").read_text(
             encoding="utf-8"
         )
@@ -74,7 +77,15 @@ class DocumentationTests(unittest.TestCase):
         self.assertIn("--skip-account-login", release)
         self.assertIn("./scripts/verify.sh --quick", release)
         self.assertIn("git checkout 8a68200", release)
+        self.assertIn("## [0.2.0] - 2026-07-18", changelog)
+        self.assertIn("git switch --detach v0.2.0", union_release)
+        self.assertIn("git switch --detach v0.1.0", union_release)
+        self.assertIn("physical-key pacing defaults to `0`", union_release)
+        self.assertIn("physical-key routing defaults to `rdp`", union_release)
+        self.assertIn("network-interface filtering defaults to `all`", union_release)
+        self.assertIn("--keyboard-route x11", union_release)
         self.assertIn("Copy-ready update message", handoff)
+        self.assertIn("UU Remote Ubuntu Bridge v0.2.0", handoff)
         self.assertIn("abcXYZ123,.!?", handoff)
         self.assertIn("Do not discard a dirty worktree", handoff)
         self.assertIn(

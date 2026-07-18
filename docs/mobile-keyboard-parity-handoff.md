@@ -110,13 +110,13 @@ Stop if `git status --short` prints local changes. Installation intentionally
 restarts the bridge and briefly disconnects UU. For a first installation, run
 `./install.sh` without the skip options and complete the official UU sign-in.
 
-Post-`v0.1.0` `main` includes an 8 ms per-character pacing option, foreground
+`v0.2.0` includes an 8 ms per-character pacing option, foreground
 focus confirmation, installed-runtime digest checks, privacy-safe transport
 diagnostics, and an isolated libei keymap-descriptor fix. It also retains the
-proven original-call-then-broker fallback at commit `54a7d4c`. Those changes are
-unreleased in this snapshot. Do not describe a moving `main` checkout as
-`v0.1.0`; pin and record an exact reviewed commit when a maintainer deliberately
-tests unreleased code.
+proven original-call-then-broker fallback restored at commit `54a7d4c`. The
+union release preserves an upgraded `v0.1.0` environment's missing text-delay
+field as `0`; fresh installations use 8 ms. Do not describe a moving `main`
+checkout as either release; pin and record an exact tag.
 
 The known-good 7090 did not have the 8 ms option deployed, so pacing is not a
 proven explanation for the difference between the two computers.
@@ -166,7 +166,7 @@ deployment check.
 
 ```bash
 sed -n -E \
-  '/^UURB_(RDP_PORT|RESOLUTION|DISPLAY|GRD_FD_RESTART_THRESHOLD|TEXT_KEY_DELAY_MS|PHYSICAL_KEY_DELAY_MS|NETWORK_INTERFACE)=/p' \
+  '/^UURB_(RDP_PORT|RESOLUTION|DISPLAY|GRD_FD_RESTART_THRESHOLD|TEXT_KEY_DELAY_MS|PHYSICAL_KEY_DELAY_MS|KEYBOARD_ROUTE|NETWORK_INTERFACE)=/p' \
   ~/.config/uu-remote-bridge/environment
 systemctl --user is-enabled uu-remote-bridge.service
 systemctl --user is-active uu-remote-bridge.service
@@ -193,8 +193,8 @@ rg 'route=broker .*error=0' "$bridge" | tail -n 10
 A working normal-phone-keyboard commit has `text=normalized`, a result equal to
 the original count, and `error=0`. Post-release text logs also show
 `focus=ready`, `paced-text=N`, and `text-delay-ms=N`; physical-key logs use
-`category=keyboard`, `paced-physical=N`, and `physical-delay-ms=N`. Do not
-require those newer fields from `v0.1.0`.
+`category=keyboard`, `route=rdp|x11`, `paced-physical=N`, and
+`physical-delay-ms=N`. Do not require those newer fields from `v0.1.0`.
 
 The bridge-owned logs above are designed to omit content. Do not substitute
 raw NetEase logs, a Wine-prefix archive, or a process dump in a community issue.
@@ -257,6 +257,7 @@ app/IME and language, network type, and whether UU reports P2P or relay mode.
 | Every phone letter becomes `d`; numbers become `.` | Old or undeployed Unicode normalizer | Install `v0.1.0`, reconnect, require `text=normalized ... error=0` |
 | Computer-keyboard panel works; normal phone keyboard does not | Native IME path only | Compare installed broker revision and Wine layout |
 | Text is correct but keys lag or disappear | UU transport, focus, or text pacing | Compare direct RDP, controller route, and post-release metadata |
+| Fast physical keys still disappear after successful 8-12 ms pacing on Xorg | Nested Wine/FreeRDP keyboard conversion | Test `--keyboard-route x11 --physical-key-delay-ms 0`, then require fresh `route=x11` evidence |
 | Multi-homed host binds a nonpreferred adapter | UU selected Wine's first adapter instead of Ubuntu's route | Test the post-release `--network-interface default` mode |
 | Mouse and both keyboard modes fail | Injection hook, broker, or relay focus | Run the quick verifier and inspect bounded bridge metadata |
 | Input works after restart, then degrades over hours | GNOME RDP/libei descriptor exhaustion | Inspect FD count and use the reviewed post-release backport |

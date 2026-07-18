@@ -6,6 +6,13 @@ locked by the release manifest.
 
 ## [Unreleased]
 
+No changes yet.
+
+## [0.2.0] - 2026-07-18
+
+Union release that preserves the `v0.1.0` fallback while packaging the later
+stability, diagnostics, and opt-in host-specific extensions.
+
 ### Added
 
 - privacy-safe `uu-remote network` transport and key-watchdog diagnosis
@@ -17,6 +24,8 @@ locked by the release manifest.
   `all`, Ubuntu-default-route, and fixed-interface modes
 - opt-in physical-key pacing with a conservative zero default and a persistent
   `--physical-key-delay-ms` installer setting
+- opt-in direct X11/XTEST physical-key routing with `rdp`, `x11`, and `auto`
+  modes; the universally compatible RDP route remains the default
 - bounded privacy-safe input categories and per-boundary timing for keyboard,
   phone text, mouse, and other calls
 - a validated XRDP/Windows App recovery note that puts client reset before a
@@ -55,6 +64,22 @@ locked by the release manifest.
   reports older than five minutes as stale
 - report cross-region relay selection without exposing either endpoint's
   location, so controller VPN/proxy routing is distinguishable from host input
+- preserve a `v0.1.0` installation's unpaced text setting during upgrade;
+  fresh installations retain the robust 8 ms text default
+- bypass the lossy nested Wine/FreeRDP keyboard conversion on an affected
+  XRDP Xorg workstation while retaining the proven relay for every other
+  channel and host
+- release tracked modifiers when the direct helper disconnects and refuse to
+  replay any request after an ambiguous partial injection
+
+### Validation
+
+- all 40 source, shell, documentation, migration, and helper-build tests pass
+- an isolated Xvfb/XTEST run captured all 58 requested Ctrl, Enter, and
+  alphabet press/release transitions
+- a live direct-UU run sampled 256 successful `route=x11` physical-key calls
+  with no broker errors; the operator reported very smooth typing with almost
+  all former omissions resolved
 
 ## [0.1.0] - 2026-07-17
 
@@ -92,3 +117,4 @@ Follow the [v0.1.0 release notes](docs/releases/v0.1.0.md) or the
 without deleting the Wine prefix or signing into UU again.
 
 [0.1.0]: https://github.com/lachlanchen/uu-remote-ubuntu-bridge/releases/tag/v0.1.0
+[0.2.0]: https://github.com/lachlanchen/uu-remote-ubuntu-bridge/releases/tag/v0.2.0

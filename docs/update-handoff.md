@@ -1,6 +1,6 @@
 # Update Handoff
 
-Use this note when transferring `v0.1.0` to another authorized Ubuntu operator.
+Use this note when transferring `v0.2.0` to another authorized Ubuntu operator.
 It separates the message to send from the maintainer and recipient checklists.
 For a keyboard that works on one host but not another, use the
 [mobile-keyboard parity handoff](mobile-keyboard-parity-handoff.md) to capture
@@ -9,12 +9,15 @@ the known-good baseline, controller variables, and bounded comparison evidence.
 ## Copy-ready update message
 
 ```text
-UU Remote Ubuntu Bridge v0.1.0 is available.
+UU Remote Ubuntu Bridge v0.2.0 is available.
 
-This update fixes the normal mobile keyboard producing repeated letters (often
-"d") and turning numbers into periods. It also includes unattended-startup and
-relay-recovery hardening. The update is for x86-64 Ubuntu 24.04, GNOME 46, and
-UU Remote 4.33.0.8907 only.
+This backward-compatible union release keeps the v0.1.0 input fallback and adds
+bounded pacing, privacy-safe diagnostics, and relay-recovery hardening. An
+upgrade from v0.1.0 preserves that host's unpaced text behavior; physical-key
+pacing and network filtering remain off unless explicitly selected. The update
+also includes an opt-in direct X11 physical-key route; the compatible RDP route
+remains the default. The update is for x86-64 Ubuntu 24.04, GNOME 46, and UU
+Remote 4.33.0.8907 only.
 
 The public repository is available at:
 https://github.com/lachlanchen/uu-remote-ubuntu-bridge
@@ -28,7 +31,7 @@ Update commands:
   cd ~/Projects/uu-remote-ubuntu-bridge
   git status --short
   git fetch --tags origin
-  git checkout v0.1.0
+  git switch --detach v0.2.0
   ./install.sh --skip-packages --skip-account-login
   ./scripts/verify.sh --quick
 
@@ -40,7 +43,7 @@ online, reconnect the phone and type: abcXYZ123,.!?
 
 - Confirm the recipient is authorized to administer the target computer and UU
   account.
-- Share the official public `v0.1.0` release URL and verify the repository owner
+- Share the official public `v0.2.0` release URL and verify the repository owner
   is `lachlanchen` before the recipient runs code.
 - Confirm the target is Ubuntu 24.04 x86-64 with GNOME 46 and UU
   `4.33.0.8907`.
@@ -67,7 +70,7 @@ git clone https://github.com/lachlanchen/uu-remote-ubuntu-bridge.git \
   ~/Projects/uu-remote-ubuntu-bridge
 cd ~/Projects/uu-remote-ubuntu-bridge
 git fetch --tags origin
-git checkout v0.1.0
+git switch --detach v0.2.0
 ```
 
 Do not discard a dirty worktree. Record or review local changes before updating.
@@ -109,6 +112,24 @@ tail -80 "$log" | rg 'text=normalized .*error=0'
 Do not accept a test performed only with UU's computer-keyboard panel. It uses
 a different input path from the phone's normal keyboard.
 
+## Optional physical-key acceptance on Xorg/XRDP
+
+Do not enable this on a host whose default RDP route already works. If fast
+computer-keyboard input remains incomplete despite successful broker records,
+and the target session is confirmed X11:
+
+```bash
+./install.sh --skip-packages --skip-account-login \
+  --keyboard-route x11 --physical-key-delay-ms 0
+./scripts/verify.sh --quick
+```
+
+Reconnect UU, type the alphabet rapidly, press Enter, and test Ctrl+A/C/V.
+Require both the visible result and a fresh content-free
+`category=keyboard route=x11 ... result=1 error=0` record. Restore
+`--keyboard-route rdp` if the target is Wayland or the helper cannot preflight
+the display.
+
 ## Failure handoff
 
 Collect these bounded diagnostics:
@@ -130,7 +151,7 @@ and its private handoff record instead of collecting unbounded logs.
 
 ## Rollback and acceptance record
 
-Rollback commands are in the [v0.1.0 release notes](releases/v0.1.0.md#rollback).
+Rollback commands are in the [v0.2.0 release notes](releases/v0.2.0.md#rollback).
 Record the target hostname locally, operator, completion time, installed tag,
 quick-verifier result, phone acceptance result, and whether unattended status
 was checked. Do not commit that machine-specific record to this repository.

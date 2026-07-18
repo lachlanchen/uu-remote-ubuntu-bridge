@@ -25,7 +25,7 @@ mkdir -p "$output_dir"
     "$repo_dir/src/uu_input_bridge.c" -luser32
 "$cc" "${common[@]}" -municode -mwindows \
     -o "$output_dir/uu-input-broker.exe" \
-    "$repo_dir/src/uu_input_broker.c" -luser32
+    "$repo_dir/src/uu_input_broker.c" -luser32 -lws2_32
 "$cc" "${common[@]}" -municode \
     -o "$output_dir/uu-injector.exe" \
     "$repo_dir/src/uu_injector.c"
@@ -41,6 +41,9 @@ mkdir -p "$output_dir"
 "$host_cc" "${common[@]}" -fPIC -shared \
     -o "$output_dir/uu-network-filter.so" \
     "$repo_dir/src/uu_network_filter.c" -ldl -pthread
+"$host_cc" "${common[@]}" -I "$repo_dir/src" \
+    -o "$output_dir/uu-x11-input" \
+    "$repo_dir/src/uu_x11_input.c" -ldl
 
 "$strip" \
     "$output_dir/uu-input-bridge.dll" \
@@ -49,7 +52,9 @@ mkdir -p "$output_dir"
     "$output_dir/uu-service-control.exe" \
     "$output_dir/uu-healthd-stub.exe" \
     "$output_dir/winpr-sspi-shim.dll"
-"$host_strip" "$output_dir/uu-network-filter.so"
+"$host_strip" \
+    "$output_dir/uu-network-filter.so" \
+    "$output_dir/uu-x11-input"
 
 rm -f "$output_dir/winlogon.exe" "$output_dir/winlogon.exe.so"
 "$winegcc" -O2 -mwindows -o "$output_dir/winlogon.exe" \

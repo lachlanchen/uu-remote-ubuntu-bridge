@@ -29,6 +29,8 @@ healthd_stub="$repo_dir/build/compat/uu-healthd-stub.exe"
 freerdp="$wine_prefix/drive_c/Program Files/FreeRDP/sdl-freerdp.exe"
 libei_backport="$wine_prefix/compat/libei/libei.so.1.2.1"
 network_filter="$wine_prefix/compat/uu-network-filter.so"
+x11_input_helper="$wine_prefix/compat/uu-x11-input"
+x11_input_ready_file="${XDG_RUNTIME_DIR:-/run/user/$UID}/uu-remote-bridge/x11-input.port"
 runtime_digest_file="$wine_prefix/compat/.runtime-source-sha256"
 # GameViewerServer is launched by Wine's service manager, which intentionally
 # does not inherit UU_INPUT_BRIDGE_LOG. The injected DLL therefore uses the
@@ -150,6 +152,34 @@ if [[ "$physical_key_delay_ms" =~ ^[0-9]+$ ]] &&
     pass "input broker uses a ${physical_key_delay_ms} ms physical-key delay"
 else
     fail 'input broker physical-key pacing is missing or differs from saved settings'
+fi
+
+saved_keyboard_route="$(saved_setting UURB_KEYBOARD_ROUTE)"
+keyboard_route="${UURB_KEYBOARD_ROUTE:-${saved_keyboard_route:-rdp}}"
+active_keyboard_route="$(
+    /usr/bin/sed -n 's/.* keyboard-route=\([^[:space:]]*\).*/\1/p' \
+        <<<"$broker_configuration"
+)"
+if [[ "$keyboard_route" != rdp && "$keyboard_route" != x11 &&
+      "$keyboard_route" != auto ]]; then
+    fail "saved keyboard route is invalid: $keyboard_route"
+elif [[ "$active_keyboard_route" != rdp &&
+        "$active_keyboard_route" != x11 ]]; then
+    fail 'input broker did not report an active keyboard route'
+elif [[ "$keyboard_route" == rdp && "$active_keyboard_route" != rdp ]]; then
+    fail 'input broker unexpectedly bypasses the requested RDP keyboard route'
+elif [[ "$keyboard_route" == x11 && "$active_keyboard_route" != x11 ]]; then
+    fail 'the requested direct X11 keyboard route is not active'
+elif [[ "$active_keyboard_route" == x11 ]]; then
+    if [[ -x "$x11_input_helper" ]] &&
+       pgrep -u "$UID" -f "$x11_input_helper" >/dev/null &&
+       [[ -s "$x11_input_ready_file" ]]; then
+        pass 'direct X11 physical-key helper is active'
+    else
+        fail 'input broker reports X11 routing but its native helper is unavailable'
+    fi
+else
+    pass 'compatible RDP physical-key route is active'
 fi
 
 saved_rdp_port="$(saved_setting UURB_RDP_PORT)"

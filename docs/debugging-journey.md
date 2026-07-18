@@ -404,11 +404,13 @@ reached the hook had `focus=ready`, `paced-physical=1`,
 `physical-delay-ms=8`, matching result counts, and `error=0`.
 
 That observation validates the improvement from the combined fresh-relay and
-pacing state, not a complete fix or either change in isolation. Because the
-residual omissions were absent from the hook trace, the next bounded experiment
-was 12 ms of physical-key pacing. A reconnect is required after changing the
-setting; otherwise typing can occur through an older or different path and is
-not evidence about the new value.
+pacing state, not a complete fix or either change in isolation. The logs prove
+that recorded calls were accepted, but their privacy boundary deliberately
+prevents reconstructing the intended text or proving that the controller sent
+every event. The next bounded experiment was therefore 12 ms of physical-key
+pacing. A reconnect is required after changing the setting; otherwise typing
+can occur through an older or different path and is not evidence about the new
+value.
 The reusable commands, warnings, and rollback are in
 [XRDP Client Stall and UU Keyboard Recovery](xrdp-and-keyboard-recovery.md).
 
@@ -426,3 +428,54 @@ the default subtype, preserves the declared Japanese layout and keyboard type,
 and allowed the in-place resize to complete. The GNOME session survived; the
 active RDP viewer could disconnect briefly, and the VNC mirror was reattached
 to the resized display.
+
+## 15. Remove the lossy keyboard hop instead of adding more delay
+
+The 12 ms physical-pacing trial still omitted fast letters, Enter, and Ctrl
+combinations. The broker's content-free sample contained 219 physical-key
+calls, and every recorded call reported a matching result and `error=0`.
+Injection commonly spent the configured 12 ms inside the broker, while total
+call time occasionally rose much higher. More pacing would increase upstream
+back-pressure without proving that SDL FreeRDP and GNOME RDP consumed every
+accepted Windows event.
+
+Direct RDP typing into the same XRDP Xorg desktop remained normal. The target
+display exposed XTEST, and its scan-code map was verified for normal keys,
+Enter, both Ctrl keys, navigation keys, keypad Enter, and Super/Menu. That made
+a narrower architecture possible: keep UU's video, mouse, clipboard, and phone
+text on the established local RDP relay, but route physical keyboard-only
+arrays from the normal-token broker to a native X11 helper on the target
+desktop.
+
+The implementation is intentionally additive:
+
+- repository and migrated-install defaults remain `keyboard-route=rdp`
+- `x11` is opt-in, while `auto` chooses it only for an X11 target
+- the helper binds loopback on an ephemeral port and requires a fresh token
+- the entire bounded request is mapped before the first XTEST event
+- unsupported or unavailable preflight falls back to RDP before injection
+- an ambiguous partial failure is not replayed
+- disconnect releases tracked held keys, and helper exit restarts the service
+- the physical delay becomes a minimum hold time on X11; zero adds no broker
+  back-pressure
+
+An isolated Xvfb test then sent a fast 58-event stream containing Ctrl+A,
+Enter, and every Latin letter. The target observed exactly 29 presses and 29
+releases, including both Ctrl and Enter transitions. The live workstation was
+deployed with:
+
+```bash
+./install.sh --skip-packages --skip-account-login \
+  --keyboard-route x11 --physical-key-delay-ms 0
+```
+
+The verifier confirmed that the native helper, broker route, target Xorg
+display, runtime digest, and all pre-existing relay components were active.
+
+The operator then reconnected through direct UU and reported very smooth
+typing, with almost all prior omissions resolved. The bounded broker sample
+independently contained 256 physical-key calls after the final X11 startup
+line; every sample used `route=x11`, returned one requested event, and reported
+`error=0`. This closes the main local conversion defect. It does not justify
+host-side retries or a claim that UU's upstream controller/network can never
+omit an event, so the no-replay safety rule remains.
