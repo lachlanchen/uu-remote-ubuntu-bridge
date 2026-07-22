@@ -179,6 +179,7 @@ class UpdateManagerTests(unittest.TestCase):
         self.assertIn("--automatic-updates", installer)
         self.assertIn('configure-updater.sh" enable', installer)
         self.assertIn("codex login status 2>&1", configurator)
+        self.assertIn('scripts/uu-remote"', configurator)
         self.assertIn("track-direct-x11-v1", configurator)
         self.assertIn("track-rdp-broker-v1", configurator)
 

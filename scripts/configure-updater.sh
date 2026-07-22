@@ -175,6 +175,8 @@ temporary.replace(path)
 PY
         install -m 0755 "$repo_dir/scripts/uu_update_manager.py" \
             "$HOME/.local/bin/uu-remote-update"
+        install -m 0755 "$repo_dir/scripts/uu-remote" \
+            "$HOME/.local/bin/uu-remote"
         install -m 0644 "$repo_dir/systemd/uu-remote-update-check.service" \
             "$unit_dir/uu-remote-update-check.service"
         install -m 0644 "$repo_dir/systemd/uu-remote-update-check.timer" \
