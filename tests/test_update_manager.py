@@ -178,7 +178,7 @@ class UpdateManagerTests(unittest.TestCase):
         configurator = (REPO_DIR / "scripts/configure-updater.sh").read_text()
         self.assertIn("--automatic-updates", installer)
         self.assertIn('configure-updater.sh" enable', installer)
-        self.assertIn("codex login status", configurator)
+        self.assertIn("codex login status 2>&1", configurator)
         self.assertIn("track-direct-x11-v1", configurator)
         self.assertIn("track-rdp-broker-v1", configurator)
 

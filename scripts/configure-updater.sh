@@ -126,7 +126,7 @@ case "$command" in
             printf 'known-good track tag is unavailable: %s\n' "$track" >&2
             exit 1
         fi
-        if ! codex login status 2>/dev/null | grep -q '^Logged in'; then
+        if ! codex login status 2>&1 | grep -q '^Logged in'; then
             printf 'Codex is not logged in for this user. Run codex login first.\n' >&2
             exit 1
         fi
