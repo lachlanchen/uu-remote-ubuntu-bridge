@@ -133,10 +133,10 @@ installers, extracted executables, Codex event logs, local journals, account
 state, and host-specific evidence remain ignored and outside Git.
 
 The Codex service uses `workspace-write`, `approval_policy="never"`,
-`NoNewPrivileges=yes`, private devices and temporary files, and a disabled Git
-push URL in the repair clone. Network access remains available because Codex
-authentication requires it. These controls reduce accidental reach; they are
-not a security boundary equivalent to a separate VM.
+`NoNewPrivileges=yes`, private temporary files, a read-only system view, and a
+disabled Git push URL in the repair clone. Network access remains available
+because Codex authentication requires it. These controls reduce accidental
+reach; they are not a security boundary equivalent to a separate VM.
 
 ## Another-computer handoff
 
