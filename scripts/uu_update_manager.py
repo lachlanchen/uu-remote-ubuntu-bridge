@@ -353,6 +353,51 @@ class Manager:
         part.replace(destination)
         return destination
 
+    def download_metadata_path(self, version: str) -> Path:
+        return self.downloads_dir / f"uu-{task_name(version)}.json"
+
+    def record_download(
+        self, metadata: dict[str, Any], installer: Path, installer_hash: str
+    ) -> None:
+        atomic_json(
+            self.download_metadata_path(str(metadata["version"])),
+            {
+                "schema_version": 1,
+                "version": str(metadata["version"]),
+                "filename": installer.name,
+                "etag": str(metadata.get("etag", "")),
+                "last_modified": str(metadata.get("last_modified", "")),
+                "content_length": int(metadata.get("content_length", 0)),
+                "installer_sha256": installer_hash,
+                "verified_at": utc_now(),
+            },
+        )
+
+    def cached_download(self, metadata: dict[str, Any]) -> tuple[Path, str] | None:
+        version = str(metadata["version"])
+        installer = self.downloads_dir / f"uu-{task_name(version)}.exe"
+        sidecar = self.download_metadata_path(version)
+        if not installer.is_file() or not sidecar.is_file():
+            return None
+        cached = load_json(sidecar)
+        expected_length = int(metadata.get("content_length", 0))
+        metadata_matches = (
+            cached.get("version") == version
+            and cached.get("etag") == str(metadata.get("etag", ""))
+            and cached.get("last_modified") == str(metadata.get("last_modified", ""))
+            and cached.get("content_length") == expected_length
+        )
+        if not metadata_matches:
+            return None
+        if expected_length and installer.stat().st_size != expected_length:
+            return None
+        cached_hash = str(cached.get("installer_sha256", ""))
+        if not re.fullmatch(r"[0-9a-f]{64}", cached_hash):
+            return None
+        if sha256_file(installer) != cached_hash:
+            return None
+        return installer, cached_hash
+
     def remote_base_commit(self) -> str:
         reference = f"refs/remotes/{self.config.remote}/{self.config.branch}"
         result = command_output(
@@ -480,6 +525,13 @@ class Manager:
                     message="the existing repair result is retained for review",
                 )
                 return existing
+            atomic_json(self.pending_path, existing)
+            self.write_status(
+                "repair-queued",
+                active_task=task_id,
+                message="the existing Codex repair will resume",
+            )
+            return existing
         repair_repo, base = self.create_repair_checkout(task_dir)
         task = {
             "schema_version": 1,
@@ -535,6 +587,8 @@ class Manager:
             observed_key == approved_key
             and isinstance(previous_observed, dict)
             and previous_observed.get("etag") == observed.get("etag")
+            and previous_observed.get("last_modified")
+            == observed.get("last_modified")
             and previous_observed.get("content_length") == observed.get("content_length")
             and previous_observed.get("installer_sha256")
             == latest_approved["installer_sha256"]
@@ -550,8 +604,13 @@ class Manager:
             )
             return
 
-        installer = self.download_release(observed)
-        installer_hash = sha256_file(installer)
+        cached = self.cached_download(observed)
+        if cached is None:
+            installer = self.download_release(observed)
+            installer_hash = sha256_file(installer)
+            self.record_download(observed, installer, installer_hash)
+        else:
+            installer, installer_hash = cached
         observed["installer_sha256"] = installer_hash
         matching = next(
             (item for item in approved if item["installer_sha256"] == installer_hash), None
@@ -577,6 +636,25 @@ class Manager:
 
         identity = f"{observed['version']}-{installer_hash[:12]}"
         task_dir = self.tasks_dir / task_name(f"upstream-release-{identity}")
+        existing_task = task_dir / "task.json"
+        if existing_task.is_file():
+            task = load_json(existing_task)
+            if task.get("phase") in TERMINAL_PHASES:
+                self.write_status(
+                    str(task["phase"]),
+                    active_task=task["id"],
+                    observed_release=observed,
+                    message="the existing repair result is retained for review",
+                )
+            else:
+                atomic_json(self.pending_path, task)
+                self.write_status(
+                    "repair-queued",
+                    active_task=task["id"],
+                    observed_release=observed,
+                    message="the existing Codex repair will resume",
+                )
+            return
         task_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         stage = self.stage_candidate(installer, task_dir)
         details = {

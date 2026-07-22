@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 import tempfile
@@ -130,6 +131,7 @@ class UpdateManagerTests(unittest.TestCase):
                 observed_release={
                     "version": "4.33.0.8907",
                     "etag": "stable-etag",
+                    "last_modified": "",
                     "content_length": 1234,
                     "installer_sha256": approved_hash,
                 },
@@ -138,6 +140,25 @@ class UpdateManagerTests(unittest.TestCase):
             status = json.loads(manager.status_path.read_text(encoding="utf-8"))
             self.assertEqual("current", status["phase"])
             self.assertIn("cached full hash", status["message"])
+
+    def test_download_cache_is_bound_to_release_metadata_and_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            manager = Manager(self.config(Path(temporary)))
+            manager.downloads_dir.mkdir(parents=True)
+            installer = manager.downloads_dir / "uu-4.33.0.8907.exe"
+            installer.write_bytes(b"approved fixture")
+            installer_hash = hashlib.sha256(installer.read_bytes()).hexdigest()
+            metadata = {
+                "version": "4.33.0.8907",
+                "etag": "verified-etag",
+                "last_modified": "Wed, 22 Jul 2026 12:00:00 GMT",
+                "content_length": installer.stat().st_size,
+            }
+            manager.record_download(metadata, installer, installer_hash)
+            self.assertEqual((installer, installer_hash), manager.cached_download(metadata))
+
+            changed = dict(metadata, etag="replacement-etag")
+            self.assertIsNone(manager.cached_download(changed))
 
     def test_codex_command_is_resumable_and_keeps_a_workspace_sandbox(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

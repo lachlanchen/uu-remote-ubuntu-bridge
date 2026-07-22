@@ -59,7 +59,8 @@ replace compatibility files. They follow the official redirect with a HEAD
 request, remove expiring query keys before writing state, parse the full build
 identifier, and compare it with every approved manifest. A same-version release
 is downloaded once to establish its complete SHA-256; unchanged ETag, size, and
-cached hash avoid repeating that download on later checks.
+cached hash sidecar avoid repeating that download on later checks, even if the
+official channel temporarily points backward and later returns to that build.
 
 An endpoint that is equal to or older than the approved baseline is recorded
 and ignored. This matters because a release channel can temporarily advertise
