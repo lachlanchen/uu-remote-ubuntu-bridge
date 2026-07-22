@@ -1,0 +1,11 @@
+[Unit]
+Description=Persistent UU repair and health monitor
+
+[Timer]
+OnBootSec=7min
+OnUnitInactiveSec=15min
+RandomizedDelaySec=2min
+Unit=uu-remote-repair-monitor.service
+
+[Install]
+WantedBy=timers.target

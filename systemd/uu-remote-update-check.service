@@ -1,0 +1,24 @@
+[Unit]
+Description=Check official UU releases without disrupting the live relay
+After=default.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/uu-remote-update check
+TimeoutStartSec=45min
+UMask=0077
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=full
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK

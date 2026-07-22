@@ -128,6 +128,19 @@ GNOME patched. Review a new UU build before adding its hash or signatures.
 Do not disable the patcher's version checks to make an update "work."
 Follow `docs/upstream-maintenance.md` and preserve each old approved manifest.
 
+The optional maintenance timers do not make binary approval autonomous. A
+daily check can download and statically stage a newer installer, and Codex can
+resume source analysis in a private repair clone, but its output remains a
+draft until a maintainer verifies instruction semantics and completes the
+Windows/controller acceptance procedure. The repair clone has a disabled push
+URL and Codex runs with workspace-write access, no interactive approvals, and
+`NoNewPrivileges`; a healthy live relay is never restarted by a check.
+
+Updater state can contain proprietary binaries and local diagnostic context.
+It is stored outside the repository with user-only permissions and must not be
+copied to another computer or published. CDN query credentials are removed
+before metadata is persisted.
+
 GDM automatic login removes the local login gate after boot. Anyone with
 physical access can use the desktop account, and code running as that user can
 access the unlocked keyring. TPM binding prevents offline reuse of the

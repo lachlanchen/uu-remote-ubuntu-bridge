@@ -38,7 +38,7 @@ The supported host is x86-64 Ubuntu 24.04 with a logged-in GNOME 46 desktop
 (physical, Wayland, Xorg, or XRDP). The installer checks this boundary and
 fails before making partial changes on an unsupported OS or architecture.
 
-## Compatible release tracks
+## Releases and behavior tracks
 
 | Tag | Purpose | Default input behavior |
 | --- | --- | --- |
@@ -50,6 +50,17 @@ installation preserves its missing text-delay field as `0`, so merely
 installing `v0.2.0` does not change the timing of that known-good host. A new
 installation starts at 8 ms. In both cases, an explicit saved or command-line
 setting takes precedence.
+
+Use descriptive parallel tags when recording the input path validated on a
+specific machine:
+
+| Behavior tag | Use when |
+| --- | --- |
+| `track-rdp-broker-v1` | The compatible Wine broker and RDP keyboard route are already smooth |
+| `track-direct-x11-v1` | An X11/XRDP host needs the authenticated direct keyboard route |
+
+These aliases do not rank one path above the other and the updater never
+switches between them automatically. Read the [behavior-track handoff](docs/release-tracks.md).
 
 ## Quick start
 
@@ -242,6 +253,25 @@ a script or process argument.
 [Read setup, verification, password-change, and rollback
 details](docs/unattended-startup.md).
 
+### Daily update checks and repair resume
+
+Opt into zero-downtime daily release checks, relay health monitoring, and a
+reboot-resumable Codex repair workspace:
+
+```bash
+./scripts/configure-updater.sh enable \
+  --track track-rdp-broker-v1 \
+  --model gpt-5.6-sol --reasoning-effort xhigh
+```
+
+Use `track-direct-x11-v1` only on a host already validated with the direct X11
+route. Checks never restart a healthy relay. Unknown installers are downloaded
+and statically staged outside the Wine prefix; Codex can prepare a reviewable
+repair but cannot approve or deploy its own binary patch. Interrupted work
+persists its thread ID and resumes after reboot with bounded backoff.
+
+[Read the complete automatic-maintenance and handoff procedure](docs/automatic-updates.md).
+
 ## Architecture
 
 ```text
@@ -361,6 +391,8 @@ The RDP hop targets loopback and pins GNOME's certificate fingerprint.
 | `scripts/patch-gameviewer.py` | Patch, verify, status, field, and restore CLI |
 | `scripts/stage-uu-release.sh` | Private installer staging sandbox |
 | `scripts/audit-gameviewer.py` | New-release evidence and approval workflow |
+| `scripts/uu_update_manager.py` | Daily checks, health recovery, and resumable Codex repair state machine |
+| `scripts/configure-updater.sh` | Install, select a behavior track, and remove maintenance timers |
 | `scripts/uu-remote-bridge` | Supervised UU/Xvfb/FreeRDP orchestration |
 | `scripts/uu_connection_status.py` | Privacy-safe transport and key-watchdog diagnosis |
 | `scripts/configure-unattended.sh` | TPM-backed GDM autologin setup and rollback |
@@ -378,6 +410,8 @@ ID, raw production log, screenshot, or private desktop content is committed.
 - [v0.2.0 union release notes](docs/releases/v0.2.0.md)
 - [v0.1.0 release notes](docs/releases/v0.1.0.md)
 - [Update handoff for another operator](docs/update-handoff.md)
+- [Input behavior tracks](docs/release-tracks.md)
+- [Automatic checks and resumable repair](docs/automatic-updates.md)
 - [Mobile-keyboard parity handoff](docs/mobile-keyboard-parity-handoff.md)
 - [XRDP client stall and UU keyboard recovery](docs/xrdp-and-keyboard-recovery.md)
 - [Unattended startup after reboot](docs/unattended-startup.md)

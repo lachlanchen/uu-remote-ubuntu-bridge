@@ -68,6 +68,13 @@ fi
 
 "${systemctl_user[@]}" disable --now uu-remote-bridge.service \
     >/dev/null 2>&1 || true
+if [[ -x "$repo_dir/scripts/configure-updater.sh" ]]; then
+    if [[ "$purge" == true ]]; then
+        "$repo_dir/scripts/configure-updater.sh" disable --purge-state
+    else
+        "$repo_dir/scripts/configure-updater.sh" disable
+    fi
+fi
 if [[ -f "$HOME/.config/uu-remote-bridge/login-keyring-password.cred" ]] || \
    "${systemctl_user[@]}" is-enabled --quiet uu-keyring-unlock.service; then
     "$repo_dir/scripts/configure-unattended.sh" disable

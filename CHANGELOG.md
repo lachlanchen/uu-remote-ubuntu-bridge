@@ -6,8 +6,28 @@ locked by the release manifest.
 
 ## [Unreleased]
 
+### Added
+
+- opt-in daily official-release checks and a 15-minute health monitor that
+  persist across reboot without periodically restarting a healthy bridge
+- resumable Codex repair workspaces using explicit `gpt-5.6-sol` and `xhigh`
+  settings, atomic thread/session state, structured output, bounded retry, and
+  an independently rerun test suite
+- immutable `track-rdp-broker-v1` and `track-direct-x11-v1` aliases that name
+  the two validated input behaviors without treating them as a linear upgrade
+
+### Security
+
+- strip expiring CDN query keys from state, cap downloads, disable repair-clone
+  pushes, and keep unknown UU binaries behind static staging and human semantic
+  approval
+- defer every healthy-host deployment; restart and known-good reinstall occur
+  only after two consecutive health failures
+
 ### Documentation
 
+- document automatic maintenance, Codex resume state, reboot behavior, track
+  selection, another-computer handoff, and the remaining approval boundary
 - explain why the old nested input route could accept every sampled
   `SendInput` call while losing fast keyboard transitions, why slow typing and
   pointer motion could mask that fault, and why the direct X11 route fixes the

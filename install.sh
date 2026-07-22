@@ -69,6 +69,7 @@ skip_account_login=false
 start_service=true
 fresh_install=false
 unattended=false
+automatic_updates=false
 
 usage() {
     cat <<'EOF'
@@ -98,6 +99,7 @@ usage: ./install.sh [options]
   --skip-packages        do not install Ubuntu/Wine package dependencies
   --skip-account-login   do not open UU for first-time account sign-in
   --unattended           enable TPM-backed startup after an automatic login
+  --automatic-updates    enable daily checks and resumable Codex repair
   --no-start             install and verify files without starting the service
   -h, --help             show this help
 EOF
@@ -155,6 +157,10 @@ while (($#)); do
             ;;
         --unattended)
             unattended=true
+            shift
+            ;;
+        --automatic-updates)
+            automatic_updates=true
             shift
             ;;
         --no-start)
@@ -576,6 +582,10 @@ fi
 
 if [[ "$unattended" == true ]]; then
     "$repo_dir/scripts/configure-unattended.sh" enable
+fi
+
+if [[ "$automatic_updates" == true ]]; then
+    "$repo_dir/scripts/configure-updater.sh" enable --repo "$repo_dir"
 fi
 
 printf '\nInstalled UU Remote Ubuntu bridge.\n'

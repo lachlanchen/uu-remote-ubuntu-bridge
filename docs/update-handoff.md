@@ -5,6 +5,9 @@ It separates the message to send from the maintainer and recipient checklists.
 For a keyboard that works on one host but not another, use the
 [mobile-keyboard parity handoff](mobile-keyboard-parity-handoff.md) to capture
 the known-good baseline, controller variables, and bounded comparison evidence.
+Record the descriptive behavior tag from
+[input behavior tracks](release-tracks.md) instead of calling the machines
+"v1" and "v2".
 
 ## Copy-ready update message
 
@@ -151,6 +154,22 @@ logs without first removing account and device metadata.
 When the same phone keyboard behaves differently across computers, use the
 [detailed parity checklist](mobile-keyboard-parity-handoff.md#collect-a-parity-snapshot)
 and its private handoff record instead of collecting unbounded logs.
+
+## Optional automatic maintenance handoff
+
+After the normal keyboard acceptance passes, enable maintenance with the
+machine's validated behavior tag. This does not restart the working relay:
+
+```bash
+./scripts/configure-updater.sh enable --track TRACK_NAME \
+  --model gpt-5.6-sol --reasoning-effort xhigh
+./scripts/configure-updater.sh status
+```
+
+Use `track-rdp-broker-v1` for the compatible broker/RDP path or
+`track-direct-x11-v1` for a host already validated with direct X11 input. The
+daily checker cannot change that choice. Verify both timers after reboot and
+follow the [automatic maintenance handoff](automatic-updates.md#another-computer-handoff).
 
 ## Rollback and acceptance record
 

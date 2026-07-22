@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily official UU release check
+
+[Timer]
+OnBootSec=12min
+OnCalendar=*-*-* 04:20:00
+RandomizedDelaySec=45min
+Persistent=true
+Unit=uu-remote-update-check.service
+
+[Install]
+WantedBy=timers.target
