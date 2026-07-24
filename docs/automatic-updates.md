@@ -50,7 +50,7 @@ Two systemd user timers are enabled:
 | Timer | Schedule | Work |
 | --- | --- | --- |
 | `uu-remote-update-check.timer` | Daily around 04:20 with a randomized delay; also 12 minutes after boot | Fetch metadata and inspect the official UU endpoint without restarting the relay |
-| `uu-remote-repair-monitor.timer` | Seven minutes after boot and every 15 minutes after its previous run | Check relay health, resume a pending Codex thread, or perform bounded recovery when the relay is already unhealthy |
+| `uu-remote-repair-monitor.timer` | Seven minutes after boot and every 15 minutes after its previous run | Observe relay health and resume a pending Codex thread without changing the live relay |
 
 The daily timer uses `Persistent=true`, so a powered-off machine performs one
 missed check after its next boot. The repair timer does not need a logged-in
@@ -80,15 +80,17 @@ An endpoint that is equal to or older than the approved baseline is recorded
 and ignored. This matters because a release channel can temporarily advertise
 an older build. A different filename alone is not treated as an upgrade.
 
-The monitor changes the live relay only after health is bad twice, 20 seconds
-apart. An indeterminate user-manager query is recorded for repair and never
-treated as permission to restart. A confirmed failure permits one systemd
-restart. Known-good reinstallation is disabled by default; an operator must
-deliberately pass `--auto-reinstall` when configuring the updater. When opted
-in, it first clones the selected immutable track, runs the repository tests,
-and prebuilds compatibility artifacts while the already unhealthy relay
-remains untouched. Only the final reinstall reaches the live prefix. A healthy
-bridge is never periodically restarted for maintenance.
+The default monitor never changes the live relay. If health is bad twice,
+20 seconds apart, it records local evidence and queues analysis without
+stopping or restarting RDP, Wine, or UU. An indeterminate user-manager query
+is handled the same way.
+
+`--auto-reinstall` is a separate, explicit opt-in to live recovery. Only with
+that option may a confirmed failure permit one systemd restart followed by a
+known-good reinstall if restart fails. The recovery path first clones the
+selected immutable track, runs the repository tests, and prebuilds
+compatibility artifacts while the already unhealthy relay remains untouched.
+The default configuration used in this guide does not enable it.
 
 ## New upstream release workflow
 

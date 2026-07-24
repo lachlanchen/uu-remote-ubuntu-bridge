@@ -52,7 +52,9 @@ online, reconnect the phone and type: abcXYZ123,.!?
   `4.33.0.8907`.
 - Ask whether the installation is a direct clone or the parent repository's
   `code/uu-remote-ubuntu-bridge` submodule.
-- Warn that the updater restarts the bridge and briefly disconnects UU.
+- Explain that default updater checks and repair analysis never restart the
+  bridge. Warn about a brief UU/RDP interruption only if the recipient
+  explicitly opts in with `--auto-reinstall`.
 - Do not request passwords, Wine-prefix archives, or unredacted UU logs.
 
 ## Recipient preflight
