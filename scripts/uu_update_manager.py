@@ -1205,9 +1205,31 @@ class Manager:
             return
         if "bridge-service-query-failed" in confirmed["issues"]:
             details = self.runtime_context(first, confirmed)
+            details["confirmed_health"] = details.pop(
+                "health_after_restart", confirmed
+            )
             details["known_good_reinstall"] = {
                 "attempted": False,
                 "reason": "the service-manager probe was indeterminate",
+            }
+            identity = datetime.now().strftime("%Y%m%d-%H%M")
+            self.queue_task("runtime-health", identity, details)
+            return
+        if not self.config.auto_reinstall_known_good:
+            details = self.runtime_context(first, confirmed)
+            details["confirmed_health"] = details.pop(
+                "health_after_restart", confirmed
+            )
+            details["automatic_live_recovery"] = {
+                "attempted": False,
+                "reason": (
+                    "disabled by default so updater health observations cannot "
+                    "restart RDP or UU"
+                ),
+            }
+            details["known_good_reinstall"] = {
+                "attempted": False,
+                "reason": "automatic live recovery is disabled",
             }
             identity = datetime.now().strftime("%Y%m%d-%H%M")
             self.queue_task("runtime-health", identity, details)
@@ -1220,21 +1242,19 @@ class Manager:
                 message="the inactive relay recovered after one supervised restart",
             )
             return
-        reinstall: dict[str, Any] = {"attempted": False, "reason": "disabled"}
-        if self.config.auto_reinstall_known_good:
-            reinstall = self.reinstall_known_good()
-            if reinstall.get("health", {}).get("healthy"):
-                action = (
-                    "restored the previous runtime after a failed reinstall"
-                    if reinstall.get("rolled_back")
-                    else f"reinstalled known-good track {self.config.track}"
-                )
-                self.write_status(
-                    "self-healed",
-                    bridge_health=reinstall["health"],
-                    message=action,
-                )
-                return
+        reinstall = self.reinstall_known_good()
+        if reinstall.get("health", {}).get("healthy"):
+            action = (
+                "restored the previous runtime after a failed reinstall"
+                if reinstall.get("rolled_back")
+                else f"reinstalled known-good track {self.config.track}"
+            )
+            self.write_status(
+                "self-healed",
+                bridge_health=reinstall["health"],
+                message=action,
+            )
+            return
         details = self.runtime_context(first, restarted["health"])
         details["known_good_reinstall"] = reinstall
         identity = datetime.now().strftime("%Y%m%d-%H%M")

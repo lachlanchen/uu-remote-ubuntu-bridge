@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -622,6 +623,49 @@ class UpdateManagerTests(unittest.TestCase):
             self.assertEqual("runtime-health", manager.queued[0])
             self.assertFalse(
                 manager.queued[2]["known_good_reinstall"]["attempted"]
+            )
+
+    def test_default_health_monitor_never_restarts_the_live_bridge(self) -> None:
+        class ObservationOnlyManager(Manager):
+            def __init__(self, config):
+                super().__init__(config)
+                self.health_results = iter(
+                    (
+                        {"healthy": False, "issues": ["uu-server-missing"]},
+                        {"healthy": False, "issues": ["uu-server-missing"]},
+                    )
+                )
+                self.queued = None
+
+            def health(self):
+                return next(self.health_results)
+
+            def restart_bridge(self):
+                raise AssertionError("default monitoring must not restart RDP or UU")
+
+            def reinstall_known_good(self):
+                raise AssertionError("default monitoring must not reinstall UU")
+
+            def runtime_context(self, first, after):
+                return {"initial_health": first, "confirmed_health": after}
+
+            def queue_task(self, kind, identity, details):
+                self.queued = (kind, identity, details)
+                return {}
+
+        with tempfile.TemporaryDirectory() as temporary, patch(
+            "uu_update_manager.time.sleep", return_value=None
+        ):
+            config = replace(
+                self.config(Path(temporary)),
+                auto_reinstall_known_good=False,
+            )
+            manager = ObservationOnlyManager(config)
+            manager.monitor_health()
+            self.assertIsNotNone(manager.queued)
+            self.assertEqual("runtime-health", manager.queued[0])
+            self.assertFalse(
+                manager.queued[2]["automatic_live_recovery"]["attempted"]
             )
 
 

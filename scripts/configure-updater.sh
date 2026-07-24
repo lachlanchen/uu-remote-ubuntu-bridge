@@ -33,8 +33,9 @@ Enable options:
                          Codex reasoning effort (default: medium)
   --codex PATH           absolute Codex executable (default: current command)
   --idle-minutes N       documented maintenance idle window (default: 45)
-  --auto-reinstall       opt in to reinstalling the known-good track after a
-                         confirmed restart failure (default: disabled)
+  --auto-reinstall       opt in to live recovery: restart the bridge after two
+                         confirmed failures, then reinstall the known-good
+                         track if restart fails (default: disabled)
   --no-auto-reinstall    retain the safe default; accepted for compatibility
 EOF
 }

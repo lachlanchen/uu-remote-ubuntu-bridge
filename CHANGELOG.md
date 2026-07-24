@@ -24,8 +24,9 @@ locked by the release manifest.
 - strip expiring CDN query keys from state, cap downloads, disable repair-clone
   pushes, and keep unknown UU binaries behind static staging and human semantic
   approval
-- defer every healthy-host deployment; restart and known-good reinstall occur
-  only after two consecutive health failures
+- make live recovery observation-only by default; restart and known-good
+  reinstall require an explicit `--auto-reinstall` opt-in after two
+  consecutive health failures
 
 ### Documentation
 
