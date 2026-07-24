@@ -44,6 +44,14 @@ locked by the release manifest.
   installations remain reachable from the smaller systemd user-service `PATH`
 - snapshot the complete two-host keyboard and troubleshooting handoff into
   every repair checkout before starting or resuming Codex
+- preflight the Ubuntu Bubblewrap/AppArmor path before spending a Codex
+  attempt, retain repair evidence across an explicit retry, and keep
+  `workspace-write` instead of bypassing the sandbox
+- record an explicit non-promotion result for every automated repair so a
+  completed source patch cannot transfer into the live UU prefix before
+  semantic review and controller acceptance
+- document the recurring Wine `devcon` connection stall and its reversible
+  live mitigation as evidence for a permanent rollback-safe fix
 
 - wait for the actual FreeRDP relay window after Wine's short-lived Unix
   launcher exits, verify that the spawned GNOME daemon owns its configured

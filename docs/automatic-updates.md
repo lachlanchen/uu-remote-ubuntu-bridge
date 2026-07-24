@@ -167,6 +167,30 @@ disabled Git push URL in the repair clone. Network access remains available
 because Codex authentication requires it. These controls reduce accidental
 reach; they are not a security boundary equivalent to a separate VM.
 
+On Ubuntu 24.04, `workspace-write` also needs Ubuntu's AppArmor profile for
+Bubblewrap. If status reports `codex-sandbox-deferred`, install and enable only
+the distro profile rather than disabling unprivileged-user-namespace
+restrictions globally:
+
+```bash
+sudo apt install apparmor-profiles
+sudo install -o root -g root -m 0644 \
+  /usr/share/apparmor/extra-profiles/bwrap-userns-restrict \
+  /etc/apparmor.d/bwrap-userns-restrict
+sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+uu-remote update retry
+```
+
+`retry` keeps the private evidence and repair checkout, clears the unusable
+Codex thread, and starts a new thread on the next monitor run. It refuses
+non-retryable phases.
+
+There is deliberately no automatic transfer from `ready-for-review` into the
+live Wine prefix. The task record always marks automated output as ineligible
+for live promotion. A new patch must finish static work and tests, receive
+independent semantic binary review, be marked approved by a maintainer, and
+pass controller acceptance before the normal installer may transfer it.
+
 ## Another-computer handoff
 
 Send the operator this sequence after choosing the track from

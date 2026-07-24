@@ -94,6 +94,9 @@ class UpdateManagerTests(unittest.TestCase):
             return_value={
                 "rateLimitsByLimitId": {"codex": {"primary": {"usedPercent": 1}}}
             },
+        ), patch(
+            "uu_update_manager.workspace_sandbox_probe",
+            return_value={"available": True, "returncode": 0, "detail": ""},
         ):
             manager = ModelChangeManager(self.config(Path(temporary)))
             manager.save_task(
@@ -110,6 +113,32 @@ class UpdateManagerTests(unittest.TestCase):
             self.assertEqual(
                 "codex-auto-review", manager.assertion["codex_model"]
             )
+
+    def test_monitor_defers_before_codex_when_workspace_sandbox_is_unavailable(
+        self,
+    ) -> None:
+        class DeferredManager(Manager):
+            def run_codex(self, task):
+                raise AssertionError("Codex must not run without workspace-write")
+
+        with tempfile.TemporaryDirectory() as temporary, patch(
+            "uu_update_manager.workspace_sandbox_probe",
+            return_value={
+                "available": False,
+                "returncode": 1,
+                "detail": "No permissions to create new namespace",
+            },
+        ), patch(
+            "uu_update_manager.codex_rate_limits",
+            side_effect=AssertionError("budget query must follow sandbox preflight"),
+        ):
+            manager = DeferredManager(self.config(Path(temporary)))
+            manager.save_task({"id": "sandbox-deferred", "attempts": 0})
+            manager.monitor()
+            task = json.loads(manager.pending_path.read_text(encoding="utf-8"))
+            self.assertEqual("codex-sandbox-deferred", task["phase"])
+            self.assertEqual(0, task["attempts"])
+            self.assertIn("namespace", task["workspace_sandbox"]["detail"])
 
     def test_release_version_prefers_full_build_identifier(self) -> None:
         self.assertEqual(
@@ -264,6 +293,61 @@ class UpdateManagerTests(unittest.TestCase):
                 ["/opt/codex/bin/codex", "exec", "resume"], resumed[:3]
             )
             self.assertIn(task["thread_id"], resumed)
+
+    def test_retry_requeues_a_blocked_task_without_deleting_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manager = Manager(self.config(root))
+            task_dir = manager.tasks_dir / "blocked-fixture"
+            task_dir.mkdir(parents=True)
+            evidence = task_dir / "codex-events.jsonl"
+            evidence.write_text('{"type":"fixture"}\n', encoding="utf-8")
+            task = {
+                "schema_version": 1,
+                "id": "blocked-fixture",
+                "phase": "blocked",
+                "attempts": 1,
+                "thread_id": "old-thread",
+                "result": {"status": "blocked"},
+                "verification": {"tests_passed": True},
+                "completed_at": "2026-07-24T00:00:00+00:00",
+            }
+            (task_dir / "task.json").write_text(json.dumps(task), encoding="utf-8")
+            manager.write_status("blocked", active_task=task["id"])
+
+            manager.retry_task()
+
+            queued = json.loads(manager.pending_path.read_text(encoding="utf-8"))
+            self.assertEqual("queued", queued["phase"])
+            self.assertIsNone(queued["thread_id"])
+            self.assertEqual(1, queued["attempts"])
+            self.assertEqual(1, queued["retry_count"])
+            self.assertNotIn("result", queued)
+            self.assertNotIn("verification", queued)
+            self.assertEqual('{"type":"fixture"}\n', evidence.read_text())
+
+    def test_ready_for_review_is_never_eligible_for_live_promotion(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manager = Manager(self.config(root))
+            task_dir = manager.tasks_dir / "review-fixture"
+            task_dir.mkdir(parents=True)
+            task = {"id": "review-fixture"}
+            with patch.object(
+                manager,
+                "verify_repair",
+                return_value={
+                    "changed": True,
+                    "tests_passed": True,
+                    "safety_violations": [],
+                },
+            ):
+                manager.finish_task(task, {"status": "ready_for_review"})
+            retained = json.loads(
+                (task_dir / "task.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual("ready-for-review", retained["phase"])
+            self.assertFalse(retained["live_promotion"]["eligible"])
 
     def test_config_requires_and_preserves_absolute_codex_executable(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
