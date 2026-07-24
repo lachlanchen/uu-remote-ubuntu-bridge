@@ -10,7 +10,8 @@ locked by the release manifest.
 
 - opt-in daily official-release checks and a 15-minute health monitor that
   persist across reboot without periodically restarting a healthy bridge
-- resumable Codex repair workspaces using explicit `gpt-5.6-sol` and `xhigh`
+- resumable Codex repair workspaces using explicit `codex-auto-review` and
+  `medium`
   settings, atomic thread/session state, structured output, bounded retry, and
   an independently rerun test suite
 - immutable `track-rdp-broker-20260724` and `track-direct-x11-20260724` aliases that name
@@ -39,6 +40,10 @@ locked by the release manifest.
 
 - use the installed `codex-auto-review` model at medium reasoning effort for
   resumable repair tasks by default, while preserving explicit overrides
+- persist the absolute Codex executable selected during configuration so NVM
+  installations remain reachable from the smaller systemd user-service `PATH`
+- snapshot the complete two-host keyboard and troubleshooting handoff into
+  every repair checkout before starting or resuming Codex
 
 - wait for the actual FreeRDP relay window after Wine's short-lived Unix
   launcher exits, verify that the spawned GNOME daemon owns its configured

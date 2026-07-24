@@ -415,6 +415,7 @@ ID, raw production log, screenshot, or private desktop content is committed.
 - [Update handoff for another operator](docs/update-handoff.md)
 - [Input behavior tracks](docs/release-tracks.md)
 - [Automatic checks and resumable repair](docs/automatic-updates.md)
+- [Automated repair agent handoff](docs/automated-repair-agent-handoff.md)
 - [Mobile-keyboard parity handoff](docs/mobile-keyboard-parity-handoff.md)
 - [XRDP client stall and UU keyboard recovery](docs/xrdp-and-keyboard-recovery.md)
 - [Unattended startup after reboot](docs/unattended-startup.md)

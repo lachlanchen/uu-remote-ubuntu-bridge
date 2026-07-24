@@ -169,10 +169,12 @@ def codex_budget_from_rate_limits(
     }
 
 
-def codex_rate_limits(timeout: int = 15) -> dict[str, Any]:
+def codex_rate_limits(
+    codex_executable: str | Path = "codex", timeout: int = 15
+) -> dict[str, Any]:
     try:
         process = subprocess.Popen(
-            ["codex", "app-server", "--stdio"],
+            [str(codex_executable), "app-server", "--stdio"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -250,6 +252,7 @@ class Config:
     branch: str
     track: str
     endpoint: str
+    codex_executable: Path
     codex_model: str
     codex_reasoning_effort: str
     codex_timeout_seconds: int
@@ -274,6 +277,18 @@ class Config:
         effort = str(raw.get("codex_reasoning_effort", "")).strip()
         if not model or not effort:
             raise UpdateError("the updater needs a Codex model and reasoning effort")
+        codex_value = str(raw.get("codex_executable", "")).strip()
+        codex_executable = Path(codex_value).expanduser()
+        if (
+            not codex_value
+            or not codex_executable.is_absolute()
+            or not codex_executable.is_file()
+            or not os.access(codex_executable, os.X_OK)
+        ):
+            raise UpdateError(
+                "the updater needs an absolute executable Codex path; "
+                "rerun configure-updater.sh enable"
+            )
         max_used_percent = int(raw.get("codex_max_used_percent", 20))
         if not 0 <= max_used_percent <= 100:
             raise UpdateError("codex_max_used_percent must be between 0 and 100")
@@ -285,6 +300,7 @@ class Config:
             branch=str(raw.get("branch", "main")),
             track=str(raw.get("track", "track-rdp-broker-20260724")),
             endpoint=str(raw.get("endpoint", DEFAULT_ENDPOINT)),
+            codex_executable=codex_executable,
             codex_model=model,
             codex_reasoning_effort=effort,
             codex_timeout_seconds=max(300, int(raw.get("codex_timeout_seconds", 5400))),
@@ -593,6 +609,14 @@ class Manager:
     def write_context(self, task: dict[str, Any], repair_repo: Path) -> Path:
         context_path = repair_repo / "build/automated-repair/CONTEXT.md"
         context_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        handoff_source = (
+            self.config.repository / "docs/automated-repair-agent-handoff.md"
+        )
+        handoff_snapshot = context_path.parent / "OPERATIONAL-HANDOFF.md"
+        if not handoff_source.is_file():
+            raise UpdateError(f"missing automated repair handoff: {handoff_source}")
+        shutil.copyfile(handoff_source, handoff_snapshot)
+        handoff_snapshot.chmod(0o600)
         details = task.get("details", {})
         lines = [
             "# Automated UU Repair Context",
@@ -624,8 +648,15 @@ class Manager:
             "  output ignored and uncommitted.",
             "- Run focused tests and the full proprietary-binary-free unit suite.",
             "",
-            "Read `docs/upstream-maintenance.md`, `docs/security.md`,",
-            "`docs/release-tracks.md`, and `docs/automatic-updates.md` before editing.",
+            "## Required operational memory",
+            "",
+            "Before editing, read `build/automated-repair/OPERATIONAL-HANDOFF.md`.",
+            "It preserves the two-host keyboard history, direct-X11 acceptance,",
+            "failed hypotheses, rollback rules, and the automated action contract.",
+            "Then read `docs/upstream-maintenance.md`, `docs/security.md`,",
+            "`docs/release-tracks.md`, `docs/automatic-updates.md`,",
+            "`docs/debugging-journey.md`, `docs/mobile-keyboard-parity-handoff.md`,",
+            "`docs/xrdp-and-keyboard-recovery.md`, and `docs/troubleshooting.md`.",
         ]
         context_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         context_path.chmod(0o600)
@@ -1166,7 +1197,14 @@ class Manager:
                 "CONTEXT.md, preserve existing work and test results, and finish the same "
                 "task. Keep every safety and review gate in that context."
             )
-            return ["codex", "exec", "resume", *common, str(task["thread_id"]), prompt]
+            return [
+                str(self.config.codex_executable),
+                "exec",
+                "resume",
+                *common,
+                str(task["thread_id"]),
+                prompt,
+            ]
         prompt = (
             "Handle the automated UU maintenance task described in "
             "build/automated-repair/CONTEXT.md end to end inside this checkout. "
@@ -1177,7 +1215,7 @@ class Manager:
             "manifest, touch the live installation, use sudo, commit, or push."
         )
         return [
-            "codex",
+            str(self.config.codex_executable),
             "exec",
             *common,
             "--sandbox",
@@ -1347,6 +1385,12 @@ class Manager:
             task["phase"] = "codex-model-reset"
         task["codex_model"] = self.config.codex_model
         task["codex_reasoning_effort"] = self.config.codex_reasoning_effort
+        repair_repo_value = task.get("repair_repo")
+        repair_repo = (
+            Path(str(repair_repo_value)) if repair_repo_value else None
+        )
+        if repair_repo is not None and repair_repo.is_dir():
+            task["context"] = str(self.write_context(task, repair_repo))
         self.save_task(task)
         next_retry = float(task.get("next_retry_epoch", 0))
         if next_retry > time.time():
@@ -1358,7 +1402,8 @@ class Manager:
             return
         try:
             budget = codex_budget_from_rate_limits(
-                codex_rate_limits(), self.config.codex_max_used_percent
+                codex_rate_limits(self.config.codex_executable),
+                self.config.codex_max_used_percent,
             )
         except UpdateError as error:
             budget = {

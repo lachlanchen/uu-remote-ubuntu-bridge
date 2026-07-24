@@ -10,6 +10,7 @@ state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/uu-remote-updater"
 unit_dir="$HOME/.config/systemd/user"
 model='codex-auto-review'
 reasoning_effort='medium'
+codex_executable=''
 track=''
 branch='main'
 idle_minutes=45
@@ -30,6 +31,7 @@ Enable options:
   --model MODEL          Codex model (default: codex-auto-review)
   --reasoning-effort EFFORT
                          Codex reasoning effort (default: medium)
+  --codex PATH           absolute Codex executable (default: current command)
   --idle-minutes N       documented maintenance idle window (default: 45)
   --no-auto-reinstall    restart and diagnose, but do not reinstall the track
 EOF
@@ -56,6 +58,10 @@ while (($#)); do
             ;;
         --reasoning-effort)
             reasoning_effort="${2:?--reasoning-effort requires a value}"
+            shift 2
+            ;;
+        --codex)
+            codex_executable="${2:?--codex requires a path}"
             shift 2
             ;;
         --idle-minutes)
@@ -109,12 +115,18 @@ case "$command" in
             printf 'UU updater repository is unavailable: %s\n' "$repo_dir" >&2
             exit 1
         fi
-        for required in codex git python3 systemctl; do
+        for required in git python3 systemctl; do
             if ! command -v "$required" >/dev/null 2>&1; then
                 printf 'missing updater dependency: %s\n' "$required" >&2
                 exit 1
             fi
         done
+        codex_executable="${codex_executable:-$(command -v codex || true)}"
+        if [[ -z "$codex_executable" || "$codex_executable" != /* ||
+              ! -x "$codex_executable" ]]; then
+            printf 'missing executable Codex path; use --codex /absolute/path/to/codex\n' >&2
+            exit 1
+        fi
         if ! [[ "$idle_minutes" =~ ^[0-9]+$ ]] || ((idle_minutes < 5)); then
             printf -- '--idle-minutes must be at least 5.\n' >&2
             exit 2
@@ -126,7 +138,7 @@ case "$command" in
             printf 'known-good track tag is unavailable: %s\n' "$track" >&2
             exit 1
         fi
-        if ! codex login status 2>&1 | grep -q '^Logged in'; then
+        if ! "$codex_executable" login status 2>&1 | grep -q '^Logged in'; then
             printf 'Codex is not logged in for this user. Run codex login first.\n' >&2
             exit 1
         fi
@@ -135,7 +147,7 @@ case "$command" in
         install -d -m 0755 "$HOME/.local/bin" "$unit_dir"
         python3 - "$config_file" "$repo_dir" "$state_dir" "$branch" \
             "$track" "$model" "$reasoning_effort" "$idle_minutes" \
-            "$auto_reinstall" <<'PY'
+            "$auto_reinstall" "$codex_executable" <<'PY'
 import json
 import os
 import sys
@@ -151,6 +163,7 @@ from pathlib import Path
     effort,
     idle_minutes,
     auto_reinstall,
+    codex_executable,
 ) = sys.argv[1:]
 value = {
     "schema_version": 1,
@@ -162,6 +175,7 @@ value = {
     "endpoint": "https://api.nrd.nie.163.com/api/v1/release/dl/1?channel=gwqd",
     "codex_model": model,
     "codex_reasoning_effort": effort,
+    "codex_executable": codex_executable,
     "codex_timeout_seconds": 5400,
     "codex_max_used_percent": 20,
     "idle_minutes": int(idle_minutes),
