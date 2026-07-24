@@ -74,6 +74,9 @@ class UpdateManagerTests(unittest.TestCase):
                 },
                 "credits": {"hasCredits": True, "balance": "9999"},
             },
+        ), patch(
+            "uu_update_manager.workspace_sandbox_probe",
+            return_value={"available": True, "returncode": 0, "detail": ""},
         ):
             manager = DeferredManager(self.config(Path(temporary)))
             manager.save_task({"id": "deferred", "attempts": 0})
