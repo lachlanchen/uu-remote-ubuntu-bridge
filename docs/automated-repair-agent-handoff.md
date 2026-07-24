@@ -123,6 +123,17 @@ Preserve these decisions:
 12. **Logs are privacy-bounded:** routine logging stops after quotas and never
     records keycodes or typed content. A quiet bounded log is not proof that an
     input API was never called.
+13. **Wine driver installation can block connection setup:** on the affected
+    workstation, a controller retry still reached UU's `devcon.exe` path even
+    with the approved 4.33 server patches. Each unsupported `gvinput`/HID
+    install consumed one CPU and delayed setup by roughly 84–218 seconds.
+    Reversibly making only `devcon.exe` unavailable reduced the same input-init
+    boundary to roughly 0.8–1.1 seconds. Treat this as strong evidence for a
+    permanent, rollback-safe suppression of the Windows kernel-driver path,
+    not as permission to delete the original executable or blindly copy the
+    workaround to an unknown release. The relay session in this observation
+    was cross-region, but its recorded input-delay counters were not the cause
+    of this setup stall.
 
 The chronological evidence is in
 [Debugging Journey](debugging-journey.md), and the reusable investigation

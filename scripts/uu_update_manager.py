@@ -28,6 +28,13 @@ DEFAULT_ENDPOINT = "https://api.nrd.nie.163.com/api/v1/release/dl/1?channel=gwqd
 VERSION_RE = re.compile(r"(?<!\d)(\d+(?:\.\d+){2,3})(?!\d)")
 TASK_ID_RE = re.compile(r"[^A-Za-z0-9._-]+")
 TERMINAL_PHASES = {"blocked", "no-change", "ready-for-review"}
+RETRYABLE_PHASES = {
+    "blocked",
+    "codex-budget-deferred",
+    "codex-interrupted",
+    "codex-sandbox-deferred",
+    "repair-waiting",
+}
 
 
 class UpdateError(RuntimeError):
@@ -125,6 +132,38 @@ def command_output(
         detail = result.stderr.strip() or result.stdout.strip() or "no output"
         raise UpdateError(f"command failed ({' '.join(command)}): {detail[-1200:]}")
     return result
+
+
+def workspace_sandbox_probe() -> dict[str, Any]:
+    """Prove that Codex's Bubblewrap user namespace can start on this host."""
+    bwrap = Path("/usr/bin/bwrap")
+    if not bwrap.is_file() or not os.access(bwrap, os.X_OK):
+        return {
+            "available": False,
+            "detail": "bubblewrap is unavailable at /usr/bin/bwrap",
+        }
+    result = command_output(
+        [
+            str(bwrap),
+            "--die-with-parent",
+            "--unshare-user",
+            "--uid",
+            "0",
+            "--gid",
+            "0",
+            "--ro-bind",
+            "/",
+            "/",
+            "/bin/true",
+        ],
+        timeout=15,
+    )
+    detail = (result.stderr.strip() or result.stdout.strip())[-1200:]
+    return {
+        "available": result.returncode == 0,
+        "returncode": result.returncode,
+        "detail": detail,
+    }
 
 
 def codex_budget_from_rate_limits(
@@ -1168,6 +1207,47 @@ class Manager:
             return None
         return load_json(self.pending_path)
 
+    def retry_task(self) -> None:
+        task = self.load_pending()
+        if task is None:
+            status = load_json(self.status_path, default={})
+            task_id = str(status.get("active_task", "")).strip()
+            if not task_id:
+                raise UpdateError("there is no retained UU repair task to retry")
+            task_path = self.tasks_dir / task_name(task_id) / "task.json"
+            if not task_path.is_file():
+                raise UpdateError(f"retained UU repair task is unavailable: {task_id}")
+            task = load_json(task_path)
+
+        phase = str(task.get("phase", ""))
+        if phase not in RETRYABLE_PHASES:
+            raise UpdateError(
+                f"UU repair task {task.get('id', 'unknown')} cannot be retried "
+                f"from phase {phase or 'unknown'}"
+            )
+
+        task["phase"] = "queued"
+        task["thread_id"] = None
+        task["retry_count"] = int(task.get("retry_count", 0)) + 1
+        task["manually_retried_at"] = utc_now()
+        for key in (
+            "completed_at",
+            "last_returncode",
+            "next_retry_epoch",
+            "result",
+            "verification",
+        ):
+            task.pop(key, None)
+        self.save_task(task)
+        self.write_status(
+            "repair-queued",
+            active_task=task["id"],
+            message=(
+                "the retained repair evidence and checkout will be retried "
+                "in a new Codex thread"
+            ),
+        )
+
     def save_task(self, task: dict[str, Any]) -> None:
         task["updated_at"] = utc_now()
         task_dir = self.tasks_dir / str(task["id"])
@@ -1367,6 +1447,14 @@ class Manager:
         task["phase"] = phase
         task["result"] = result
         task["verification"] = verification
+        task["live_promotion"] = {
+            "eligible": False,
+            "reason": (
+                "automated Codex output never authorizes transfer to the live "
+                "UU prefix; semantic binary review and controller acceptance "
+                "must finish first"
+            ),
+        }
         task["completed_at"] = utc_now()
         atomic_json(self.tasks_dir / str(task["id"]) / "task.json", task)
         self.pending_path.unlink(missing_ok=True)
@@ -1400,6 +1488,25 @@ class Manager:
                 next_retry_at=datetime.fromtimestamp(next_retry, timezone.utc).isoformat(),
             )
             return
+        sandbox = workspace_sandbox_probe()
+        if not sandbox["available"]:
+            retry = time.time() + 3600
+            task["phase"] = "codex-sandbox-deferred"
+            task["workspace_sandbox"] = sandbox
+            task["next_retry_epoch"] = retry
+            self.save_task(task)
+            self.write_status(
+                "codex-sandbox-deferred",
+                active_task=task["id"],
+                message=(
+                    "Codex workspace-write could not start. On Ubuntu, enable "
+                    "the distro bwrap-userns-restrict AppArmor profile."
+                ),
+                workspace_sandbox=sandbox,
+                next_retry_at=datetime.fromtimestamp(retry, timezone.utc).isoformat(),
+            )
+            return
+        task["workspace_sandbox"] = sandbox
         try:
             budget = codex_budget_from_rate_limits(
                 codex_rate_limits(self.config.codex_executable),
@@ -1485,7 +1592,7 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path.home() / ".config/uu-remote-bridge/updater.json",
     )
-    parser.add_argument("command", choices=("check", "monitor", "status"))
+    parser.add_argument("command", choices=("check", "monitor", "retry", "status"))
     return parser.parse_args()
 
 
@@ -1500,6 +1607,8 @@ def main() -> int:
         with manager.lock():
             if args.command == "check":
                 manager.check()
+            elif args.command == "retry":
+                manager.retry_task()
             else:
                 manager.monitor()
         return 0
