@@ -463,6 +463,9 @@ class UpdateManagerTests(unittest.TestCase):
     def test_systemd_timers_survive_boot_without_touching_the_bridge(self) -> None:
         daily = (REPO_DIR / "systemd/uu-remote-update-check.timer").read_text()
         monitor = (REPO_DIR / "systemd/uu-remote-repair-monitor.timer").read_text()
+        monitor_service = (
+            REPO_DIR / "systemd/uu-remote-repair-monitor.service"
+        ).read_text()
         check_service = (
             REPO_DIR / "systemd/uu-remote-update-check.service"
         ).read_text()
@@ -470,6 +473,14 @@ class UpdateManagerTests(unittest.TestCase):
         self.assertIn("OnBootSec=7min", monitor)
         self.assertIn("OnUnitInactiveSec=15min", monitor)
         self.assertNotIn("restart uu-remote-bridge", check_service)
+        self.assertIn("NoNewPrivileges=yes", monitor_service)
+        for incompatible_option in (
+            "PrivateTmp=yes",
+            "ProtectSystem=full",
+            "ProtectKernelTunables=yes",
+            "ProtectControlGroups=yes",
+        ):
+            self.assertNotIn(incompatible_option, monitor_service)
 
     def test_installer_exposes_opt_in_automatic_maintenance(self) -> None:
         installer = (REPO_DIR / "install.sh").read_text()

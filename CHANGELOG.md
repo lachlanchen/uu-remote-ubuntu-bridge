@@ -59,6 +59,9 @@ locked by the release manifest.
   service-manager probe itself is indeterminate
 - import operator-authorized networkless staging on retry only after checking
   its method and all recorded binary hashes
+- keep the repair manager outside systemd's pre-created
+  `unprivileged_userns` mount namespace so Codex can establish its required
+  Bubblewrap `workspace-write` sandbox under Ubuntu's AppArmor restrictions
 
 - wait for the actual FreeRDP relay window after Wine's short-lived Unix
   launcher exits, verify that the spawned GNOME daemon owns its configured
