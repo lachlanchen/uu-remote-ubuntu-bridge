@@ -81,11 +81,14 @@ and ignored. This matters because a release channel can temporarily advertise
 an older build. A different filename alone is not treated as an upgrade.
 
 The monitor changes the live relay only after health is bad twice, 20 seconds
-apart. It then performs one systemd restart. If that fails and known-good
-reinstallation is enabled, it first clones the selected immutable track, runs
-the repository tests, and prebuilds compatibility artifacts while the already
-unhealthy relay remains untouched. Only the final reinstall reaches the live
-prefix. A healthy bridge is never periodically restarted for maintenance.
+apart. An indeterminate user-manager query is recorded for repair and never
+treated as permission to restart. A confirmed failure permits one systemd
+restart. Known-good reinstallation is disabled by default; an operator must
+deliberately pass `--auto-reinstall` when configuring the updater. When opted
+in, it first clones the selected immutable track, runs the repository tests,
+and prebuilds compatibility artifacts while the already unhealthy relay
+remains untouched. Only the final reinstall reaches the live prefix. A healthy
+bridge is never periodically restarted for maintenance.
 
 ## New upstream release workflow
 
@@ -183,7 +186,9 @@ uu-remote update retry
 
 `retry` keeps the private evidence and repair checkout, clears the unusable
 Codex thread, and starts a new thread on the next monitor run. It refuses
-non-retryable phases.
+non-retryable phases. If an operator has completed the documented networkless
+fallback in the task's `stage-sandbox` directory, retry imports it only after
+the installer, server, and health-monitor hashes match the sandbox record.
 
 There is deliberately no automatic transfer from `ready-for-review` into the
 live Wine prefix. The task record always marks automated output as ineligible

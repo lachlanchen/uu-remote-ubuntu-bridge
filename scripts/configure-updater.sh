@@ -14,7 +14,7 @@ codex_executable=''
 track=''
 branch='main'
 idle_minutes=45
-auto_reinstall=true
+auto_reinstall=false
 command="${1:-status}"
 [[ $# -eq 0 ]] || shift
 
@@ -33,7 +33,9 @@ Enable options:
                          Codex reasoning effort (default: medium)
   --codex PATH           absolute Codex executable (default: current command)
   --idle-minutes N       documented maintenance idle window (default: 45)
-  --no-auto-reinstall    restart and diagnose, but do not reinstall the track
+  --auto-reinstall       opt in to reinstalling the known-good track after a
+                         confirmed restart failure (default: disabled)
+  --no-auto-reinstall    retain the safe default; accepted for compatibility
 EOF
 }
 
@@ -70,6 +72,10 @@ while (($#)); do
             ;;
         --no-auto-reinstall)
             auto_reinstall=false
+            shift
+            ;;
+        --auto-reinstall)
+            auto_reinstall=true
             shift
             ;;
         --purge-state)

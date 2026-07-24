@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -329,6 +330,58 @@ class UpdateManagerTests(unittest.TestCase):
             self.assertNotIn("verification", queued)
             self.assertEqual('{"type":"fixture"}\n', evidence.read_text())
 
+    def test_retry_imports_only_hash_verified_networkless_operator_staging(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manager = Manager(self.config(root))
+            task_dir = manager.tasks_dir / "staged-fixture"
+            stage = task_dir / "stage-sandbox"
+            stage.mkdir(parents=True)
+            server = stage / "GameViewerServer.exe"
+            healthd = stage / "GameViewerHealthd.exe"
+            server.write_bytes(b"server fixture")
+            healthd.write_bytes(b"health fixture")
+            installer_hash = hashlib.sha256(b"installer fixture").hexdigest()
+            server_hash = hashlib.sha256(server.read_bytes()).hexdigest()
+            healthd_hash = hashlib.sha256(healthd.read_bytes()).hexdigest()
+            (stage / "SHA256").write_text(
+                "\n".join(
+                    (
+                        f"installer_sha256={installer_hash}",
+                        f"server_sha256={server_hash}",
+                        f"healthd_sha256={healthd_hash}",
+                        "staging_method=systemd-sandbox",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            task = {
+                "schema_version": 1,
+                "id": "staged-fixture",
+                "kind": "upstream-release",
+                "phase": "blocked",
+                "attempts": 1,
+                "thread_id": "old-thread",
+                "details": {
+                    "observed_release": {"installer_sha256": installer_hash},
+                    "staging": {"returncode": 1},
+                },
+            }
+            (task_dir / "task.json").write_text(json.dumps(task), encoding="utf-8")
+            manager.write_status("blocked", active_task=task["id"])
+
+            manager.retry_task()
+
+            queued = json.loads(manager.pending_path.read_text(encoding="utf-8"))
+            staging = queued["details"]["staging"]
+            self.assertTrue(staging["sandbox_executed"])
+            self.assertTrue(staging["operator_authorized"])
+            self.assertEqual(server_hash, staging["server_sha256"])
+            self.assertEqual(healthd_hash, staging["healthd_sha256"])
+
     def test_ready_for_review_is_never_eligible_for_live_promotion(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -377,6 +430,7 @@ class UpdateManagerTests(unittest.TestCase):
             self.assertEqual(Path("/bin/true"), config.codex_executable)
             self.assertEqual("codex-auto-review", config.codex_model)
             self.assertEqual("medium", config.codex_reasoning_effort)
+            self.assertFalse(config.auto_reinstall_known_good)
 
             raw = json.loads(config_path.read_text(encoding="utf-8"))
             raw.pop("codex_executable")
@@ -427,6 +481,8 @@ class UpdateManagerTests(unittest.TestCase):
         self.assertIn("--codex PATH", configurator)
         self.assertIn("model='codex-auto-review'", configurator)
         self.assertIn("reasoning_effort='medium'", configurator)
+        self.assertIn("auto_reinstall=false", configurator)
+        self.assertIn("--auto-reinstall", configurator)
         self.assertIn('scripts/uu-remote"', configurator)
         self.assertIn("track-direct-x11-20260724", configurator)
         self.assertIn("track-rdp-broker-20260724", configurator)
@@ -466,6 +522,96 @@ class UpdateManagerTests(unittest.TestCase):
             self.assertIn("rdp-listener-owner-mismatch", health["issues"])
             self.assertEqual(64, health["restart_count"])
             self.assertEqual(3391, health["rdp_port"])
+
+    def test_health_accepts_the_real_listener_among_old_relay_processes(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = root / "home"
+            manifest = (
+                home
+                / ".local/share/wineprefixes/uu-remote/compat/release-manifest.json"
+            )
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text("{}\n", encoding="utf-8")
+            responses = [
+                subprocess.CompletedProcess(
+                    [],
+                    0,
+                    (
+                        "ActiveState=active\n"
+                        "NRestarts=3\n"
+                        "ActiveEnterTimestampMonotonic=1000000000\n"
+                    ),
+                    "",
+                ),
+                subprocess.CompletedProcess([], 0, "101\n", ""),
+                subprocess.CompletedProcess([], 0, "102\n", ""),
+                subprocess.CompletedProcess([], 0, "10\n20\n", ""),
+                subprocess.CompletedProcess(
+                    [],
+                    0,
+                    'LISTEN 0 10 *:3390 *:* users:(("gnome-remote-de",pid=20,fd=15))\n',
+                    "",
+                ),
+            ]
+
+            with patch.object(Path, "home", return_value=home), patch(
+                "uu_update_manager.command_output", side_effect=responses
+            ) as output, patch(
+                "uu_update_manager.time.monotonic", return_value=10_000
+            ):
+                health = Manager(self.config(root / "state")).health()
+
+            self.assertTrue(health["healthy"])
+            self.assertNotIn("bridge-restart-storm", health["issues"])
+            self.assertGreater(health["active_age_seconds"], 15 * 60)
+            first_command = output.call_args_list[0].args[0]
+            self.assertIn(
+                "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/"
+                f"{os.getuid()}/bus",
+                first_command,
+            )
+
+    def test_indeterminate_service_probe_never_restarts_or_reinstalls(self) -> None:
+        class IndeterminateManager(Manager):
+            def __init__(self, config):
+                super().__init__(config)
+                self.health_results = iter(
+                    (
+                        {"healthy": False, "issues": ["bridge-service-query-failed"]},
+                        {"healthy": False, "issues": ["bridge-service-query-failed"]},
+                    )
+                )
+                self.queued = None
+
+            def health(self):
+                return next(self.health_results)
+
+            def restart_bridge(self):
+                raise AssertionError("an indeterminate probe must not restart UU")
+
+            def reinstall_known_good(self):
+                raise AssertionError("an indeterminate probe must not reinstall UU")
+
+            def runtime_context(self, first, after):
+                return {"initial_health": first, "health_after_restart": after}
+
+            def queue_task(self, kind, identity, details):
+                self.queued = (kind, identity, details)
+                return {}
+
+        with tempfile.TemporaryDirectory() as temporary, patch(
+            "uu_update_manager.time.sleep", return_value=None
+        ):
+            manager = IndeterminateManager(self.config(Path(temporary)))
+            manager.monitor_health()
+            self.assertIsNotNone(manager.queued)
+            self.assertEqual("runtime-health", manager.queued[0])
+            self.assertFalse(
+                manager.queued[2]["known_good_reinstall"]["attempted"]
+            )
 
 
 if __name__ == "__main__":
