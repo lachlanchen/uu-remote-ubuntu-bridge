@@ -1339,6 +1339,15 @@ class Manager:
         if task is None:
             self.monitor_health()
             return
+        task_model = task.get("codex_model")
+        if task_model and task_model != self.config.codex_model:
+            # Codex does not permit resuming a thread under a different model.
+            # The persisted checkout and CONTEXT.md retain the prior evidence.
+            task["thread_id"] = None
+            task["phase"] = "codex-model-reset"
+        task["codex_model"] = self.config.codex_model
+        task["codex_reasoning_effort"] = self.config.codex_reasoning_effort
+        self.save_task(task)
         next_retry = float(task.get("next_retry_epoch", 0))
         if next_retry > time.time():
             self.write_status(

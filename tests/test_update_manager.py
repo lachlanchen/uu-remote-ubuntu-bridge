@@ -82,6 +82,32 @@ class UpdateManagerTests(unittest.TestCase):
             self.assertEqual(0, task["attempts"])
             self.assertFalse(task["codex_budget"]["credits_considered"])
 
+    def test_model_change_starts_a_new_thread_with_existing_context(self) -> None:
+        class ModelChangeManager(Manager):
+            def run_codex(self, task):
+                self.assertion = task
+                return 0, {}
+
+        with tempfile.TemporaryDirectory() as temporary, patch(
+            "uu_update_manager.codex_rate_limits",
+            return_value={
+                "rateLimitsByLimitId": {"codex": {"primary": {"usedPercent": 1}}}
+            },
+        ):
+            manager = ModelChangeManager(self.config(Path(temporary)))
+            manager.save_task(
+                {
+                    "id": "model-change",
+                    "attempts": 0,
+                    "thread_id": "old-thread",
+                    "codex_model": "codex-auto-review",
+                    "codex_reasoning_effort": "medium",
+                }
+            )
+            manager.monitor()
+            self.assertIsNone(manager.assertion["thread_id"])
+            self.assertEqual("gpt-5.6-sol", manager.assertion["codex_model"])
+
     def test_release_version_prefers_full_build_identifier(self) -> None:
         self.assertEqual(
             "4.32.200.8919",
