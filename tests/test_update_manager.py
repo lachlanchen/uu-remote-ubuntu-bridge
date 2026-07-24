@@ -33,8 +33,9 @@ class UpdateManagerTests(unittest.TestCase):
             branch="main",
             track="track-rdp-broker-20260724",
             endpoint="https://example.invalid/latest?private=token",
-            codex_model="gpt-5.6-sol",
-            codex_reasoning_effort="xhigh",
+            codex_executable=Path("/opt/codex/bin/codex"),
+            codex_model="codex-auto-review",
+            codex_reasoning_effort="medium",
             codex_timeout_seconds=5400,
             codex_max_used_percent=20,
             idle_minutes=45,
@@ -100,13 +101,15 @@ class UpdateManagerTests(unittest.TestCase):
                     "id": "model-change",
                     "attempts": 0,
                     "thread_id": "old-thread",
-                    "codex_model": "codex-auto-review",
-                    "codex_reasoning_effort": "medium",
+                    "codex_model": "gpt-5.6-sol",
+                    "codex_reasoning_effort": "xhigh",
                 }
             )
             manager.monitor()
             self.assertIsNone(manager.assertion["thread_id"])
-            self.assertEqual("gpt-5.6-sol", manager.assertion["codex_model"])
+            self.assertEqual(
+                "codex-auto-review", manager.assertion["codex_model"]
+            )
 
     def test_release_version_prefers_full_build_identifier(self) -> None:
         self.assertEqual(
@@ -249,15 +252,72 @@ class UpdateManagerTests(unittest.TestCase):
                 "thread_id": None,
             }
             initial = manager.codex_command(task, resume=False)
-            self.assertIn("gpt-5.6-sol", initial)
-            self.assertIn('model_reasoning_effort="xhigh"', initial)
+            self.assertEqual("/opt/codex/bin/codex", initial[0])
+            self.assertIn("codex-auto-review", initial)
+            self.assertIn('model_reasoning_effort="medium"', initial)
             self.assertIn("workspace-write", initial)
             self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", initial)
 
             task["thread_id"] = "019f89b6-dd9d-7f11-98ef-0e7501fcae3c"
             resumed = manager.codex_command(task, resume=True)
-            self.assertEqual(["codex", "exec", "resume"], resumed[:3])
+            self.assertEqual(
+                ["/opt/codex/bin/codex", "exec", "resume"], resumed[:3]
+            )
             self.assertIn(task["thread_id"], resumed)
+
+    def test_config_requires_and_preserves_absolute_codex_executable(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config_path = root / "updater.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "repository": str(REPO_DIR),
+                        "state_dir": str(root / "state"),
+                        "remote": "origin",
+                        "branch": "main",
+                        "track": "track-direct-x11-20260724",
+                        "endpoint": "https://example.invalid/latest",
+                        "codex_executable": "/bin/true",
+                        "codex_model": "codex-auto-review",
+                        "codex_reasoning_effort": "medium",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            config = Config.read(config_path)
+            self.assertEqual(Path("/bin/true"), config.codex_executable)
+            self.assertEqual("codex-auto-review", config.codex_model)
+            self.assertEqual("medium", config.codex_reasoning_effort)
+
+            raw = json.loads(config_path.read_text(encoding="utf-8"))
+            raw.pop("codex_executable")
+            config_path.write_text(json.dumps(raw), encoding="utf-8")
+            with self.assertRaisesRegex(
+                Exception, "absolute executable Codex path"
+            ):
+                Config.read(config_path)
+
+    def test_repair_context_snapshots_complete_operational_handoff(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manager = Manager(self.config(root / "state"))
+            repair_repo = root / "repair"
+            repair_repo.mkdir()
+            task = {
+                "id": "upstream-release-fixture",
+                "kind": "upstream-release",
+                "created_at": "2026-07-24T00:00:00+00:00",
+                "base_commit": "fixture-base",
+                "details": {"version": "4.34.0.8979"},
+            }
+            context = manager.write_context(task, repair_repo)
+            handoff = context.parent / "OPERATIONAL-HANDOFF.md"
+            self.assertTrue(handoff.is_file())
+            self.assertIn("The Two Validated Host Profiles", handoff.read_text())
+            self.assertIn("OPERATIONAL-HANDOFF.md", context.read_text())
+            self.assertIn("mobile-keyboard-parity-handoff.md", context.read_text())
 
     def test_systemd_timers_survive_boot_without_touching_the_bridge(self) -> None:
         daily = (REPO_DIR / "systemd/uu-remote-update-check.timer").read_text()
@@ -275,7 +335,11 @@ class UpdateManagerTests(unittest.TestCase):
         configurator = (REPO_DIR / "scripts/configure-updater.sh").read_text()
         self.assertIn("--automatic-updates", installer)
         self.assertIn('configure-updater.sh" enable', installer)
-        self.assertIn("codex login status 2>&1", configurator)
+        self.assertIn('"$codex_executable" login status 2>&1', configurator)
+        self.assertIn('"codex_executable": codex_executable', configurator)
+        self.assertIn("--codex PATH", configurator)
+        self.assertIn("model='codex-auto-review'", configurator)
+        self.assertIn("reasoning_effort='medium'", configurator)
         self.assertIn('scripts/uu-remote"', configurator)
         self.assertIn("track-direct-x11-20260724", configurator)
         self.assertIn("track-rdp-broker-20260724", configurator)

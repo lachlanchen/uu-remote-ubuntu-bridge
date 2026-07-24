@@ -112,6 +112,20 @@ class DocumentationTests(unittest.TestCase):
         self.assertIn("does not prove", recovery)
         self.assertIn("never record a key code", recovery)
 
+    def test_automated_repair_handoff_preserves_two_host_history(self) -> None:
+        handoff = (
+            REPO_DIR / "docs/automated-repair-agent-handoff.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("OptiPlex-7090", handoff)
+        self.assertIn("Affected XRDP/Xorg workstation", handoff)
+        self.assertIn("52/52 transitions", handoff)
+        self.assertIn("route=x11-text", handoff)
+        self.assertIn("No replay after ambiguity", handoff)
+        self.assertRegex(
+            handoff, r"may not approve its own binary\s+interpretation"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

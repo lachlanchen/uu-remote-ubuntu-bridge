@@ -29,6 +29,13 @@ with `model_reasoning_effort="medium"`. Both values are explicit in
 silently inherit a later interactive default. Codex must already be logged in
 for the same Unix user.
 
+The configurator also records the absolute executable returned by
+`command -v codex`. This matters when Codex was installed under NVM: the
+systemd user manager intentionally has a smaller `PATH` than an interactive
+shell. The updater invokes that stored executable for both rate-limit queries
+and `codex exec`, instead of assuming the shell can discover it later. Use
+`--codex /absolute/path/to/codex` when selecting a different installation.
+
 The monitor queries Codex included-usage rate limits immediately before each
 automatic repair attempt. It runs Codex only when every reported window is at
 or below `codex_max_used_percent`, which defaults to 20. Purchased credits and
@@ -95,6 +102,14 @@ When the official endpoint reports a numerically newer build:
 5. Ask Codex to perform static comparison, candidate discovery, code changes,
    documentation, and proprietary-binary-free tests in that clone.
 
+Every run receives a mode-0600 snapshot of
+[Automated Repair Agent Handoff](automated-repair-agent-handoff.md). It
+preserves the two validated host profiles, the separate phone/physical
+keyboard paths, failed pacing and routing hypotheses, direct-X11 acceptance,
+restart and descriptor lessons, action boundaries, and manual approval gates.
+The generated task context requires that snapshot and the detailed project
+notes to be read before editing.
+
 An installer wrapper that cannot be extracted is not executed automatically.
 The existing `--sandbox-install` path requires a deliberate operator action
 because it creates a root-managed transient sandbox. The repair context records
@@ -113,6 +128,7 @@ Each task stores these fields atomically with mode `0600`:
 - task kind, candidate identity, selected behavior track, and base commit
 - sanitized release metadata and static staging result
 - repair checkout and context paths
+- an operational-handoff snapshot with the two-host troubleshooting history
 - Codex thread UUID, attempt count, last event time, and phase
 - JSONL events, final structured result, and test output
 
@@ -132,6 +148,11 @@ then independently runs the full unit suite. Its terminal states are:
 | `ready-for-review` | Source changed and tests pass; semantic review and live acceptance remain |
 | `no-change` | Codex found no safe source change |
 | `blocked` | Evidence, staging, tests, or human approval is still required |
+
+If a service journal reports `failed to run command 'codex'`, rerun
+`configure-updater.sh enable`. Current configurations persist the absolute
+Codex executable, so NVM-only interactive `PATH` entries are not required by
+the user service.
 
 ## State and privacy
 
