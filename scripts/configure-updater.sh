@@ -97,9 +97,9 @@ detect_track() {
         route="${route:-rdp}"
     fi
     if [[ "$route" == x11 ]]; then
-        printf 'track-direct-x11-v1\n'
+        printf 'track-direct-x11-20260724\n'
     else
-        printf 'track-rdp-broker-v1\n'
+        printf 'track-rdp-broker-20260724\n'
     fi
 }
 
@@ -163,6 +163,7 @@ value = {
     "codex_model": model,
     "codex_reasoning_effort": effort,
     "codex_timeout_seconds": 5400,
+    "codex_max_used_percent": 20,
     "idle_minutes": int(idle_minutes),
     "auto_reinstall_known_good": auto_reinstall == "true",
     "max_download_bytes": 1073741824,

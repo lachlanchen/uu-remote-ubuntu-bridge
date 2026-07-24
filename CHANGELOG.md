@@ -13,11 +13,13 @@ locked by the release manifest.
 - resumable Codex repair workspaces using explicit `gpt-5.6-sol` and `xhigh`
   settings, atomic thread/session state, structured output, bounded retry, and
   an independently rerun test suite
-- immutable `track-rdp-broker-v1` and `track-direct-x11-v1` aliases that name
+- immutable `track-rdp-broker-20260724` and `track-direct-x11-20260724` aliases that name
   the two validated input behaviors without treating them as a linear upgrade
 
 ### Security
 
+- gate automatic Codex repairs at 20% included usage, fail closed when the
+  limit cannot be verified, and ignore purchased or reset credits
 - strip expiring CDN query keys from state, cap downloads, disable repair-clone
   pushes, and keep unknown UU binaries behind static staging and human semantic
   approval

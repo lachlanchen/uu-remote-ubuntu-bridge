@@ -10,19 +10,20 @@ has validated on a particular host.
 
 | Descriptive tag | Source point | Intended host behavior |
 | --- | --- | --- |
-| `track-rdp-broker-v1` | Current union source with the saved `rdp` profile | Keep the original Wine broker and nested RDP keyboard path on a host where phone text and physical keys are already smooth |
-| `track-direct-x11-v1` | Same union source with the saved `x11` profile | Use the authenticated X11/XTEST helper for physical keys and normalized phone text on an X11/XRDP host where accepted keys are lost by the nested RDP conversion |
+| `track-rdp-broker-20260724` | Current hardened source with the saved `rdp` profile | Keep the original Wine broker and nested RDP keyboard path on a host where phone text and physical keys are already smooth |
+| `track-direct-x11-20260724` | Same hardened source with the saved `x11` profile | Use the authenticated X11/XTEST helper for physical keys and normalized phone text on an X11/XRDP host where accepted keys are lost by the nested RDP conversion |
 
 Both aliases can point to the same source commit because the validated route is
-a persistent runtime profile, not a forked implementation. The final `v1`
-belongs to each independent track. It does not mean that the
-RDP track is older or inferior to the X11 track. Both aliases are immutable;
-future incompatible changes receive a new suffix instead of moving a tag.
+a persistent runtime profile, not a forked implementation. The date names the
+source snapshot, not a ranking between the routes. Both aliases are immutable;
+future hardening receives a new date instead of moving a tag. Historical
+`track-rdp-broker-v1` and `track-direct-x11-v1` tags remain available but
+predate the restart-storm and updater safeguards.
 The semantic tags `v0.1.0` and `v0.2.0` are also retained and never rewritten.
 
 ## RDP broker track
 
-Use `track-rdp-broker-v1` when the host already passes all of these checks:
+Use `track-rdp-broker-20260724` when the host already passes all of these checks:
 
 - UU video and pointer input remain stable
 - the computer-keyboard panel handles rapid physical keys
@@ -36,7 +37,7 @@ source is still available under `v0.1.0` for explicit rollback.
 
 ## Direct X11 track
 
-Use `track-direct-x11-v1` only on a confirmed X11 or XRDP desktop after the
+Use `track-direct-x11-20260724` only on a confirmed X11 or XRDP desktop after the
 broker reports successful input but visible fast keys are still omitted. Its
 runtime profile is:
 
@@ -58,10 +59,10 @@ is clearer when handing a machine to another operator:
 
 ```bash
 # Host whose compatible RDP/broker path is already smooth
-./scripts/configure-updater.sh enable --track track-rdp-broker-v1
+./scripts/configure-updater.sh enable --track track-rdp-broker-20260724
 
 # X11/XRDP host validated with direct keyboard injection
-./scripts/configure-updater.sh enable --track track-direct-x11-v1
+./scripts/configure-updater.sh enable --track track-direct-x11-20260724
 ```
 
 The selected tag is the known-good reinstall point. The daily checker never
@@ -73,7 +74,7 @@ Changing tracks requires a visible installer command and a new acceptance test.
 Keep this record locally on each computer:
 
 ```text
-Behavior track: track-rdp-broker-v1 / track-direct-x11-v1
+Behavior track: track-rdp-broker-20260724 / track-direct-x11-20260724
 Desktop type: Wayland / Xorg / XRDP
 Saved keyboard route: rdp / x11 / auto
 Phone keyboard abcXYZ123,.!?: pass / fail

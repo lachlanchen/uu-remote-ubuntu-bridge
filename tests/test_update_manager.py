@@ -2,16 +2,25 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 REPO_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_DIR / "scripts"))
 
-from uu_update_manager import Config, Manager, release_version, sanitize_url, version_key
+from uu_update_manager import (
+    Config,
+    Manager,
+    codex_budget_from_rate_limits,
+    release_version,
+    sanitize_url,
+    version_key,
+)
 
 
 class UpdateManagerTests(unittest.TestCase):
@@ -22,15 +31,56 @@ class UpdateManagerTests(unittest.TestCase):
             state_dir=state_dir,
             remote="origin",
             branch="main",
-            track="track-rdp-broker-v1",
+            track="track-rdp-broker-20260724",
             endpoint="https://example.invalid/latest?private=token",
             codex_model="gpt-5.6-sol",
             codex_reasoning_effort="xhigh",
             codex_timeout_seconds=5400,
+            codex_max_used_percent=20,
             idle_minutes=45,
             auto_reinstall_known_good=True,
             max_download_bytes=1024 * 1024 * 1024,
         )
+
+    def test_codex_budget_ignores_credits_and_enforces_usage_cap(self) -> None:
+        payload = {
+            "rateLimitsByLimitId": {
+                "codex": {
+                    "primary": {"usedPercent": 21, "resetsAt": 2000000000},
+                    "secondary": {"usedPercent": 10, "resetsAt": 1999990000},
+                }
+            },
+            "credits": {"hasCredits": True, "balance": "9999"},
+        }
+        budget = codex_budget_from_rate_limits(payload, 20)
+        self.assertFalse(budget["allowed"])
+        self.assertFalse(budget["credits_considered"])
+        self.assertEqual(21, budget["observed_used_percent"])
+
+        payload["rateLimitsByLimitId"]["codex"]["primary"]["usedPercent"] = 20
+        self.assertTrue(codex_budget_from_rate_limits(payload, 20)["allowed"])
+
+    def test_monitor_defers_without_launching_codex_above_cap(self) -> None:
+        class DeferredManager(Manager):
+            def run_codex(self, task):
+                raise AssertionError("Codex must not run above the configured cap")
+
+        with tempfile.TemporaryDirectory() as temporary, patch(
+            "uu_update_manager.codex_rate_limits",
+            return_value={
+                "rateLimitsByLimitId": {
+                    "codex": {"primary": {"usedPercent": 25}}
+                },
+                "credits": {"hasCredits": True, "balance": "9999"},
+            },
+        ):
+            manager = DeferredManager(self.config(Path(temporary)))
+            manager.save_task({"id": "deferred", "attempts": 0})
+            manager.monitor()
+            task = json.loads(manager.pending_path.read_text(encoding="utf-8"))
+            self.assertEqual("codex-budget-deferred", task["phase"])
+            self.assertEqual(0, task["attempts"])
+            self.assertFalse(task["codex_budget"]["credits_considered"])
 
     def test_release_version_prefers_full_build_identifier(self) -> None:
         self.assertEqual(
@@ -201,8 +251,44 @@ class UpdateManagerTests(unittest.TestCase):
         self.assertIn('configure-updater.sh" enable', installer)
         self.assertIn("codex login status 2>&1", configurator)
         self.assertIn('scripts/uu-remote"', configurator)
-        self.assertIn("track-direct-x11-v1", configurator)
-        self.assertIn("track-rdp-broker-v1", configurator)
+        self.assertIn("track-direct-x11-20260724", configurator)
+        self.assertIn("track-rdp-broker-20260724", configurator)
+
+    def test_health_detects_restart_storm_and_wrong_rdp_listener(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = root / "home"
+            environment = home / ".config/uu-remote-bridge/environment"
+            manifest = (
+                home
+                / ".local/share/wineprefixes/uu-remote/compat/release-manifest.json"
+            )
+            environment.parent.mkdir(parents=True)
+            environment.write_text("UURB_RDP_PORT=3391\n", encoding="utf-8")
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text("{}\n", encoding="utf-8")
+            responses = [
+                subprocess.CompletedProcess(
+                    [], 0, "ActiveState=active\nNRestarts=64\n", ""
+                ),
+                subprocess.CompletedProcess([], 0, "101\n", ""),
+                subprocess.CompletedProcess([], 0, "102\n", ""),
+                subprocess.CompletedProcess([], 0, "103\n", ""),
+                subprocess.CompletedProcess(
+                    [], 0, 'LISTEN 0 10 *:3391 *:* users:(("gnome-remote-de",pid=99,fd=15))\n', ""
+                ),
+            ]
+
+            with patch.object(Path, "home", return_value=home), patch(
+                "uu_update_manager.command_output", side_effect=responses
+            ):
+                health = Manager(self.config(root / "state")).health()
+
+            self.assertFalse(health["healthy"])
+            self.assertIn("bridge-restart-storm", health["issues"])
+            self.assertIn("rdp-listener-owner-mismatch", health["issues"])
+            self.assertEqual(64, health["restart_count"])
+            self.assertEqual(3391, health["rdp_port"])
 
 
 if __name__ == "__main__":

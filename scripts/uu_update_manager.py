@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import re
+import selectors
 import shutil
 import subprocess
 import sys
@@ -126,6 +127,120 @@ def command_output(
     return result
 
 
+def codex_budget_from_rate_limits(
+    payload: dict[str, Any], max_used_percent: int
+) -> dict[str, Any]:
+    limits = payload.get("rateLimitsByLimitId")
+    selected: dict[str, Any] | None = None
+    if isinstance(limits, dict):
+        candidate = limits.get("codex")
+        if isinstance(candidate, dict):
+            selected = candidate
+    if selected is None and isinstance(payload.get("rateLimits"), dict):
+        selected = payload["rateLimits"]
+    if selected is None:
+        raise UpdateError("Codex did not report an included-usage rate limit")
+
+    observed: list[float] = []
+    resets: list[int] = []
+    for key in ("primary", "secondary"):
+        window = selected.get(key)
+        if not isinstance(window, dict):
+            continue
+        value = window.get("usedPercent")
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            observed.append(float(value))
+        reset_at = window.get("resetsAt")
+        if isinstance(reset_at, (int, float)) and not isinstance(reset_at, bool):
+            resets.append(int(reset_at))
+    if not observed:
+        raise UpdateError("Codex did not report included-usage percentages")
+
+    reached = selected.get("rateLimitReachedType") is not None
+    spend_reached = selected.get("spendControlReached") is True
+    highest = max(observed)
+    return {
+        "verified": True,
+        "allowed": highest <= max_used_percent and not reached and not spend_reached,
+        "limit_percent": max_used_percent,
+        "observed_used_percent": highest,
+        "resets_at": max(resets) if resets else None,
+        "credits_considered": False,
+    }
+
+
+def codex_rate_limits(timeout: int = 15) -> dict[str, Any]:
+    try:
+        process = subprocess.Popen(
+            ["codex", "app-server", "--stdio"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            bufsize=1,
+        )
+    except OSError as error:
+        raise UpdateError(f"cannot start Codex rate-limit service: {error}") from error
+    assert process.stdin is not None
+    assert process.stdout is not None
+    selector = selectors.DefaultSelector()
+    selector.register(process.stdout, selectors.EVENT_READ)
+    deadline = time.monotonic() + timeout
+    try:
+        initialize = {
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "clientInfo": {
+                    "name": "uu-remote-update-manager",
+                    "version": "1",
+                }
+            },
+        }
+        process.stdin.write(json.dumps(initialize) + "\n")
+        process.stdin.flush()
+        initialized = False
+        requested = False
+        while time.monotonic() < deadline:
+            remaining = max(0.1, deadline - time.monotonic())
+            if not selector.select(remaining):
+                continue
+            line = process.stdout.readline()
+            if not line:
+                break
+            try:
+                message = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if message.get("id") == 1 and "result" in message and not initialized:
+                process.stdin.write(json.dumps({"method": "initialized"}) + "\n")
+                request = {"id": 2, "method": "account/rateLimits/read"}
+                process.stdin.write(json.dumps(request) + "\n")
+                process.stdin.flush()
+                initialized = True
+                requested = True
+            elif message.get("id") == 2:
+                result = message.get("result")
+                if isinstance(result, dict):
+                    return result
+                raise UpdateError("Codex returned an invalid rate-limit response")
+        detail = "request timed out" if requested else "initialization failed"
+        raise UpdateError(f"Codex rate-limit {detail}")
+    except (OSError, BrokenPipeError) as error:
+        raise UpdateError(f"cannot query Codex rate limits: {error}") from error
+    finally:
+        selector.close()
+        with contextlib.suppress(OSError):
+            process.stdin.close()
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=3)
+
+
 @dataclass(frozen=True)
 class Config:
     path: Path
@@ -138,6 +253,7 @@ class Config:
     codex_model: str
     codex_reasoning_effort: str
     codex_timeout_seconds: int
+    codex_max_used_percent: int
     idle_minutes: int
     auto_reinstall_known_good: bool
     max_download_bytes: int
@@ -158,17 +274,21 @@ class Config:
         effort = str(raw.get("codex_reasoning_effort", "")).strip()
         if not model or not effort:
             raise UpdateError("the updater needs a Codex model and reasoning effort")
+        max_used_percent = int(raw.get("codex_max_used_percent", 20))
+        if not 0 <= max_used_percent <= 100:
+            raise UpdateError("codex_max_used_percent must be between 0 and 100")
         return cls(
             path=path,
             repository=repository,
             state_dir=state_dir,
             remote=str(raw.get("remote", "origin")),
             branch=str(raw.get("branch", "main")),
-            track=str(raw.get("track", "track-rdp-broker-v1")),
+            track=str(raw.get("track", "track-rdp-broker-20260724")),
             endpoint=str(raw.get("endpoint", DEFAULT_ENDPOINT)),
             codex_model=model,
             codex_reasoning_effort=effort,
             codex_timeout_seconds=max(300, int(raw.get("codex_timeout_seconds", 5400))),
+            codex_max_used_percent=max_used_percent,
             idle_minutes=max(5, int(raw.get("idle_minutes", 45))),
             auto_reinstall_known_good=bool(raw.get("auto_reinstall_known_good", True)),
             max_download_bytes=max(
@@ -673,11 +793,29 @@ class Manager:
     def health(self) -> dict[str, Any]:
         issues: list[str] = []
         service = command_output(
-            ["systemctl", "--user", "is-active", "uu-remote-bridge.service"],
+            [
+                "systemctl",
+                "--user",
+                "show",
+                "uu-remote-bridge.service",
+                "--property=ActiveState",
+                "--property=NRestarts",
+            ],
             timeout=15,
         )
-        if service.stdout.strip() != "active":
+        service_properties = dict(
+            line.split("=", 1)
+            for line in service.stdout.splitlines()
+            if "=" in line
+        )
+        if service_properties.get("ActiveState") != "active":
             issues.append("bridge-service-inactive")
+        try:
+            restart_count = int(service_properties.get("NRestarts", "0"))
+        except ValueError:
+            restart_count = 0
+        if restart_count >= 3:
+            issues.append("bridge-restart-storm")
         for label, pattern in (
             ("uu-server-missing", r"GameViewerServer\.exe"),
             ("freerdp-relay-missing", r"sdl-freerdp\.exe"),
@@ -687,6 +825,36 @@ class Manager:
             )
             if process.returncode != 0:
                 issues.append(label)
+
+        bridge_environment = Path.home() / ".config/uu-remote-bridge/environment"
+        rdp_port = "3390"
+        if bridge_environment.is_file():
+            for line in bridge_environment.read_text(encoding="utf-8").splitlines():
+                if line.startswith("UURB_RDP_PORT="):
+                    candidate = line.split("=", 1)[1].strip()
+                    if candidate.isdigit() and 1024 <= int(candidate) <= 65535:
+                        rdp_port = candidate
+        relay = command_output(
+            [
+                "pgrep",
+                "-o",
+                "-u",
+                str(os.getuid()),
+                "-f",
+                f"gnome-remote-desktop-daemon --rdp-port {rdp_port}",
+            ],
+            timeout=15,
+        )
+        relay_pid = relay.stdout.strip()
+        if relay.returncode != 0 or not relay_pid.isdigit():
+            issues.append("gnome-rdp-relay-missing")
+        else:
+            listener = command_output(
+                ["ss", "-H", "-ltnp", f"sport = :{rdp_port}"], timeout=15
+            )
+            if f"pid={relay_pid}," not in listener.stdout:
+                issues.append("rdp-listener-owner-mismatch")
+
         manifest = (
             Path.home()
             / ".local/share/wineprefixes/uu-remote/compat/release-manifest.json"
@@ -697,6 +865,8 @@ class Manager:
             "checked_at": utc_now(),
             "healthy": not issues,
             "issues": issues,
+            "restart_count": restart_count,
+            "rdp_port": int(rdp_port),
         }
 
     def restart_bridge(self) -> dict[str, Any]:
@@ -1177,6 +1347,41 @@ class Manager:
                 next_retry_at=datetime.fromtimestamp(next_retry, timezone.utc).isoformat(),
             )
             return
+        try:
+            budget = codex_budget_from_rate_limits(
+                codex_rate_limits(), self.config.codex_max_used_percent
+            )
+        except UpdateError as error:
+            budget = {
+                "verified": False,
+                "allowed": False,
+                "limit_percent": self.config.codex_max_used_percent,
+                "credits_considered": False,
+                "error": str(error),
+            }
+        if not budget["allowed"]:
+            reset_at = budget.get("resets_at")
+            retry = (
+                max(time.time() + 3600, float(reset_at) + 60)
+                if isinstance(reset_at, (int, float))
+                else time.time() + 3600
+            )
+            task["phase"] = "codex-budget-deferred"
+            task["codex_budget"] = budget
+            task["next_retry_epoch"] = retry
+            self.save_task(task)
+            self.write_status(
+                "codex-budget-deferred",
+                active_task=task["id"],
+                message=(
+                    "Codex included usage is unavailable or above the automation "
+                    "cap; credits are ignored"
+                ),
+                codex_budget=budget,
+                next_retry_at=datetime.fromtimestamp(retry, timezone.utc).isoformat(),
+            )
+            return
+        task["codex_budget"] = budget
         returncode, result = self.run_codex(task)
         if returncode == 0 and result:
             self.finish_task(task, result)

@@ -13,12 +13,12 @@ For an existing installation, select its validated input behavior track:
 cd ~/Projects/uu-remote-ubuntu-bridge
 git fetch --tags origin
 ./scripts/configure-updater.sh enable \
-  --track track-rdp-broker-v1 \
+  --track track-rdp-broker-20260724 \
   --model gpt-5.6-sol \
   --reasoning-effort xhigh
 ```
 
-Use `track-direct-x11-v1` on a computer already validated with the direct X11
+Use `track-direct-x11-20260724` on a computer already validated with the direct X11
 route. A fresh installation can opt in with `./install.sh
 --automatic-updates`; the configurator derives the track from the saved
 keyboard route.
@@ -28,6 +28,13 @@ The installed Codex CLI names the requested configuration `gpt-5.6-sol` with
 `~/.config/uu-remote-bridge/updater.json`, so a background service does not
 silently inherit a later interactive default. Codex must already be logged in
 for the same Unix user.
+
+The monitor queries Codex included-usage rate limits immediately before each
+automatic repair attempt. It runs Codex only when every reported window is at
+or below `codex_max_used_percent`, which defaults to 20. Purchased credits and
+rate-limit reset credits are ignored and never consumed. If the local Codex
+service cannot verify usage, the repair is deferred for at least one hour
+without consuming an attempt.
 
 ## Services and reboot behavior
 

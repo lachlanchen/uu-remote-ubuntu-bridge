@@ -56,8 +56,8 @@ specific machine:
 
 | Behavior tag | Use when |
 | --- | --- |
-| `track-rdp-broker-v1` | The compatible Wine broker and RDP keyboard route are already smooth |
-| `track-direct-x11-v1` | An X11/XRDP host needs the authenticated direct keyboard route |
+| `track-rdp-broker-20260724` | The compatible Wine broker and RDP keyboard route are already smooth |
+| `track-direct-x11-20260724` | An X11/XRDP host needs the authenticated direct keyboard route |
 
 These aliases do not rank one path above the other and the updater never
 switches between them automatically. Read the [behavior-track handoff](docs/release-tracks.md).
@@ -260,15 +260,18 @@ reboot-resumable Codex repair workspace:
 
 ```bash
 ./scripts/configure-updater.sh enable \
-  --track track-rdp-broker-v1 \
+  --track track-rdp-broker-20260724 \
   --model gpt-5.6-sol --reasoning-effort xhigh
 ```
 
-Use `track-direct-x11-v1` only on a host already validated with the direct X11
+Use `track-direct-x11-20260724` only on a host already validated with the direct X11
 route. Checks never restart a healthy relay. Unknown installers are downloaded
 and statically staged outside the Wine prefix; Codex can prepare a reviewable
 repair but cannot approve or deploy its own binary patch. Interrupted work
 persists its thread ID and resumes after reboot with bounded backoff.
+Before an automatic Codex run, the updater verifies that included usage is at
+most 20%. It fails closed when usage is unavailable and never considers or
+consumes purchased credits.
 
 [Read the complete automatic-maintenance and handoff procedure](docs/automatic-updates.md).
 
