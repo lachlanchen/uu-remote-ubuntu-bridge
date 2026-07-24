@@ -14,8 +14,8 @@ cd ~/Projects/uu-remote-ubuntu-bridge
 git fetch --tags origin
 ./scripts/configure-updater.sh enable \
   --track track-rdp-broker-20260724 \
-  --model gpt-5.6-sol \
-  --reasoning-effort xhigh
+  --model codex-auto-review \
+  --reasoning-effort medium
 ```
 
 Use `track-direct-x11-20260724` on a computer already validated with the direct X11
@@ -23,8 +23,8 @@ route. A fresh installation can opt in with `./install.sh
 --automatic-updates`; the configurator derives the track from the saved
 keyboard route.
 
-The installed Codex CLI names the requested configuration `gpt-5.6-sol` with
-`model_reasoning_effort="xhigh"`. Both values are explicit in
+The installed Codex CLI names the requested configuration `codex-auto-review`
+with `model_reasoning_effort="medium"`. Both values are explicit in
 `~/.config/uu-remote-bridge/updater.json`, so a background service does not
 silently inherit a later interactive default. Codex must already be logged in
 for the same Unix user.
@@ -157,7 +157,7 @@ git status --short
 git pull --ff-only origin main
 git fetch --tags origin
 ./scripts/configure-updater.sh enable --track TRACK_NAME \
-  --model gpt-5.6-sol --reasoning-effort xhigh
+  --model codex-auto-review --reasoning-effort medium
 ./scripts/configure-updater.sh status
 ```
 

@@ -261,7 +261,7 @@ reboot-resumable Codex repair workspace:
 ```bash
 ./scripts/configure-updater.sh enable \
   --track track-rdp-broker-20260724 \
-  --model gpt-5.6-sol --reasoning-effort xhigh
+  --model codex-auto-review --reasoning-effort medium
 ```
 
 Use `track-direct-x11-20260724` only on a host already validated with the direct X11

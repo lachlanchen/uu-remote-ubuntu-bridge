@@ -8,8 +8,8 @@ config_dir="$HOME/.config/uu-remote-bridge"
 config_file="$config_dir/updater.json"
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/uu-remote-updater"
 unit_dir="$HOME/.config/systemd/user"
-model='gpt-5.6-sol'
-reasoning_effort='xhigh'
+model='codex-auto-review'
+reasoning_effort='medium'
 track=''
 branch='main'
 idle_minutes=45
@@ -27,9 +27,9 @@ Enable options:
   --repo PATH            source repository used for audits and recovery
   --track TAG            known-good behavior track to reinstall on failure
   --branch NAME          repair base branch (default: main)
-  --model MODEL          Codex model (default: gpt-5.6-sol)
+  --model MODEL          Codex model (default: codex-auto-review)
   --reasoning-effort EFFORT
-                         Codex reasoning effort (default: xhigh)
+                         Codex reasoning effort (default: medium)
   --idle-minutes N       documented maintenance idle window (default: 45)
   --no-auto-reinstall    restart and diagnose, but do not reinstall the track
 EOF

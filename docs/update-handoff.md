@@ -162,7 +162,7 @@ machine's validated behavior tag. This does not restart the working relay:
 
 ```bash
 ./scripts/configure-updater.sh enable --track TRACK_NAME \
-  --model gpt-5.6-sol --reasoning-effort xhigh
+  --model codex-auto-review --reasoning-effort medium
 ./scripts/configure-updater.sh status
 ```
 

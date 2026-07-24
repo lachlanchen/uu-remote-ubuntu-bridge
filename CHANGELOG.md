@@ -37,6 +37,9 @@ locked by the release manifest.
 
 ### Fixed
 
+- use the installed `codex-auto-review` model at medium reasoning effort for
+  resumable repair tasks by default, while preserving explicit overrides
+
 - wait for the actual FreeRDP relay window after Wine's short-lived Unix
   launcher exits, verify that the spawned GNOME daemon owns its configured
   listener instead of accepting another RDP service on the same port, and
