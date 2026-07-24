@@ -165,10 +165,19 @@ installers, extracted executables, Codex event logs, local journals, account
 state, and host-specific evidence remain ignored and outside Git.
 
 The Codex service uses `workspace-write`, `approval_policy="never"`,
-`NoNewPrivileges=yes`, private temporary files, a read-only system view, and a
-disabled Git push URL in the repair clone. Network access remains available
-because Codex authentication requires it. These controls reduce accidental
-reach; they are not a security boundary equivalent to a separate VM.
+`NoNewPrivileges=yes`, and a disabled Git push URL in the repair clone.
+Network access remains available because Codex authentication requires it.
+These controls reduce accidental reach; they are not a security boundary
+equivalent to a separate VM.
+
+The user service deliberately does not also request systemd mount-namespace
+features such as `PrivateTmp=`, `ProtectSystem=`, `ProtectKernelTunables=`, or
+`ProtectControlGroups=`. On Ubuntu 24.04 with restricted user namespaces,
+those user-manager options first place the updater inside AppArmor's
+`unprivileged_userns` profile. A nested Bubblewrap user namespace then fails,
+so Codex cannot provide `workspace-write`. The updater keeps the compatible
+service hardening and lets the Codex sandbox establish the filesystem
+boundary itself.
 
 On Ubuntu 24.04, `workspace-write` also needs Ubuntu's AppArmor profile for
 Bubblewrap. If status reports `codex-sandbox-deferred`, install and enable only
@@ -183,6 +192,20 @@ sudo install -o root -g root -m 0644 \
 sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
 uu-remote update retry
 ```
+
+Confirm both layers before retrying:
+
+```bash
+systemd-run --user --wait --pipe --collect \
+  --property=NoNewPrivileges=yes \
+  /usr/bin/bwrap --die-with-parent --unshare-user --uid 0 --gid 0 \
+  --ro-bind / / /bin/true
+systemctl --user cat uu-remote-repair-monitor.service
+```
+
+The probe must exit successfully, and the service must not contain one of the
+systemd mount-namespace options listed above. Do not disable Ubuntu's global
+unprivileged-user-namespace restriction.
 
 `retry` keeps the private evidence and repair checkout, clears the unusable
 Codex thread, and starts a new thread on the next monitor run. It refuses
