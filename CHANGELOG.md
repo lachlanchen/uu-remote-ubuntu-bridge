@@ -52,6 +52,13 @@ locked by the release manifest.
   semantic review and controller acceptance
 - document the recurring Wine `devcon` connection stall and its reversible
   live mitigation as evidence for a permanent rollback-safe fix
+- query the persistent user-manager bus, accept any matching GNOME RDP process
+  that actually owns the listener, and distinguish a recent restart storm from
+  an old cumulative restart count
+- make known-good live reinstallation opt-in and refuse live recovery when the
+  service-manager probe itself is indeterminate
+- import operator-authorized networkless staging on retry only after checking
+  its method and all recorded binary hashes
 
 - wait for the actual FreeRDP relay window after Wine's short-lived Unix
   launcher exits, verify that the spawned GNOME daemon owns its configured

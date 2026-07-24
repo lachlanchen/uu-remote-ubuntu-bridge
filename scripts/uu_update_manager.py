@@ -134,6 +134,18 @@ def command_output(
     return result
 
 
+def systemctl_user_command(*arguments: str) -> list[str]:
+    """Address the persistent user manager instead of an RDP session bus."""
+    runtime_dir = Path(f"/run/user/{os.getuid()}")
+    return [
+        "/usr/bin/env",
+        f"DBUS_SESSION_BUS_ADDRESS=unix:path={runtime_dir}/bus",
+        "/usr/bin/systemctl",
+        "--user",
+        *arguments,
+    ]
+
+
 def workspace_sandbox_probe() -> dict[str, Any]:
     """Prove that Codex's Bubblewrap user namespace can start on this host."""
     bwrap = Path("/usr/bin/bwrap")
@@ -345,7 +357,7 @@ class Config:
             codex_timeout_seconds=max(300, int(raw.get("codex_timeout_seconds", 5400))),
             codex_max_used_percent=max_used_percent,
             idle_minutes=max(5, int(raw.get("idle_minutes", 45))),
-            auto_reinstall_known_good=bool(raw.get("auto_reinstall_known_good", True)),
+            auto_reinstall_known_good=bool(raw.get("auto_reinstall_known_good", False)),
             max_download_bytes=max(
                 1024 * 1024,
                 int(raw.get("max_download_bytes", 1024 * 1024 * 1024)),
@@ -863,14 +875,13 @@ class Manager:
     def health(self) -> dict[str, Any]:
         issues: list[str] = []
         service = command_output(
-            [
-                "systemctl",
-                "--user",
+            systemctl_user_command(
                 "show",
                 "uu-remote-bridge.service",
                 "--property=ActiveState",
                 "--property=NRestarts",
-            ],
+                "--property=ActiveEnterTimestampMonotonic",
+            ),
             timeout=15,
         )
         service_properties = dict(
@@ -878,13 +889,27 @@ class Manager:
             for line in service.stdout.splitlines()
             if "=" in line
         )
-        if service_properties.get("ActiveState") != "active":
+        if service.returncode != 0:
+            issues.append("bridge-service-query-failed")
+        elif service_properties.get("ActiveState") != "active":
             issues.append("bridge-service-inactive")
         try:
             restart_count = int(service_properties.get("NRestarts", "0"))
         except ValueError:
             restart_count = 0
-        if restart_count >= 3:
+        try:
+            active_since = (
+                int(service_properties.get("ActiveEnterTimestampMonotonic", "0"))
+                / 1_000_000
+            )
+        except ValueError:
+            active_since = 0
+        active_age_seconds = (
+            max(0.0, time.monotonic() - active_since) if active_since else None
+        )
+        if restart_count >= 3 and (
+            active_age_seconds is None or active_age_seconds <= 15 * 60
+        ):
             issues.append("bridge-restart-storm")
         for label, pattern in (
             ("uu-server-missing", r"GameViewerServer\.exe"),
@@ -907,7 +932,6 @@ class Manager:
         relay = command_output(
             [
                 "pgrep",
-                "-o",
                 "-u",
                 str(os.getuid()),
                 "-f",
@@ -915,14 +939,18 @@ class Manager:
             ],
             timeout=15,
         )
-        relay_pid = relay.stdout.strip()
-        if relay.returncode != 0 or not relay_pid.isdigit():
+        relay_pids = {
+            line.strip()
+            for line in relay.stdout.splitlines()
+            if line.strip().isdigit()
+        }
+        if relay.returncode != 0 or not relay_pids:
             issues.append("gnome-rdp-relay-missing")
         else:
             listener = command_output(
                 ["ss", "-H", "-ltnp", f"sport = :{rdp_port}"], timeout=15
             )
-            if f"pid={relay_pid}," not in listener.stdout:
+            if not any(f"pid={pid}," in listener.stdout for pid in relay_pids):
                 issues.append("rdp-listener-owner-mismatch")
 
         manifest = (
@@ -936,12 +964,13 @@ class Manager:
             "healthy": not issues,
             "issues": issues,
             "restart_count": restart_count,
+            "active_age_seconds": active_age_seconds,
             "rdp_port": int(rdp_port),
         }
 
     def restart_bridge(self) -> dict[str, Any]:
         result = command_output(
-            ["systemctl", "--user", "restart", "uu-remote-bridge.service"],
+            systemctl_user_command("restart", "uu-remote-bridge.service"),
             timeout=90,
         )
         for _ in range(24):
@@ -1113,7 +1142,7 @@ class Manager:
         if not isinstance(entries, list):
             raise UpdateError("runtime rollback snapshot is malformed")
         command_output(
-            ["systemctl", "--user", "stop", "uu-remote-bridge.service"], timeout=90
+            systemctl_user_command("stop", "uu-remote-bridge.service"), timeout=90
         )
         home = Path.home().resolve()
         for entry in entries:
@@ -1126,9 +1155,9 @@ class Manager:
             self.remove_snapshot_item(destination)
             if entry.get("existed") is True:
                 self.copy_snapshot_item(snapshot / "files" / relative, destination)
-        command_output(["systemctl", "--user", "daemon-reload"], timeout=30)
+        command_output(systemctl_user_command("daemon-reload"), timeout=30)
         start = command_output(
-            ["systemctl", "--user", "start", "uu-remote-bridge.service"], timeout=90
+            systemctl_user_command("start", "uu-remote-bridge.service"), timeout=90
         )
         for _ in range(24):
             health = self.health()
@@ -1174,6 +1203,15 @@ class Manager:
         if confirmed["healthy"]:
             self.write_status("healthy", bridge_health=confirmed, message="transient issue cleared")
             return
+        if "bridge-service-query-failed" in confirmed["issues"]:
+            details = self.runtime_context(first, confirmed)
+            details["known_good_reinstall"] = {
+                "attempted": False,
+                "reason": "the service-manager probe was indeterminate",
+            }
+            identity = datetime.now().strftime("%Y%m%d-%H%M")
+            self.queue_task("runtime-health", identity, details)
+            return
         restarted = self.restart_bridge()
         if restarted["health"]["healthy"]:
             self.write_status(
@@ -1207,6 +1245,48 @@ class Manager:
             return None
         return load_json(self.pending_path)
 
+    def refresh_operator_staging(self, task: dict[str, Any]) -> None:
+        if task.get("kind") != "upstream-release":
+            return
+        task_dir = self.tasks_dir / str(task["id"])
+        stage_dir = task_dir / "stage-sandbox"
+        record_path = stage_dir / "SHA256"
+        server = stage_dir / "GameViewerServer.exe"
+        healthd = stage_dir / "GameViewerHealthd.exe"
+        if not stage_dir.exists():
+            return
+        if not all(path.is_file() for path in (record_path, server, healthd)):
+            raise UpdateError(
+                f"operator staging is incomplete for task {task['id']}"
+            )
+        record = dict(
+            line.split("=", 1)
+            for line in record_path.read_text(encoding="utf-8").splitlines()
+            if "=" in line
+        )
+        observed = task.get("details", {}).get("observed_release", {})
+        expected_installer = str(observed.get("installer_sha256", ""))
+        if (
+            record.get("staging_method") != "systemd-sandbox"
+            or not re.fullmatch(r"[0-9a-f]{64}", expected_installer)
+            or record.get("installer_sha256") != expected_installer
+            or record.get("server_sha256") != sha256_file(server)
+            or record.get("healthd_sha256") != sha256_file(healthd)
+        ):
+            raise UpdateError(
+                f"operator staging failed hash or sandbox validation for {task['id']}"
+            )
+        task["details"]["staging"] = {
+            "returncode": 0,
+            "stage_dir": str(stage_dir),
+            "server_available": True,
+            "healthd_available": True,
+            "server_sha256": record["server_sha256"],
+            "healthd_sha256": record["healthd_sha256"],
+            "sandbox_executed": True,
+            "operator_authorized": True,
+        }
+
     def retry_task(self) -> None:
         task = self.load_pending()
         if task is None:
@@ -1230,6 +1310,7 @@ class Manager:
         task["thread_id"] = None
         task["retry_count"] = int(task.get("retry_count", 0)) + 1
         task["manually_retried_at"] = utc_now()
+        self.refresh_operator_staging(task)
         for key in (
             "completed_at",
             "last_returncode",
