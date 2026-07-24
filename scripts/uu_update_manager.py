@@ -35,6 +35,15 @@ RETRYABLE_PHASES = {
     "codex-sandbox-deferred",
     "repair-waiting",
 }
+REQUIRED_PROMOTION_ACCEPTANCE_FLAGS = (
+    "disposable_prefix",
+    "controller_input",
+    "reconnect",
+    "service_restart",
+    "login_preservation",
+)
+MINIMUM_PROMOTION_STABILITY_SECONDS = 270
+MAXIMUM_PROMOTION_STABILITY_SECONDS = 1800
 
 
 class UpdateError(RuntimeError):
@@ -81,6 +90,78 @@ def version_key(value: str) -> tuple[int, ...]:
         raise UpdateError(f"unsupported UU version format: {value}")
     parts = tuple(int(part) for part in value.split("."))
     return parts + (0,) * (4 - len(parts))
+
+
+def promotion_acceptance(raw: dict[str, Any]) -> dict[str, Any]:
+    acceptance = raw.get("acceptance")
+    if not isinstance(acceptance, dict) or acceptance.get("schema_version") != 1:
+        return {
+            "eligible": False,
+            "reason": "no versioned maintainer acceptance record",
+        }
+    missing = [
+        field
+        for field in REQUIRED_PROMOTION_ACCEPTANCE_FLAGS
+        if acceptance.get(field) is not True
+    ]
+    if missing:
+        return {
+            "eligible": False,
+            "reason": "incomplete acceptance: " + ", ".join(sorted(missing)),
+        }
+    stability = acceptance.get("stability_seconds")
+    if (
+        not isinstance(stability, int)
+        or isinstance(stability, bool)
+        or stability < MINIMUM_PROMOTION_STABILITY_SECONDS
+        or stability > MAXIMUM_PROMOTION_STABILITY_SECONDS
+    ):
+        return {
+            "eligible": False,
+            "reason": (
+                "acceptance stability is outside the guarded "
+                f"{MINIMUM_PROMOTION_STABILITY_SECONDS}-"
+                f"{MAXIMUM_PROMOTION_STABILITY_SECONDS} second range"
+            ),
+        }
+    installer = raw.get("installer")
+    server = raw.get("server")
+    if not isinstance(installer, dict) or not isinstance(server, dict):
+        return {"eligible": False, "reason": "manifest binary metadata is incomplete"}
+    if acceptance.get("installer_sha256") != installer.get("sha256"):
+        return {
+            "eligible": False,
+            "reason": "acceptance is not bound to the exact installer hash",
+        }
+    if acceptance.get("patched_server_sha256") != server.get("patched_sha256"):
+        return {
+            "eligible": False,
+            "reason": "acceptance is not bound to the patched server hash",
+        }
+    evidence = acceptance.get("evidence")
+    if (
+        not isinstance(evidence, str)
+        or not evidence.strip()
+        or Path(evidence).is_absolute()
+        or ".." in Path(evidence).parts
+    ):
+        return {
+            "eligible": False,
+            "reason": "acceptance evidence must be a repository-relative path",
+        }
+    for field in ("accepted_at", "accepted_by"):
+        value = acceptance.get(field)
+        if not isinstance(value, str) or not value.strip():
+            return {
+                "eligible": False,
+                "reason": f"acceptance is missing {field}",
+            }
+    return {
+        "eligible": True,
+        "reason": "all maintainer acceptance and hash-binding gates passed",
+        "stability_seconds": stability,
+        "evidence": evidence,
+    }
 
 
 def release_version(*values: str) -> str:
@@ -310,6 +391,7 @@ class Config:
     codex_max_used_percent: int
     idle_minutes: int
     auto_reinstall_known_good: bool
+    auto_promote_accepted_release: bool
     max_download_bytes: int
 
     @classmethod
@@ -343,6 +425,12 @@ class Config:
         max_used_percent = int(raw.get("codex_max_used_percent", 20))
         if not 0 <= max_used_percent <= 100:
             raise UpdateError("codex_max_used_percent must be between 0 and 100")
+        auto_reinstall = raw.get("auto_reinstall_known_good", False)
+        auto_promote = raw.get("auto_promote_accepted_release", False)
+        if not isinstance(auto_reinstall, bool) or not isinstance(
+            auto_promote, bool
+        ):
+            raise UpdateError("automatic updater action flags must be JSON booleans")
         return cls(
             path=path,
             repository=repository,
@@ -357,7 +445,8 @@ class Config:
             codex_timeout_seconds=max(300, int(raw.get("codex_timeout_seconds", 5400))),
             codex_max_used_percent=max_used_percent,
             idle_minutes=max(5, int(raw.get("idle_minutes", 45))),
-            auto_reinstall_known_good=bool(raw.get("auto_reinstall_known_good", False)),
+            auto_reinstall_known_good=auto_reinstall,
+            auto_promote_accepted_release=auto_promote,
             max_download_bytes=max(
                 1024 * 1024,
                 int(raw.get("max_download_bytes", 1024 * 1024 * 1024)),
@@ -371,6 +460,9 @@ class Manager:
         self.state_dir = config.state_dir
         self.status_path = self.state_dir / "status.json"
         self.pending_path = self.state_dir / "pending.json"
+        self.promotion_marker_path = (
+            self.state_dir / "promotion-in-progress.json"
+        )
         self.tasks_dir = self.state_dir / "tasks"
         self.downloads_dir = self.state_dir / "downloads"
         self.state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -422,6 +514,7 @@ class Manager:
     def approved_releases(self) -> list[dict[str, Any]]:
         releases: list[dict[str, Any]] = []
         reference = f"refs/remotes/{self.config.remote}/{self.config.branch}"
+        source_commit = self.remote_base_commit()
         listing = command_output(
             ["git", "ls-tree", "-r", "--name-only", reference, "--", "patches"],
             cwd=self.config.repository,
@@ -451,11 +544,33 @@ class Manager:
                     continue
                 version = str(raw["version"])
                 version_key(version)
+                acceptance = promotion_acceptance(raw)
+                if acceptance["eligible"]:
+                    evidence = str(acceptance["evidence"])
+                    evidence_check = command_output(
+                        ["git", "cat-file", "-e", f"{reference}:{evidence}"],
+                        cwd=self.config.repository,
+                        timeout=30,
+                    )
+                    if evidence_check.returncode != 0:
+                        acceptance = {
+                            "eligible": False,
+                            "reason": (
+                                "acceptance evidence is absent from the "
+                                "pinned repository commit"
+                            ),
+                        }
                 releases.append(
                     {
                         "version": version,
                         "installer_sha256": str(installer["sha256"]),
                         "manifest": f"{reference}:{relative}",
+                        "manifest_path": relative,
+                        "manifest_sha256": hashlib.sha256(
+                            rendered.encode("utf-8")
+                        ).hexdigest(),
+                        "source_commit": source_commit,
+                        "promotion_acceptance": acceptance,
                     }
                 )
             except (json.JSONDecodeError, KeyError, TypeError, ValueError, UpdateError):
@@ -626,6 +741,172 @@ class Manager:
         )
         return repair_repo, base
 
+    def create_promotion_checkout(
+        self, task_dir: Path, source_commit: str
+    ) -> Path:
+        promotion_repo = task_dir / "promotion-repo"
+        if promotion_repo.exists():
+            head = command_output(
+                ["git", "rev-parse", "HEAD"],
+                cwd=promotion_repo,
+                timeout=30,
+                check=True,
+            ).stdout.strip()
+            if head != source_commit:
+                raise UpdateError(
+                    "retained promotion checkout differs from its pinned commit"
+                )
+            return promotion_repo
+        command_output(
+            [
+                "git",
+                "clone",
+                "--quiet",
+                "--no-hardlinks",
+                str(self.config.repository),
+                str(promotion_repo),
+            ],
+            timeout=300,
+            check=True,
+        )
+        command_output(
+            ["git", "checkout", "--quiet", "--detach", source_commit],
+            cwd=promotion_repo,
+            timeout=60,
+            check=True,
+        )
+        command_output(
+            [
+                "git",
+                "remote",
+                "set-url",
+                "--push",
+                "origin",
+                "disabled://approved-promotion",
+            ],
+            cwd=promotion_repo,
+            check=True,
+        )
+        return promotion_repo
+
+    def queue_promotion(
+        self,
+        release: dict[str, Any],
+        installer: Path,
+        observed: dict[str, Any],
+        installed: dict[str, str],
+    ) -> dict[str, Any]:
+        acceptance = release.get("promotion_acceptance")
+        if not isinstance(acceptance, dict) or acceptance.get("eligible") is not True:
+            raise UpdateError("release is not eligible for guarded promotion")
+        source_commit = str(release.get("source_commit", ""))
+        manifest_relative = str(release.get("manifest_path", ""))
+        manifest_digest = str(release.get("manifest_sha256", ""))
+        if (
+            not re.fullmatch(r"[0-9a-f]{40,64}", source_commit)
+            or not re.fullmatch(r"[0-9a-f]{64}", manifest_digest)
+            or not manifest_relative
+            or Path(manifest_relative).is_absolute()
+            or ".." in Path(manifest_relative).parts
+        ):
+            raise UpdateError("approved release lacks pinned promotion metadata")
+        if (
+            not installer.is_file()
+            or sha256_file(installer) != release["installer_sha256"]
+        ):
+            raise UpdateError("cached installer no longer matches the accepted release")
+
+        identity = (
+            f"{release['version']}-{str(release['installer_sha256'])[:12]}-"
+            f"{manifest_digest[:12]}"
+        )
+        task_id = task_name(f"approved-promotion-{identity}")
+        task_dir = self.tasks_dir / task_id
+        task_path = task_dir / "task.json"
+        task_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if task_path.is_file():
+            task = load_json(task_path)
+            phase = str(task.get("phase", ""))
+            if phase == "promoted":
+                self.write_status(
+                    "current",
+                    active_task=task_id,
+                    installed_release=self.installed_release(),
+                    observed_release=observed,
+                    message="the accepted UU release was already promoted",
+                )
+                return task
+            if phase == "promotion-blocked":
+                self.write_status(
+                    phase,
+                    active_task=task_id,
+                    observed_release=observed,
+                    message=(
+                        "the guarded promotion failed closed and will not "
+                        "retry automatically"
+                    ),
+                )
+                return task
+        else:
+            promotion_repo = self.create_promotion_checkout(
+                task_dir, source_commit
+            )
+            manifest = promotion_repo / manifest_relative
+            if not manifest.is_file() or sha256_file(manifest) != manifest_digest:
+                raise UpdateError(
+                    "pinned promotion manifest failed checkout verification"
+                )
+            task = {
+                "schema_version": 1,
+                "id": task_id,
+                "kind": "approved-promotion",
+                "created_at": utc_now(),
+                "updated_at": utc_now(),
+                "phase": "promotion-queued",
+                "attempts": 0,
+                "source_commit": source_commit,
+                "promotion_repo": str(promotion_repo),
+                "details": {
+                    "release": release,
+                    "observed_release": observed,
+                    "installed_release": installed,
+                    "installer": str(installer),
+                    "manifest": str(manifest),
+                    "acceptance": acceptance,
+                },
+            }
+
+        pending = self.load_pending()
+        if pending is not None and pending.get("id") != task_id:
+            task["phase"] = "promotion-deferred"
+            task["updated_at"] = utc_now()
+            atomic_json(task_path, task)
+            self.write_status(
+                "promotion-deferred",
+                active_task=task_id,
+                observed_release=observed,
+                message=(
+                    "an existing maintenance task must finish before the "
+                    "accepted release can enter its guarded transaction"
+                ),
+            )
+            return task
+
+        task["phase"] = "promotion-queued"
+        task["updated_at"] = utc_now()
+        atomic_json(task_path, task)
+        atomic_json(self.pending_path, task)
+        self.write_status(
+            "promotion-queued",
+            active_task=task_id,
+            observed_release=observed,
+            message=(
+                "accepted release queued for snapshot, login-preserving "
+                "in-place update, runtime verification, and rollback on failure"
+            ),
+        )
+        return task
+
     def stage_candidate(self, installer: Path, task_dir: Path) -> dict[str, Any]:
         stage_dir = task_dir / "stage"
         log_path = task_dir / "stage.log"
@@ -773,6 +1054,12 @@ class Manager:
         )
         observed_key = version_key(str(observed["version"]))
         approved_key = version_key(str(latest_approved["version"]))
+        try:
+            installed_key: tuple[int, ...] | None = version_key(
+                str(installed["version"])
+            )
+        except UpdateError:
+            installed_key = None
         if observed_key < approved_key:
             self.write_status(
                 "current",
@@ -787,6 +1074,8 @@ class Manager:
         previous_observed = previous_status.get("observed_release")
         if (
             observed_key == approved_key
+            and installed_key is not None
+            and installed_key >= approved_key
             and isinstance(previous_observed, dict)
             and previous_observed.get("etag") == observed.get("etag")
             and previous_observed.get("last_modified")
@@ -815,10 +1104,17 @@ class Manager:
             installer, installer_hash = cached
         observed["installer_sha256"] = installer_hash
         matching = next(
-            (item for item in approved if item["installer_sha256"] == installer_hash), None
+            (
+                item
+                for item in approved
+                if item["installer_sha256"] == installer_hash
+                and version_key(str(item["version"])) == observed_key
+            ),
+            None,
         )
-        if matching and version_key(str(matching["version"])) == observed_key:
-            if observed_key == approved_key:
+        if matching:
+            matching_key = version_key(str(matching["version"]))
+            if installed_key is not None and installed_key >= matching_key:
                 self.write_status(
                     "current",
                     last_check_completed_at=utc_now(),
@@ -828,12 +1124,37 @@ class Manager:
                     message="official installer full hash matches the approved baseline",
                 )
                 return
-            self.write_status(
-                "approved-release-detected",
-                observed_release=observed,
-                latest_approved_release=matching,
-                message="approved installer is cached; deployment remains maintenance-gated",
-            )
+            acceptance = matching.get("promotion_acceptance")
+            if not isinstance(acceptance, dict) or acceptance.get("eligible") is not True:
+                reason = (
+                    str(acceptance.get("reason"))
+                    if isinstance(acceptance, dict)
+                    else "the release has no complete promotion acceptance"
+                )
+                self.write_status(
+                    "approved-release-detected",
+                    installed_release=installed,
+                    observed_release=observed,
+                    latest_approved_release=matching,
+                    message=(
+                        "approved installer is cached but cannot transfer: "
+                        + reason
+                    ),
+                )
+                return
+            if not self.config.auto_promote_accepted_release:
+                self.write_status(
+                    "accepted-release-ready",
+                    installed_release=installed,
+                    observed_release=observed,
+                    latest_approved_release=matching,
+                    message=(
+                        "fully accepted installer is cached; automatic guarded "
+                        "promotion is disabled"
+                    ),
+                )
+                return
+            self.queue_promotion(matching, installer, observed, installed)
             return
 
         identity = f"{observed['version']}-{installer_hash[:12]}"
@@ -1355,6 +1676,285 @@ class Manager:
         atomic_json(task_dir / "task.json", task)
         atomic_json(self.pending_path, task)
 
+    def promotion_paths(
+        self, task: dict[str, Any]
+    ) -> tuple[Path, Path, Path, Path, Path]:
+        task_id = task_name(str(task.get("id", "")))
+        if not task_id or task_id != task.get("id"):
+            raise UpdateError("promotion task identifier is unsafe")
+        task_dir = (self.tasks_dir / task_id).resolve()
+        tasks_root = self.tasks_dir.resolve()
+        try:
+            task_dir.relative_to(tasks_root)
+        except ValueError as error:
+            raise UpdateError("promotion task escaped the local state directory") from error
+        promotion_repo = Path(str(task.get("promotion_repo", ""))).resolve()
+        try:
+            promotion_repo.relative_to(task_dir)
+        except ValueError as error:
+            raise UpdateError("promotion checkout escaped its task directory") from error
+        details = task.get("details")
+        if not isinstance(details, dict):
+            raise UpdateError("promotion task details are missing")
+        manifest = Path(str(details.get("manifest", ""))).resolve()
+        try:
+            manifest.relative_to(promotion_repo)
+        except ValueError as error:
+            raise UpdateError("promotion manifest escaped its pinned checkout") from error
+        installer = Path(str(details.get("installer", ""))).resolve()
+        work_dir = task_dir / "promotion"
+        helper = promotion_repo / "scripts/promote-approved-release.py"
+        if not helper.is_file():
+            raise UpdateError("promotion transaction helper is unavailable")
+        if not manifest.is_file() or not installer.is_file():
+            raise UpdateError("promotion task files are incomplete")
+        release = details.get("release")
+        if (
+            not isinstance(release, dict)
+            or sha256_file(installer) != release.get("installer_sha256")
+            or sha256_file(manifest) != release.get("manifest_sha256")
+        ):
+            raise UpdateError("promotion task hashes no longer match its acceptance")
+        return task_dir, promotion_repo, helper, manifest, work_dir
+
+    def recover_interrupted_promotion(self) -> bool:
+        if not self.promotion_marker_path.is_file():
+            return False
+        marker = load_json(self.promotion_marker_path)
+        work_dir = Path(str(marker.get("work_dir", ""))).resolve()
+        try:
+            relative = work_dir.relative_to(self.tasks_dir.resolve())
+        except ValueError as error:
+            raise UpdateError(
+                "promotion recovery marker escaped the updater state directory"
+            ) from error
+        if len(relative.parts) < 2 or relative.parts[1] != "promotion":
+            raise UpdateError("promotion recovery marker names an unsafe work directory")
+        task_id = relative.parts[0]
+        task_path = self.tasks_dir / task_id / "task.json"
+        if not task_path.is_file():
+            raise UpdateError("promotion recovery task is unavailable")
+        task = load_json(task_path)
+        task_dir = (self.tasks_dir / task_id).resolve()
+        expected_work = task_dir / "promotion"
+        promotion_repo = Path(str(task.get("promotion_repo", ""))).resolve()
+        try:
+            promotion_repo.relative_to(task_dir)
+        except ValueError as error:
+            raise UpdateError(
+                "promotion recovery checkout escaped its task directory"
+            ) from error
+        helper = promotion_repo / "scripts/promote-approved-release.py"
+        if not helper.is_file():
+            promotion_repo = (
+                Path.home() / ".local/libexec/uu-remote-updater"
+            ).resolve()
+            helper = promotion_repo / "scripts/promote-approved-release.py"
+            if not helper.is_file():
+                raise UpdateError(
+                    "no retained or installed promotion recovery helper is available"
+                )
+        if expected_work != work_dir:
+            raise UpdateError("promotion marker and retained task disagree")
+        prefix = Path.home() / ".local/share/wineprefixes/uu-remote"
+        if Path(str(marker.get("prefix", ""))).resolve() != prefix.resolve():
+            raise UpdateError("promotion marker does not name the managed UU prefix")
+        result = command_output(
+            [
+                sys.executable,
+                str(helper),
+                "recover",
+                "--repository",
+                str(promotion_repo),
+                "--work-dir",
+                str(work_dir),
+                "--state-dir",
+                str(self.state_dir),
+                "--prefix",
+                str(prefix),
+            ],
+            cwd=promotion_repo,
+            timeout=1800,
+        )
+        if result.returncode != 0:
+            raise UpdateError(
+                "automatic UU promotion recovery failed: "
+                + (result.stderr or result.stdout).strip()[-1200:]
+            )
+        try:
+            recovery = json.loads(result.stdout.splitlines()[-1])
+        except (IndexError, json.JSONDecodeError) as error:
+            raise UpdateError(
+                "promotion recovery returned no valid result record"
+            ) from error
+        if not isinstance(recovery, dict):
+            raise UpdateError("promotion recovery result is not an object")
+        task["phase"] = "promotion-blocked"
+        task["recovery"] = recovery
+        task["completed_at"] = utc_now()
+        atomic_json(task_dir / "task.json", task)
+        pending = self.load_pending()
+        if pending is not None and pending.get("id") == task_id:
+            self.pending_path.unlink(missing_ok=True)
+        self.write_status(
+            "promotion-blocked",
+            active_task=task_id,
+            message=(
+                "an interrupted promotion was rolled back to the complete "
+                "previous Wine prefix; automatic retry is disabled"
+            ),
+        )
+        return True
+
+    def run_promotion(self, task: dict[str, Any]) -> None:
+        if not self.config.auto_promote_accepted_release:
+            task["phase"] = "promotion-held"
+            self.save_task(task)
+            self.write_status(
+                "promotion-held",
+                active_task=task["id"],
+                message=(
+                    "guarded automatic promotion is disabled; the live UU "
+                    "prefix and XRDP were not touched"
+                ),
+            )
+            return
+        activity_dir = (
+            Path.home()
+            / ".local/share/wineprefixes/uu-remote/drive_c/Program Files"
+            / "Netease/GameViewer/log/server/log"
+        )
+        activity_files = (
+            [path for path in activity_dir.glob("*.txt") if path.is_file()]
+            if activity_dir.is_dir()
+            else []
+        )
+        if not activity_files:
+            task["phase"] = "promotion-waiting-idle"
+            self.save_task(task)
+            self.write_status(
+                "promotion-waiting-idle",
+                active_task=task["id"],
+                message=(
+                    "UU client activity cannot be verified; refusing to "
+                    "interrupt a possibly active connection"
+                ),
+            )
+            return
+        activity_mtimes: list[float] = []
+        for path in activity_files:
+            try:
+                activity_mtimes.append(path.stat().st_mtime)
+            except OSError:
+                continue
+        if not activity_mtimes:
+            task["phase"] = "promotion-waiting-idle"
+            self.save_task(task)
+            self.write_status(
+                "promotion-waiting-idle",
+                active_task=task["id"],
+                message=(
+                    "UU activity timestamps are unavailable; refusing to "
+                    "interrupt a possibly active connection"
+                ),
+            )
+            return
+        latest_activity = max(activity_mtimes)
+        quiet_seconds = max(0.0, time.time() - latest_activity)
+        required_quiet_seconds = self.config.idle_minutes * 60
+        if quiet_seconds < required_quiet_seconds:
+            task["phase"] = "promotion-waiting-idle"
+            task["quiet_seconds"] = int(quiet_seconds)
+            self.save_task(task)
+            self.write_status(
+                "promotion-waiting-idle",
+                active_task=task["id"],
+                message=(
+                    "an accepted update is ready, but recent UU activity keeps "
+                    "the live connection untouched"
+                ),
+                required_quiet_minutes=self.config.idle_minutes,
+            )
+            return
+        task_dir, promotion_repo, helper, manifest, work_dir = self.promotion_paths(
+            task
+        )
+        details = task["details"]
+        release = details["release"]
+        installer = Path(str(details["installer"])).resolve()
+        task["phase"] = "promotion-running"
+        task["attempts"] = int(task.get("attempts", 0)) + 1
+        task["last_attempt_started_at"] = utc_now()
+        self.save_task(task)
+        self.write_status(
+            "promotion-running",
+            active_task=task["id"],
+            message=(
+                "running the snapshot and login-preserving UU-only transaction; "
+                "XRDP is outside the transaction"
+            ),
+        )
+        result = command_output(
+            [
+                sys.executable,
+                str(helper),
+                "apply",
+                "--repository",
+                str(promotion_repo),
+                "--manifest",
+                str(manifest),
+                "--installer",
+                str(installer),
+                "--work-dir",
+                str(work_dir),
+                "--state-dir",
+                str(self.state_dir),
+                "--source-commit",
+                str(task["source_commit"]),
+            ],
+            cwd=promotion_repo,
+            timeout=7200,
+        )
+        result_path = work_dir / "result.json"
+        promotion_result = (
+            load_json(result_path)
+            if result_path.is_file()
+            else {
+                "status": "failed",
+                "error": (result.stderr or result.stdout).strip()[-1200:],
+            }
+        )
+        if result.returncode == 0 and promotion_result.get("status") == "promoted":
+            task["phase"] = "promoted"
+            task["result"] = promotion_result
+            task["completed_at"] = utc_now()
+            atomic_json(task_dir / "task.json", task)
+            self.pending_path.unlink(missing_ok=True)
+            self.write_status(
+                "promoted",
+                active_task=task["id"],
+                installed_release=self.installed_release(),
+                observed_release=details.get("observed_release"),
+                message=(
+                    f"UU {release['version']} passed the guarded transaction; "
+                    "existing account state was preserved and XRDP was unchanged"
+                ),
+            )
+            return
+        task["phase"] = "promotion-blocked"
+        task["result"] = promotion_result
+        task["completed_at"] = utc_now()
+        atomic_json(task_dir / "task.json", task)
+        self.pending_path.unlink(missing_ok=True)
+        self.write_status(
+            "promotion-blocked",
+            active_task=task["id"],
+            message=(
+                "guarded promotion failed closed; the previous complete prefix "
+                "was restored and automatic retry is disabled"
+            ),
+        )
+
     def codex_command(self, task: dict[str, Any], resume: bool) -> list[str]:
         repair_repo = Path(str(task["repair_repo"]))
         schema = repair_repo / "scripts/codex-repair-result.schema.json"
@@ -1562,9 +2162,14 @@ class Manager:
         self.write_status(phase, active_task=task["id"], message=message)
 
     def monitor(self) -> None:
+        if self.recover_interrupted_promotion():
+            return
         task = self.load_pending()
         if task is None:
             self.monitor_health()
+            return
+        if task.get("kind") == "approved-promotion":
+            self.run_promotion(task)
             return
         task_model = task.get("codex_model")
         if task_model and task_model != self.config.codex_model:

@@ -136,6 +136,23 @@ Windows/controller acceptance procedure. The repair clone has a disabled push
 URL and Codex runs with workspace-write access, no interactive approvals, and
 `NoNewPrivileges`; a healthy live relay is never restarted by a check.
 
+Automatic live promotion is a separate opt-in and accepts neither a Codex
+result nor binary approval alone. The exact official installer and patched
+server hashes must be bound into a committed maintainer acceptance record
+covering disposable-prefix behavior, controller input, reconnect, service
+restart, login preservation, and at least 270 stable seconds. Evidence must
+exist in the same pinned commit.
+
+Before the accepted installer runs, the promotion helper verifies the current
+runtime, checks local login-state markers, waits for the configured quiet
+window, stops only the UU bridge, and snapshots the complete Wine prefix. The
+installer runs over that same prefix to preserve UU's normal account state.
+The login registry section and account-state trees must remain byte-identical
+before UU is reopened. Any mismatch, runtime failure, process interruption, or
+reboot restores the whole old prefix and blocks automatic retry. XRDP is
+queried only to prove its active state did not change; the promotion helper
+contains no XRDP mutation command.
+
 Updater state can contain proprietary binaries and local diagnostic context.
 It is stored outside the repository with user-only permissions and must not be
 copied to another computer or published. CDN query credentials are removed

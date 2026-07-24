@@ -3,10 +3,11 @@
 set -Eeuo pipefail
 
 repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_dir"
+
 runtime_files=(
     install.sh
     uninstall.sh
-    patches/uu-remote-4.33.0.8907.json
     patches/libei-1.2.1-close-keymap-fd.patch
     scripts/build-compat.sh
     scripts/build-libei.sh
@@ -33,6 +34,7 @@ runtime_files=(
     systemd/uu-remote-bridge-unattended.conf
     systemd/uu-remote-bridge.service
 )
+release_manifests=(patches/uu-remote-*.json)
 
-cd "$repo_dir"
-sha256sum "${runtime_files[@]}" | sha256sum | awk '{print $1}'
+sha256sum "${runtime_files[@]}" "${release_manifests[@]}" | \
+    sha256sum | awk '{print $1}'

@@ -16,6 +16,9 @@ locked by the release manifest.
   an independently rerun test suite
 - immutable `track-rdp-broker-20260724` and `track-direct-x11-20260724` aliases that name
   the two validated input behaviors without treating them as a linear upgrade
+- opt-in guarded promotion for a newer exact-hash release carrying a complete
+  maintainer acceptance record, with in-place account reuse and full-prefix
+  rollback
 
 ### Security
 
@@ -27,6 +30,9 @@ locked by the release manifest.
 - make live recovery observation-only by default; restart and known-good
   reinstall require an explicit `--auto-reinstall` opt-in after two
   consecutive health failures
+- require acceptance to be bound to both installer and patched-server hashes,
+  wait for a quiet UU window, compare login/account state before opening UU,
+  and keep XRDP outside every promotion action
 
 ### Documentation
 
@@ -63,6 +69,14 @@ locked by the release manifest.
 - keep the repair manager outside systemd's pre-created
   `unprivileged_userns` mount namespace so Codex can establish its required
   Bubblewrap `workspace-write` sandbox under Ubuntu's AppArmor restrictions
+- distinguish a repository-approved binary patch from end-to-end promotion
+  acceptance, and correct the updater so an approved newer baseline is not
+  mistaken for an already installed release
+- snapshot the complete existing Wine prefix before a normal in-place UU
+  installer update, preserve old audited backups, and recover automatically
+  after an interrupted or failed transaction without automatic retry
+- avoid duplicate GitHub validation runs by validating feature work on pull
+  requests and direct pushes only on `main`
 
 - wait for the actual FreeRDP relay window after Wine's short-lived Unix
   launcher exits, verify that the spawned GNOME daemon owns its configured
@@ -77,7 +91,12 @@ locked by the release manifest.
 
 ### Validation
 
-- all 40 source, shell, documentation, migration, and helper-build tests pass
+- all 73 source, shell, documentation, updater, transaction, migration, and
+  helper-build tests pass
+- the promotion fixture preserves an existing account through an in-place
+  update, while deliberate registry damage restores the complete old prefix
+- source tests assert that promotion never starts, stops, restarts, or reloads
+  XRDP
 - an isolated fixed-alphabet Unicode request returned all 52 source records on
   `route=x11-text`, while X11 observed all 52 press/release transitions in the
   exact expected order

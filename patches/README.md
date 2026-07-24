@@ -20,6 +20,25 @@ signature.
 | `landmarks` | Semantic strings used to begin a new audit |
 | `imports` | API boundaries whose behavior matters to the bridge |
 | `review` | Method and evidence for approval |
+| `acceptance` | Optional, separate end-to-end promotion attestation; required for automatic live transfer of a newer release |
+
+## Promotion acceptance
+
+`review_status: approved` makes a manifest runnable by the patch engine. It
+does not by itself authorize an automatic update. A promotable newer release
+also needs a schema-1 `acceptance` object with all five test flags true:
+
+- disposable prefix
+- controller input
+- disconnect/reconnect
+- service restart
+- login preservation through an in-place installer update
+
+The object records 270-1800 stable seconds, a repository-relative evidence
+document, maintainer identity and time, and exact copies of
+`installer.sha256` and `server.patched_sha256`. This binds the acceptance to
+the tested bytes rather than only a version label. Existing installed
+manifests need not be edited retroactively.
 
 ## Patch entries
 
@@ -44,6 +63,11 @@ non-overlapping.
 3. `audit-gameviewer.py finalize` derives the complete patched hash and emits
    a new approved manifest.
 4. Disposable copy tests prove patch, verify, and byte-identical restore.
-5. The new manifest and human evidence are committed together.
+5. The new manifest and semantic-review evidence are committed together.
+6. End-to-end controller, restart, and login-preservation tests run against a
+   disposable prefix.
+7. Only after those tests pass is the acceptance object and its evidence
+   committed; without it, the updater can cache and report the release but
+   cannot transfer it.
 
 See [the complete upstream maintenance guide](../docs/upstream-maintenance.md).

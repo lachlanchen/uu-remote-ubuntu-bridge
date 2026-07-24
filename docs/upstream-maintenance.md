@@ -208,6 +208,57 @@ Validate all user-visible behavior, not only a successful patch command:
 
 Keep controller-side proof free of passwords and personal desktop content.
 
+Before claiming login preservation, make a disposable copy of an already
+signed-in test prefix. Run the accepted installer over that copy, restart the
+bridge twice, disconnect and reconnect the controller, and confirm UU returns
+online without a login prompt. Do not publish the copied registry, token files,
+phone number, device identifier, or raw logs.
+
+## 8. Record promotion acceptance
+
+Binary `review_status: approved` proves the patch interpretation; it does not
+prove that a release is usable or safe to transfer. Only after the complete
+bridge and login-preservation tests pass, add this top-level object to the new
+manifest:
+
+```json
+{
+  "acceptance": {
+    "schema_version": 1,
+    "disposable_prefix": true,
+    "controller_input": true,
+    "reconnect": true,
+    "service_restart": true,
+    "login_preservation": true,
+    "stability_seconds": 270,
+    "installer_sha256": "COPY installer.sha256 EXACTLY",
+    "patched_server_sha256": "COPY server.patched_sha256 EXACTLY",
+    "evidence": "docs/releases/NEW_VERSION-acceptance.md",
+    "accepted_at": "ISO-8601 timestamp",
+    "accepted_by": "maintainer identity"
+  }
+}
+```
+
+The evidence document and manifest must be committed together. The acceptance
+hashes must exactly equal the surrounding manifest fields; the updater does
+not accept a version string, partial hash, Codex result, or uncommitted local
+file as authorization. Record the tested host profile and observable pass/fail
+results, but no private account data.
+
+Run the full suite again:
+
+```bash
+python3 -m unittest discover -s tests -v
+git diff --check
+```
+
+Automatic transfer remains opt-in with `--auto-promote-accepted`. It waits for
+the configured UU idle window, snapshots the complete existing Wine prefix,
+runs the official installer in place, checks login state before opening UU,
+and rolls the whole prefix back on any failure. It never manages XRDP. See
+[Automatic Checks and Resumable Repair](automatic-updates.md#fully-accepted-login-preserving-promotion).
+
 ## When the old approach no longer applies
 
 Stop and redesign instead of forcing a manifest when any of these changes:

@@ -8,6 +8,7 @@ config_dir="$HOME/.config/uu-remote-bridge"
 config_file="$config_dir/updater.json"
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/uu-remote-updater"
 unit_dir="$HOME/.config/systemd/user"
+updater_libexec="$HOME/.local/libexec/uu-remote-updater"
 model='codex-auto-review'
 reasoning_effort='medium'
 codex_executable=''
@@ -15,6 +16,7 @@ track=''
 branch='main'
 idle_minutes=45
 auto_reinstall=false
+auto_promote=false
 command="${1:-status}"
 [[ $# -eq 0 ]] || shift
 
@@ -37,6 +39,11 @@ Enable options:
                          confirmed failures, then reinstall the known-good
                          track if restart fails (default: disabled)
   --no-auto-reinstall    retain the safe default; accepted for compatibility
+  --auto-promote-accepted
+                         promote only a newer exact-hash release carrying a
+                         complete maintainer acceptance record; snapshot and
+                         roll back the Wine prefix on any failure
+  --no-auto-promote      retain the safe promotion default (disabled)
 EOF
 }
 
@@ -77,6 +84,14 @@ while (($#)); do
             ;;
         --auto-reinstall)
             auto_reinstall=true
+            shift
+            ;;
+        --no-auto-promote)
+            auto_promote=false
+            shift
+            ;;
+        --auto-promote-accepted)
+            auto_promote=true
             shift
             ;;
         --purge-state)
@@ -151,10 +166,11 @@ case "$command" in
         fi
 
         install -d -m 0700 "$config_dir" "$state_dir"
-        install -d -m 0755 "$HOME/.local/bin" "$unit_dir"
+        install -d -m 0755 \
+            "$HOME/.local/bin" "$unit_dir" "$updater_libexec/scripts"
         python3 - "$config_file" "$repo_dir" "$state_dir" "$branch" \
             "$track" "$model" "$reasoning_effort" "$idle_minutes" \
-            "$auto_reinstall" "$codex_executable" <<'PY'
+            "$auto_reinstall" "$auto_promote" "$codex_executable" <<'PY'
 import json
 import os
 import sys
@@ -170,6 +186,7 @@ from pathlib import Path
     effort,
     idle_minutes,
     auto_reinstall,
+    auto_promote,
     codex_executable,
 ) = sys.argv[1:]
 value = {
@@ -187,6 +204,7 @@ value = {
     "codex_max_used_percent": 20,
     "idle_minutes": int(idle_minutes),
     "auto_reinstall_known_good": auto_reinstall == "true",
+    "auto_promote_accepted_release": auto_promote == "true",
     "max_download_bytes": 1073741824,
 }
 path = Path(destination)
@@ -199,6 +217,12 @@ PY
             "$HOME/.local/bin/uu-remote-update"
         install -m 0755 "$repo_dir/scripts/uu-remote" \
             "$HOME/.local/bin/uu-remote"
+        install -m 0755 \
+            "$repo_dir/scripts/promote-approved-release.py" \
+            "$repo_dir/scripts/stop-wine-prefix" \
+            "$updater_libexec/scripts/"
+        install -m 0644 "$repo_dir/scripts/gameviewer_patchlib.py" \
+            "$updater_libexec/scripts/gameviewer_patchlib.py"
         install -m 0644 "$repo_dir/systemd/uu-remote-update-check.service" \
             "$unit_dir/uu-remote-update-check.service"
         install -m 0644 "$repo_dir/systemd/uu-remote-update-check.timer" \
@@ -216,6 +240,11 @@ PY
         printf 'Status: uu-remote-update status\n'
         ;;
     disable)
+        if [[ -f "$state_dir/promotion-in-progress.json" ]]; then
+            printf 'Refusing to disable maintenance during a recoverable UU promotion.\n' >&2
+            printf 'Run uu-remote update and wait for promotion recovery first.\n' >&2
+            exit 1
+        fi
         "${systemctl_user[@]}" disable --now \
             uu-remote-update-check.timer \
             uu-remote-repair-monitor.timer \

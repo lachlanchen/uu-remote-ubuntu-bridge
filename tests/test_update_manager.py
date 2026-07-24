@@ -19,6 +19,7 @@ from uu_update_manager import (
     Config,
     Manager,
     codex_budget_from_rate_limits,
+    promotion_acceptance,
     release_version,
     sanitize_url,
     version_key,
@@ -42,6 +43,7 @@ class UpdateManagerTests(unittest.TestCase):
             codex_max_used_percent=20,
             idle_minutes=45,
             auto_reinstall_known_good=True,
+            auto_promote_accepted_release=False,
             max_download_bytes=1024 * 1024 * 1024,
         )
 
@@ -62,6 +64,31 @@ class UpdateManagerTests(unittest.TestCase):
 
         payload["rateLimitsByLimitId"]["codex"]["primary"]["usedPercent"] = 20
         self.assertTrue(codex_budget_from_rate_limits(payload, 20)["allowed"])
+
+    def test_promotion_acceptance_requires_full_hash_bound_evidence(self) -> None:
+        raw = json.loads(
+            (REPO_DIR / "patches/uu-remote-4.33.0.8907.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertFalse(promotion_acceptance(raw)["eligible"])
+        raw["acceptance"] = {
+            "schema_version": 1,
+            "disposable_prefix": True,
+            "controller_input": True,
+            "reconnect": True,
+            "service_restart": True,
+            "login_preservation": True,
+            "stability_seconds": 270,
+            "installer_sha256": raw["installer"]["sha256"],
+            "patched_server_sha256": raw["server"]["patched_sha256"],
+            "evidence": "docs/acceptance.md",
+            "accepted_at": "2026-07-24T12:00:00+00:00",
+            "accepted_by": "maintainer",
+        }
+        self.assertTrue(promotion_acceptance(raw)["eligible"])
+        raw["acceptance"]["login_preservation"] = False
+        self.assertFalse(promotion_acceptance(raw)["eligible"])
 
     def test_monitor_defers_without_launching_codex_above_cap(self) -> None:
         class DeferredManager(Manager):
@@ -144,6 +171,40 @@ class UpdateManagerTests(unittest.TestCase):
             self.assertEqual("codex-sandbox-deferred", task["phase"])
             self.assertEqual(0, task["attempts"])
             self.assertIn("namespace", task["workspace_sandbox"]["detail"])
+
+    def test_guarded_promotion_waits_for_a_quiet_uu_connection(self) -> None:
+        class IdleGuardManager(Manager):
+            def promotion_paths(self, task):
+                raise AssertionError("active UU use must defer before promotion")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = root / "home"
+            log_dir = (
+                home
+                / ".local/share/wineprefixes/uu-remote/drive_c/Program Files"
+                / "Netease/GameViewer/log/server/log"
+            )
+            log_dir.mkdir(parents=True)
+            (log_dir / "log_current.txt").write_text(
+                "recent activity\n", encoding="utf-8"
+            )
+            config = replace(
+                self.config(root / "state"),
+                auto_promote_accepted_release=True,
+            )
+            manager = IdleGuardManager(config)
+            task = {
+                "id": "approved-promotion-fixture",
+                "kind": "approved-promotion",
+                "phase": "promotion-queued",
+            }
+            with patch.object(Path, "home", return_value=home):
+                manager.run_promotion(task)
+            retained = json.loads(
+                manager.pending_path.read_text(encoding="utf-8")
+            )
+            self.assertEqual("promotion-waiting-idle", retained["phase"])
 
     def test_release_version_prefers_full_build_identifier(self) -> None:
         self.assertEqual(
@@ -272,6 +333,125 @@ class UpdateManagerTests(unittest.TestCase):
 
             changed = dict(metadata, etag="replacement-etag")
             self.assertIsNone(manager.cached_download(changed))
+
+    def test_newer_exact_hash_release_queues_only_after_full_acceptance(
+        self,
+    ) -> None:
+        installer_bytes = b"accepted update fixture"
+        installer_hash = hashlib.sha256(installer_bytes).hexdigest()
+
+        class AcceptedManager(Manager):
+            queued = None
+
+            def fetch_repository(self) -> None:
+                return None
+
+            def approved_releases(self):
+                return [
+                    {
+                        "version": "4.34.0.8979",
+                        "installer_sha256": installer_hash,
+                        "manifest": "approved.json",
+                        "manifest_path": "patches/approved.json",
+                        "manifest_sha256": "b" * 64,
+                        "source_commit": "c" * 40,
+                        "promotion_acceptance": {
+                            "eligible": True,
+                            "reason": "fixture accepted",
+                            "stability_seconds": 270,
+                            "evidence": "docs/acceptance.md",
+                        },
+                    }
+                ]
+
+            def installed_release(self):
+                return {"version": "4.33.0.8907", "manifest": "installed.json"}
+
+            def probe_endpoint(self):
+                return {
+                    "checked_at": "test",
+                    "version": "4.34.0.8979",
+                    "filename": "uuyc_4.34.0.exe",
+                    "final_url": "https://example.invalid/new.exe",
+                    "etag": "accepted",
+                    "last_modified": "",
+                    "content_length": len(installer_bytes),
+                }
+
+            def download_release(self, metadata):
+                destination = self.state_dir / "accepted.exe"
+                destination.write_bytes(installer_bytes)
+                return destination
+
+            def queue_promotion(self, release, installer, observed, installed):
+                self.queued = (release, installer, observed, installed)
+                return {}
+
+        with tempfile.TemporaryDirectory() as temporary:
+            config = replace(
+                self.config(Path(temporary)),
+                auto_promote_accepted_release=True,
+            )
+            manager = AcceptedManager(config)
+            manager.check()
+            self.assertIsNotNone(manager.queued)
+            self.assertEqual(installer_hash, manager.queued[0]["installer_sha256"])
+
+    def test_approved_release_without_acceptance_never_queues_promotion(
+        self,
+    ) -> None:
+        installer_bytes = b"reviewed but not accepted fixture"
+        installer_hash = hashlib.sha256(installer_bytes).hexdigest()
+
+        class UnacceptedManager(Manager):
+            def fetch_repository(self) -> None:
+                return None
+
+            def approved_releases(self):
+                return [
+                    {
+                        "version": "4.34.0.8979",
+                        "installer_sha256": installer_hash,
+                        "manifest": "approved.json",
+                        "promotion_acceptance": {
+                            "eligible": False,
+                            "reason": "controller acceptance is incomplete",
+                        },
+                    }
+                ]
+
+            def installed_release(self):
+                return {"version": "4.33.0.8907", "manifest": "installed.json"}
+
+            def probe_endpoint(self):
+                return {
+                    "checked_at": "test",
+                    "version": "4.34.0.8979",
+                    "filename": "uuyc_4.34.0.exe",
+                    "final_url": "https://example.invalid/new.exe",
+                    "etag": "unaccepted",
+                    "last_modified": "",
+                    "content_length": len(installer_bytes),
+                }
+
+            def download_release(self, metadata):
+                destination = self.state_dir / "unaccepted.exe"
+                destination.write_bytes(installer_bytes)
+                return destination
+
+            def queue_promotion(self, *args):
+                raise AssertionError("incomplete acceptance must not queue promotion")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            config = replace(
+                self.config(Path(temporary)),
+                auto_promote_accepted_release=True,
+            )
+            manager = UnacceptedManager(config)
+            manager.check()
+            status = json.loads(manager.status_path.read_text(encoding="utf-8"))
+            self.assertEqual("approved-release-detected", status["phase"])
+            self.assertIn("cannot transfer", status["message"])
 
     def test_codex_command_is_resumable_and_keeps_a_workspace_sandbox(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -432,6 +612,7 @@ class UpdateManagerTests(unittest.TestCase):
             self.assertEqual("codex-auto-review", config.codex_model)
             self.assertEqual("medium", config.codex_reasoning_effort)
             self.assertFalse(config.auto_reinstall_known_good)
+            self.assertFalse(config.auto_promote_accepted_release)
 
             raw = json.loads(config_path.read_text(encoding="utf-8"))
             raw.pop("codex_executable")
@@ -494,10 +675,20 @@ class UpdateManagerTests(unittest.TestCase):
         self.assertIn("model='codex-auto-review'", configurator)
         self.assertIn("reasoning_effort='medium'", configurator)
         self.assertIn("auto_reinstall=false", configurator)
+        self.assertIn("auto_promote=false", configurator)
         self.assertIn("--auto-reinstall", configurator)
+        self.assertIn("--auto-promote-accepted", configurator)
+        self.assertIn("promote-approved-release.py", configurator)
+        self.assertIn("gameviewer_patchlib.py", configurator)
         self.assertIn('scripts/uu-remote"', configurator)
         self.assertIn("track-direct-x11-20260724", configurator)
         self.assertIn("track-rdp-broker-20260724", configurator)
+        self.assertIn("--upgrade-existing", installer)
+        self.assertIn("--prefix-only", installer)
+
+    def test_runtime_digest_includes_every_approved_release_manifest(self) -> None:
+        digest = (REPO_DIR / "scripts/runtime-source-digest").read_text()
+        self.assertIn("patches/uu-remote-*.json", digest)
 
     def test_health_detects_restart_storm_and_wrong_rdp_listener(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

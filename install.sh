@@ -70,6 +70,8 @@ start_service=true
 fresh_install=false
 unattended=false
 automatic_updates=false
+upgrade_existing=false
+prefix_only=false
 
 usage() {
     cat <<'EOF'
@@ -100,6 +102,10 @@ usage: ./install.sh [options]
   --skip-account-login   do not open UU for first-time account sign-in
   --unattended           enable TPM-backed startup after an automatic login
   --automatic-updates    enable daily checks and resumable Codex repair
+  --upgrade-existing     run an audited installer over the existing UU prefix
+                         before applying its approved release manifest
+  --prefix-only          prepare only the selected Wine prefix; do not change
+                         RDP, user services, launchers, or account login
   --no-start             install and verify files without starting the service
   -h, --help             show this help
 EOF
@@ -161,6 +167,16 @@ while (($#)); do
             ;;
         --automatic-updates)
             automatic_updates=true
+            shift
+            ;;
+        --upgrade-existing)
+            upgrade_existing=true
+            shift
+            ;;
+        --prefix-only)
+            prefix_only=true
+            start_service=false
+            skip_account_login=true
             shift
             ;;
         --no-start)
@@ -254,11 +270,28 @@ if [[ "$network_interface" != all &&
         "$network_interface" >&2
     exit 2
 fi
-user_bus="${XDG_RUNTIME_DIR:-/run/user/$UID}/bus"
-if [[ ! -S "$user_bus" ]]; then
-    printf 'The systemd user bus is unavailable at %s.\n' "$user_bus" >&2
-    printf 'Log into the target GNOME desktop as this user, then rerun.\n' >&2
-    exit 1
+if [[ "$upgrade_existing" == true && -z "$uu_installer" ]]; then
+    printf -- '--upgrade-existing requires --uu-installer with an audited file.\n' >&2
+    exit 2
+fi
+if [[ "$upgrade_existing" == true &&
+      ! -f "$uu_dir/GameViewer.exe" ]]; then
+    printf -- '--upgrade-existing requires an existing UU installation in %s.\n' \
+        "$wine_prefix" >&2
+    exit 2
+fi
+if [[ "$prefix_only" == true &&
+      ("$unattended" == true || "$automatic_updates" == true) ]]; then
+    printf -- '--prefix-only cannot configure unattended or automatic updates.\n' >&2
+    exit 2
+fi
+if [[ "$prefix_only" == false ]]; then
+    user_bus="${XDG_RUNTIME_DIR:-/run/user/$UID}/bus"
+    if [[ ! -S "$user_bus" ]]; then
+        printf 'The systemd user bus is unavailable at %s.\n' "$user_bus" >&2
+        printf 'Log into the target GNOME desktop as this user, then rerun.\n' >&2
+        exit 1
+    fi
 fi
 if [[ "$unattended" == true && "$start_service" == false ]]; then
     printf -- '--unattended cannot be combined with --no-start.\n' >&2
@@ -384,7 +417,8 @@ export WINEDEBUG=-all
 export WINEDLLOVERRIDES='winedbg.exe=d;mscoree,mshtml='
 
 bridge_was_active=false
-if "${systemctl_user[@]}" is-active --quiet uu-remote-bridge.service; then
+if [[ "$prefix_only" == false ]] &&
+   "${systemctl_user[@]}" is-active --quiet uu-remote-bridge.service; then
     bridge_was_active=true
 fi
 restore_bridge_after_failure() {
@@ -397,18 +431,19 @@ restore_bridge_after_failure() {
 }
 trap restore_bridge_after_failure EXIT
 
-port_listener="$(/usr/bin/ss -H -ltnp "sport = :$rdp_port" 2>/dev/null || true)"
-if [[ -n "$port_listener" ]] &&
-   ! /usr/bin/grep -q 'gnome-remote-de' <<<"$port_listener"; then
-    printf 'RDP port %s is already owned by another process:\n%s\n' \
-        "$rdp_port" "$port_listener" >&2
-    exit 1
+if [[ "$prefix_only" == false ]]; then
+    port_listener="$(/usr/bin/ss -H -ltnp "sport = :$rdp_port" 2>/dev/null || true)"
+    if [[ -n "$port_listener" ]] &&
+       ! /usr/bin/grep -q 'gnome-remote-de' <<<"$port_listener"; then
+        printf 'RDP port %s is already owned by another process:\n%s\n' \
+            "$rdp_port" "$port_listener" >&2
+        exit 1
+    fi
+    "${systemctl_user[@]}" stop uu-remote-bridge.service >/dev/null 2>&1 || true
 fi
-
-"${systemctl_user[@]}" stop uu-remote-bridge.service >/dev/null 2>&1 || true
 stop_wine_prefix
 
-if [[ "$bridge_display" != auto ]]; then
+if [[ "$prefix_only" == false && "$bridge_display" != auto ]]; then
     display_number="${bridge_display#:}"
     if [[ -e "/tmp/.X11-unix/X$display_number" ||
           -e "/tmp/.X${display_number}-lock" ]]; then
@@ -418,8 +453,10 @@ if [[ "$bridge_display" != auto ]]; then
     fi
 fi
 
-if [[ ! -f "$uu_dir/GameViewer.exe" ]]; then
-    fresh_install=true
+if [[ ! -f "$uu_dir/GameViewer.exe" || "$upgrade_existing" == true ]]; then
+    if [[ ! -f "$uu_dir/GameViewer.exe" ]]; then
+        fresh_install=true
+    fi
     mkdir -p "$repo_dir/build/downloads"
     if [[ -z "$uu_installer" ]]; then
         uu_installer="$repo_dir/build/downloads/$uu_installer_filename"
@@ -431,8 +468,40 @@ if [[ ! -f "$uu_dir/GameViewer.exe" ]]; then
     printf '%s  %s\n' "$uu_installer_sha256" "$uu_installer" | \
         sha256sum -c -
     mkdir -p "$wine_prefix"
-    "$wine_bin" wineboot -u
-    "$wine_bin" winecfg -v win10
+    if [[ "$fresh_install" == true ]]; then
+        "$wine_bin" wineboot -u
+        "$wine_bin" winecfg -v win10
+    else
+        if [[ ! -f "$installed_manifest" ]]; then
+            printf 'Cannot upgrade without the currently installed release manifest.\n' >&2
+            exit 1
+        fi
+        previous_version="$(
+            "$python_bin" "$repo_dir/scripts/patch-gameviewer.py" field version \
+                --manifest "$installed_manifest"
+        )"
+        previous_server_filename="$(
+            "$python_bin" "$repo_dir/scripts/patch-gameviewer.py" field \
+                server.filename --manifest "$installed_manifest"
+        )"
+        previous_healthd_filename="$(
+            "$python_bin" "$repo_dir/scripts/patch-gameviewer.py" field \
+                health_monitor.filename --manifest "$installed_manifest"
+        )"
+        previous_backup_dir="$wine_prefix/compat/release-backups/$previous_version"
+        mkdir -p "$previous_backup_dir"
+        install -m 0600 "$installed_manifest" \
+            "$previous_backup_dir/release-manifest.json"
+        for previous_backup in \
+            "$uu_bin/$previous_server_filename.uu-original" \
+            "$uu_bin/$previous_healthd_filename.uu-original"; do
+            if [[ -f "$previous_backup" ]]; then
+                install -m 0600 "$previous_backup" \
+                    "$previous_backup_dir/${previous_backup##*/}"
+                rm -f "$previous_backup"
+            fi
+        done
+    fi
     "$wine_bin" "$uu_installer" /S
     stop_wine_prefix
 fi
@@ -491,6 +560,12 @@ install -m 0755 "$compat_build/uu-healthd-stub.exe" "$healthd_exe"
 
 "$python_bin" "$repo_dir/scripts/patch-gameviewer.py" patch "$server_exe" \
     --manifest "$installed_manifest"
+
+if [[ "$prefix_only" == true ]]; then
+    printf '\nPrepared approved UU release in %s without changing RDP configuration or opening the login UI.\n' \
+        "$wine_prefix"
+    exit 0
+fi
 
 install -d -m 0755 \
     "$HOME/.local/bin" "$HOME/.local/libexec" \

@@ -45,14 +45,23 @@ systemctl_user=(
     /usr/bin/systemctl --user
 )
 
-if [[ "${1:-}" == --quick ]]; then
-    stability_seconds=0
-    shift
-elif [[ "${1:-}" == --stability-seconds ]]; then
-    stability_seconds="${2:?--stability-seconds requires a number}"
-    shift 2
-fi
-if (($#)) || [[ ! "$stability_seconds" =~ ^[0-9]+$ ]]; then
+while (($#)); do
+    case "$1" in
+        --quick)
+            stability_seconds=0
+            shift
+            ;;
+        --stability-seconds)
+            stability_seconds="${2:?--stability-seconds requires a number}"
+            shift 2
+            ;;
+        *)
+            printf 'unknown verifier option: %s\n' "$1" >&2
+            exit 2
+            ;;
+    esac
+done
+if [[ ! "$stability_seconds" =~ ^[0-9]+$ ]]; then
     printf 'usage: scripts/verify.sh [--quick|--stability-seconds N]\n' >&2
     exit 2
 fi

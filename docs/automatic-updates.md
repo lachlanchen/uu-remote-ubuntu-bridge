@@ -15,13 +15,19 @@ git fetch --tags origin
 ./scripts/configure-updater.sh enable \
   --track track-rdp-broker-20260724 \
   --model codex-auto-review \
-  --reasoning-effort medium
+  --reasoning-effort medium \
+  --auto-promote-accepted
 ```
 
 Use `track-direct-x11-20260724` on a computer already validated with the direct X11
 route. A fresh installation can opt in with `./install.sh
 --automatic-updates`; the configurator derives the track from the saved
 keyboard route.
+
+`--auto-promote-accepted` does not let Codex deploy its own result. It only
+permits a later exact-hash release whose committed manifest also contains the
+complete maintainer acceptance record described below. Without that option,
+even a fully accepted release is only reported as ready.
 
 The installed Codex CLI names the requested configuration `codex-auto-review`
 with `model_reasoning_effort="medium"`. Both values are explicit in
@@ -50,7 +56,7 @@ Two systemd user timers are enabled:
 | Timer | Schedule | Work |
 | --- | --- | --- |
 | `uu-remote-update-check.timer` | Daily around 04:20 with a randomized delay; also 12 minutes after boot | Fetch metadata and inspect the official UU endpoint without restarting the relay |
-| `uu-remote-repair-monitor.timer` | Seven minutes after boot and every 15 minutes after its previous run | Observe relay health and resume a pending Codex thread without changing the live relay |
+| `uu-remote-repair-monitor.timer` | Seven minutes after boot and every 15 minutes after its previous run | Observe relay health, resume a pending Codex thread, or run an explicitly enabled fully accepted promotion transaction |
 
 The daily timer uses `Persistent=true`, so a powered-off machine performs one
 missed check after its next boot. The repair timer does not need a logged-in
@@ -92,14 +98,17 @@ selected immutable track, runs the repository tests, and prebuilds
 compatibility artifacts while the already unhealthy relay remains untouched.
 The default configuration used in this guide does not enable it.
 
+Guarded release promotion is independent of health recovery. It cannot
+restart XRDP and does not become eligible from a health failure.
+
 ## New upstream release workflow
 
 When the official endpoint reports a numerically newer build:
 
 1. Download into `~/.local/state/uu-remote-updater/downloads` with a 1 GiB
    ceiling and compute the complete SHA-256.
-2. Accept it immediately only if that hash already belongs to an approved
-   repository manifest. Even then, live deployment remains maintenance-gated.
+2. Recognize it only if that hash already belongs to an approved repository
+   manifest. Binary approval alone still cannot transfer it.
 3. For an unknown hash, attempt non-executing archive extraction with
    `stage-uu-release.sh`.
 4. Create an isolated repair clone and a complete local context record under
@@ -120,11 +129,70 @@ The existing `--sandbox-install` path requires a deliberate operator action
 because it creates a root-managed transient sandbox. The repair context records
 that boundary instead of weakening it.
 
+The 2026-07-24 observation of UU `4.34.0.8979` is the concrete fail-closed
+example. Its official installer hash is
+`237eb74939a62935ae3e2b1fd43c484d634ccd96fb1094ba764c8cb64065dc9a`.
+Networkless staging succeeded, but static matching left two candidates for one
+setting path and thousands for the runtime setter. A draft scanner that
+ignored x86 instruction boundaries and relative operands was retained only as
+private review evidence, not merged or approved. The task therefore remains
+`ready-for-review`; it has no runnable manifest, no acceptance record, and no
+route to the live prefix.
+
 Codex may produce a draft manifest and a repair branch. It cannot label its own
 binary interpretation `approved`, push, alter the live Wine prefix, use sudo,
 or deploy an unknown binary. A maintainer still re-establishes instruction
 semantics and performs the Windows and controller acceptance checks described
 in [upstream maintenance](upstream-maintenance.md).
+
+## Fully accepted, login-preserving promotion
+
+A newer release can enter the live prefix only when all of these gates agree:
+
+1. The official endpoint version and complete installer SHA-256 match one
+   approved manifest in the fetched `origin/main` commit.
+2. That same committed manifest carries a schema-1 `acceptance` object.
+3. The acceptance is bound to both the installer SHA-256 and complete patched
+   server SHA-256.
+4. A maintainer recorded successful disposable-prefix, controller-input,
+   disconnect/reconnect, service-restart, and login-preservation tests.
+5. The evidence file exists in the same pinned commit.
+6. Stability is between 270 and 1800 seconds.
+7. `--auto-promote-accepted` is enabled.
+8. UU's local logs have been quiet for the configured maintenance idle period,
+   45 minutes by default.
+
+The transaction then:
+
+1. verifies the currently installed bridge and account-state markers;
+2. records XRDP state without changing it;
+3. stops only `uu-remote-bridge.service`;
+4. makes a complete copy of the Wine prefix, with a further 1 GiB free-space
+   safety margin;
+5. runs the official accepted installer over that same prefix, as UU's normal
+   in-place update would;
+6. reapplies the exact accepted compatibility manifest;
+7. compares the UU login registry section and both account-state trees
+   byte-for-byte before opening UU;
+8. starts UU and runs two runtime checks separated by the accepted stability
+   interval; and
+9. commits the result only if XRDP remains in its original active state.
+
+Any exception, failed hash, missing login marker, account-state change,
+runtime failure, interruption, or reboot restores the complete old prefix.
+The failed task becomes `promotion-blocked` and never retries automatically.
+A durable marker lets the next monitor invocation recover an interrupted
+transaction. The snapshot and all account evidence remain local with user-only
+permissions.
+
+The updater state and Wine prefix must be on the same filesystem so rollback
+can replace the prefix atomically. A successful task retains its rollback
+snapshot for operator review; it is not silently purged by a timer.
+
+The promotion helper contains no XRDP start, stop, restart, or reload action.
+It may briefly disconnect UU when the final accepted update is applied; the
+same account state is reused when UU returns, so no sign-in prompt should be
+needed. Recent UU activity defers this interruption.
 
 ## Resuming Codex after interruption
 
@@ -153,6 +221,10 @@ then independently runs the full unit suite. Its terminal states are:
 | `ready-for-review` | Source changed and tests pass; semantic review and live acceptance remain |
 | `no-change` | Codex found no safe source change |
 | `blocked` | Evidence, staging, tests, or human approval is still required |
+| `promotion-waiting-idle` | A fully accepted update is ready, but recent UU activity prevents interruption |
+| `promotion-running` | The complete-prefix transaction is in progress |
+| `promoted` | Login state and runtime verification passed; the accepted release is live |
+| `promotion-blocked` | Promotion failed closed and the old prefix was restored; no automatic retry |
 
 If a service journal reports `failed to run command 'codex'`, rerun
 `configure-updater.sh enable`. Current configurations persist the absolute
@@ -215,11 +287,12 @@ non-retryable phases. If an operator has completed the documented networkless
 fallback in the task's `stage-sandbox` directory, retry imports it only after
 the installer, server, and health-monitor hashes match the sandbox record.
 
-There is deliberately no automatic transfer from `ready-for-review` into the
-live Wine prefix. The task record always marks automated output as ineligible
-for live promotion. A new patch must finish static work and tests, receive
-independent semantic binary review, be marked approved by a maintainer, and
-pass controller acceptance before the normal installer may transfer it.
+There is deliberately no transfer from `ready-for-review` into the live Wine
+prefix. The task record always marks automated output as ineligible. A
+maintainer must independently establish semantics, approve the manifest,
+complete the full controller/login acceptance matrix, commit its evidence, and
+bind that acceptance to both binary hashes. Only this later repository state
+can make an exact official installer eligible for the guarded transaction.
 
 ## Another-computer handoff
 
@@ -232,7 +305,8 @@ git status --short
 git pull --ff-only origin main
 git fetch --tags origin
 ./scripts/configure-updater.sh enable --track TRACK_NAME \
-  --model codex-auto-review --reasoning-effort medium
+  --model codex-auto-review --reasoning-effort medium \
+  --auto-promote-accepted
 ./scripts/configure-updater.sh status
 ```
 

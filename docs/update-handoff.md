@@ -164,7 +164,8 @@ machine's validated behavior tag. This does not restart the working relay:
 
 ```bash
 ./scripts/configure-updater.sh enable --track TRACK_NAME \
-  --model codex-auto-review --reasoning-effort medium
+  --model codex-auto-review --reasoning-effort medium \
+  --auto-promote-accepted
 ./scripts/configure-updater.sh status
 ```
 
@@ -172,6 +173,9 @@ Use `track-rdp-broker-20260724` for the compatible broker/RDP path or
 `track-direct-x11-20260724` for a host already validated with direct X11 input. The
 daily checker cannot change that choice. Verify both timers after reboot and
 follow the [automatic maintenance handoff](automatic-updates.md#another-computer-handoff).
+The promotion option still requires a separately committed full acceptance
+record bound to the exact installer and patched-server hashes; a Codex repair
+or merely approved manifest cannot switch the live prefix.
 
 ## Rollback and acceptance record
 
