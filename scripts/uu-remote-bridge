@@ -386,7 +386,7 @@ start_desktop_relay() {
             return 1
         fi
         if /usr/bin/ss -H -ltnp "sport = :$rdp_port" 2>/dev/null | \
-            /usr/bin/grep -q 'gnome-remote-de'; then
+            /usr/bin/grep -q "pid=$grd_pid,"; then
             log "GNOME Desktop Sharing is relaying $desktop_session_type ${desktop_display:-$desktop_wayland}."
             return 0
         fi
@@ -646,15 +646,14 @@ freerdp_pid=$!
 unset password
 
 relay_ready=false
-for _ in {1..150}; do
+for _ in {1..300}; do
     if /usr/bin/xdotool search --name Ubuntu-Desktop-Relay \
         >/dev/null 2>&1; then
         relay_ready=true
         break
     fi
-    if ! kill -0 "$freerdp_pid" >/dev/null 2>&1; then
-        break
-    fi
+    # Wine's Unix launcher may exit after handing the Windows process to
+    # wineserver. Its lifetime does not represent the FreeRDP client lifetime.
     sleep 0.1
 done
 

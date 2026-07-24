@@ -30,6 +30,8 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("DBUS_SESSION_BUS_ADDRESS=$desktop_bus", launcher)
         self.assertIn("gnome-remote-desktop-daemon --rdp-port", launcher)
         self.assertIn('"$grd_pid"', launcher)
+        self.assertIn('grep -q "pid=$grd_pid,"', launcher)
+        self.assertNotIn("grep -q 'gnome-remote-de'", launcher)
         self.assertIn("/usr/bin/openssl version -m", launcher)
         self.assertIn('"OPENSSL_MODULES=$native_openssl_modules"', launcher)
         self.assertIn("grd_user_service_was_active", launcher)
@@ -98,6 +100,22 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("missing_checks >= 40", launcher)
         self.assertIn("UU server was absent for 10 seconds", launcher)
         self.assertIn("Could not re-inject UU server process", launcher)
+
+    def test_wine_launcher_exit_does_not_trigger_a_restart_storm(self):
+        launcher = (REPOSITORY / "scripts" / "uu-remote-bridge").read_text()
+        unit = (REPOSITORY / "systemd" / "uu-remote-bridge.service").read_text()
+        readiness = launcher[
+            launcher.index("relay_ready=false") : launcher.index(
+                "bootstrap_account()"
+            )
+        ]
+
+        self.assertIn("for _ in {1..300}", readiness)
+        self.assertNotIn('kill -0 "$freerdp_pid"', readiness)
+        self.assertIn("launcher may exit", readiness)
+        self.assertIn("StartLimitIntervalSec=300", unit)
+        self.assertIn("StartLimitBurst=5", unit)
+        self.assertIn("RestartSec=30", unit)
 
     def test_wine_cleanup_is_prefix_scoped(self):
         helper = REPOSITORY / "scripts" / "stop-wine-prefix"

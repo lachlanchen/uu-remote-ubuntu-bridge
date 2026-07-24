@@ -35,6 +35,11 @@ locked by the release manifest.
 
 ### Fixed
 
+- wait for the actual FreeRDP relay window after Wine's short-lived Unix
+  launcher exits, verify that the spawned GNOME daemon owns its configured
+  listener instead of accepting another RDP service on the same port, and
+  rate-limit failed starts to prevent a CPU-intensive restart storm from
+  freezing the desktop
 - route layout-representable UU native-phone-keyboard text through the
   authenticated X11/XTEST helper after Unicode normalization, avoiding the
   same nested RDP keyboard conversion that lost accepted physical keys
