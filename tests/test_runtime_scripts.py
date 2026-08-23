@@ -215,10 +215,22 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn('desktop_relay="${UURB_DESKTOP_RELAY:-rdp}"', launcher)
         self.assertIn("--desktop-relay rdp|vnc", installer)
         self.assertIn("UURB_DESKTOP_RELAY=%s", installer)
+        self.assertIn("--vnc-grab-keyboard off|on", installer)
+        self.assertIn("UURB_VNC_GRAB_KEYBOARD=%s", installer)
+        self.assertIn(
+            'vnc_grab_keyboard="${UURB_VNC_GRAB_KEYBOARD:-on}"',
+            launcher,
+        )
         self.assertIn('[[ "$desktop_relay" == vnc ]]', launcher)
         self.assertIn("-autoport 5922", launcher)
         self.assertIn("-localhost", launcher)
         self.assertIn("-no6", launcher)
+        self.assertIn("-modtweak", launcher)
+        self.assertIn("-xkb", launcher)
+        self.assertIn("-add_keysyms", launcher)
+        self.assertIn(
+            '-GrabKeyboard="$vnc_grab_keyboard_value"', launcher
+        )
         self.assertIn("DBUS_SESSION_BUS_ADDRESS=unix:path=/dev/null", launcher)
         self.assertIn("^127\\.0\\.0\\.1:.* - RealVNC Viewer$", launcher)
         self.assertIn("-AcceptBell=0", launcher)

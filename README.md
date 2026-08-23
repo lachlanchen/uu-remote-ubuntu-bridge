@@ -126,7 +126,8 @@ uniform black or white, select the loopback-only VNC fallback:
 
 ```bash
 ./install.sh --skip-packages --skip-account-login \
-  --desktop-target xrdp --desktop-relay vnc
+  --desktop-target xrdp --desktop-relay vnc \
+  --vnc-grab-keyboard on
 ```
 
 This does not expose VNC to the LAN: `x11vnc` binds IPv4 loopback only, and a
@@ -135,6 +136,11 @@ that local viewer, while the existing direct-X11 keyboard option remains
 available. The compatibility default stays `rdp`, so upgrades never switch a
 working host automatically. The VNC fallback requires an X11 target and fails
 closed instead of creating a different desktop for Wayland.
+The dedicated viewer grabs the keyboard by default so nested Shift/Ctrl state
+reaches the target, while x11vnc performs layout-aware keysym handling. This
+does not change the target desktop's XKB layout. See
+[Adaptive keyboard relays](docs/adaptive-keyboard-relays.md) for the exact
+symbol/CJK acceptance test and the opt-out for a non-dedicated viewer.
 
 Windows RDP clients can resize an existing XRDP desktop after UU has already
 started. On a host that deliberately shares that same X11 desktop through the
@@ -569,6 +575,7 @@ ID, raw production log, screenshot, or private desktop content is committed.
 - [Automated repair agent handoff](docs/automated-repair-agent-handoff.md)
 - [UU controller CLI and remote agent](docs/controller-agent.md)
 - [Mobile-keyboard parity handoff](docs/mobile-keyboard-parity-handoff.md)
+- [Adaptive keyboard relays across UU, RDP, and VNC](docs/adaptive-keyboard-relays.md)
 - [macOS current-desktop access](docs/macos-current-desktop.md)
 - [XRDP client stall and UU keyboard recovery](docs/xrdp-and-keyboard-recovery.md)
 - [Unattended startup after reboot](docs/unattended-startup.md)

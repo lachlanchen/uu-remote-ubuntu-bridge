@@ -52,6 +52,7 @@ saved_follow_desktop_resolution="$(
 saved_display="$(saved_setting UURB_DISPLAY)"
 saved_desktop_target="$(saved_setting UURB_DESKTOP_TARGET)"
 saved_desktop_relay="$(saved_setting UURB_DESKTOP_RELAY)"
+saved_vnc_grab_keyboard="$(saved_setting UURB_VNC_GRAB_KEYBOARD)"
 saved_grd_fd_restart_threshold="$(
     saved_setting UURB_GRD_FD_RESTART_THRESHOLD
 )"
@@ -69,6 +70,7 @@ follow_desktop_resolution="${UURB_FOLLOW_DESKTOP_RESOLUTION:-${saved_follow_desk
 bridge_display="${UURB_DISPLAY:-${saved_display:-auto}}"
 desktop_target="${UURB_DESKTOP_TARGET:-${saved_desktop_target:-auto}}"
 desktop_relay="${UURB_DESKTOP_RELAY:-${saved_desktop_relay:-rdp}}"
+vnc_grab_keyboard="${UURB_VNC_GRAB_KEYBOARD:-${saved_vnc_grab_keyboard:-on}}"
 grd_fd_restart_threshold="${UURB_GRD_FD_RESTART_THRESHOLD:-${saved_grd_fd_restart_threshold:-4096}}"
 text_key_delay_ms="$(resolve_text_key_delay \
     "$environment_file" "$saved_text_key_delay_ms")"
@@ -108,6 +110,9 @@ usage: ./install.sh [options]
   --desktop-relay rdp|vnc
                          private-canvas relay; use vnc only for an X11/XRDP
                          desktop when nested GNOME RDP renders blank
+  --vnc-grab-keyboard off|on
+                         grab the dedicated private VNC relay keyboard so
+                         Shift/Ctrl survive nested input (default: on)
   --grd-fd-restart-threshold N
                          restart before GNOME RDP exhausts descriptors
                          (default: 4096; 0 disables the guard)
@@ -174,6 +179,10 @@ while (($#)); do
             ;;
         --desktop-relay)
             desktop_relay="${2:?--desktop-relay requires rdp or vnc}"
+            shift 2
+            ;;
+        --vnc-grab-keyboard)
+            vnc_grab_keyboard="${2:?--vnc-grab-keyboard requires off or on}"
             shift 2
             ;;
         --grd-fd-restart-threshold)
@@ -308,6 +317,10 @@ if [[ "$desktop_target" != auto &&
 fi
 if [[ "$desktop_relay" != rdp && "$desktop_relay" != vnc ]]; then
     printf 'The desktop relay must be rdp or vnc.\n' >&2
+    exit 2
+fi
+if [[ "$vnc_grab_keyboard" != off && "$vnc_grab_keyboard" != on ]]; then
+    printf 'VNC keyboard grabbing must be off or on.\n' >&2
     exit 2
 fi
 if [[ ! "$grd_fd_restart_threshold" =~ ^[0-9]+$ ]] ||
@@ -724,6 +737,8 @@ printf 'UURB_FOLLOW_DESKTOP_RESOLUTION=%s\n' \
 printf 'UURB_DISPLAY=%s\n' "$bridge_display" >>"$environment_tmp"
 printf 'UURB_DESKTOP_TARGET=%s\n' "$desktop_target" >>"$environment_tmp"
 printf 'UURB_DESKTOP_RELAY=%s\n' "$desktop_relay" >>"$environment_tmp"
+printf 'UURB_VNC_GRAB_KEYBOARD=%s\n' \
+    "$vnc_grab_keyboard" >>"$environment_tmp"
 printf 'UURB_GRD_FD_RESTART_THRESHOLD=%s\n' \
     "$grd_fd_restart_threshold" >>"$environment_tmp"
 printf 'UURB_TEXT_KEY_DELAY_MS=%s\n' \

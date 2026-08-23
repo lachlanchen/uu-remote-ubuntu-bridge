@@ -8,6 +8,12 @@ locked by the release manifest.
 
 ### Added
 
+- a persistent, validated `UURB_VNC_GRAB_KEYBOARD` setting that defaults to
+  `on` for the dedicated nested VNC relay, plus explicit layout-aware x11vnc
+  options so Shift/Ctrl and semantic symbols survive intermediate desktops
+- an isolated RFB keyboard probe that verifies 21 shifted symbols and two CJK
+  keysyms in exact order against a Japanese XKB target without touching the
+  logged-in desktop
 - opt-in stable desktop-resolution following for the X11/VNC relay; it aligns
   at startup, debounces later RDP size changes, ignores tiny transient windows,
   and restarts only the UU bridge
