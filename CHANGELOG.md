@@ -18,6 +18,9 @@ locked by the release manifest.
   cannot feed back into the private viewer and trigger stale repeated pastes
 - an isolated VNC clipboard acceptance test covering client cut-text receipt,
   exact target Unicode paste, and absence of reverse clipboard feedback
+- deterministic semantic paste ownership for both X11 `CLIPBOARD` and
+  `PRIMARY`, preventing VTE's `Shift+Insert` from inserting an older selection
+  when phone dictation or smart punctuation uses the Unicode text route
 
 - a persistent, validated `UURB_VNC_GRAB_KEYBOARD` setting that defaults to
   `on` for the dedicated nested VNC relay, plus explicit layout-aware x11vnc

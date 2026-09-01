@@ -251,7 +251,8 @@ wheel go through an authenticated loopback helper and XTEST into the selected
 X11 desktop. With the default `UURB_PHONE_TEXT_MODE=auto`, representable text
 stays on that fast key route, while newline, tab, CJK, emoji, and other
 non-representable Unicode become a real clipboard paste. The helper confirms
-that the new `xclip` process owns `CLIPBOARD` before emitting the paste; a
+that new `xclip` processes own both `CLIPBOARD` and `PRIMARY` before emitting
+the paste, so VTE and non-terminal applications consume the same text; a
 timeout fails closed without pasting stale clipboard data. This preserves
 multiline dictation instead of turning each newline into a prompt-submitting
 Enter key. The global keyboard default remains `rdp`; `auto` selects the

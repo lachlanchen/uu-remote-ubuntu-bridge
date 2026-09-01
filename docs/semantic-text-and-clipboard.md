@@ -19,10 +19,12 @@ The clipboard path is available only when the selected target is X11 and the
 direct helper is active. The Wine broker sends a bounded UTF-16 request over
 the existing token-authenticated loopback connection. The native helper
 validates it, joins split UTF-16 surrogate commits, converts it to UTF-8,
-normalizes CRLF to one newline, makes `xclip` the target desktop's clipboard
-owner, verifies that ownership through X11, and only then emits one paste
-chord. If the new owner is not confirmed within a bounded interval, the helper
-fails closed and does not paste the previous clipboard. It never writes the
+normalizes CRLF to one newline, makes `xclip` own both the target desktop's
+`CLIPBOARD` and `PRIMARY` selections, verifies both owners through X11, and only
+then emits one paste chord. Owning both is required because VTE terminals read
+`PRIMARY` for `Shift+Insert`, while other applications may read `CLIPBOARD`.
+If either new owner is not confirmed within a bounded interval, the helper
+fails closed and does not paste previous desktop text. It never writes the
 payload to logs or disk. A communication failure after an ambiguous injection
 is not replayed.
 
@@ -43,8 +45,10 @@ commits. Composition editing keys may be interleaved with a semantic text
 batch; the broker preserves their order instead of rejecting the whole batch.
 
 Clipboard paste deliberately leaves the committed text in the desktop
-clipboard. This makes a later manual paste useful and avoids racing an
-asynchronous clipboard restore. Do not test this path in a password field.
+`CLIPBOARD` and `PRIMARY` selections. This makes a later manual paste useful,
+keeps `Shift+Insert` deterministic across application toolkits, and avoids
+racing an asynchronous selection restore. Do not test this path in a password
+field.
 
 ## UU clipboard over the VNC desktop relay
 

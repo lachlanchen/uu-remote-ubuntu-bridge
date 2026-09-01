@@ -23,7 +23,8 @@ recover information a client did not send. The robust rule is therefore:
 
 For direct X11 targets, semantic text has a second distinction. Ordinary
 representable characters remain key chords; newline, tab, CJK, emoji, and
-other non-representable commits use the target clipboard and one paste chord.
+other non-representable commits use synchronized target `CLIPBOARD` and
+`PRIMARY` selections plus one paste chord.
 This prevents a dictated newline from acting as a terminal submission and
 avoids reducing Unicode to whichever physical layout is currently active.
 See [semantic phone text and clipboard relay](semantic-text-and-clipboard.md).

@@ -65,6 +65,7 @@ static volatile sig_atomic_t stop_requested;
 static volatile sig_atomic_t listener_fd = -1;
 static volatile sig_atomic_t active_client_fd = -1;
 static volatile sig_atomic_t clipboard_owner_pid = -1;
+static volatile sig_atomic_t primary_owner_pid = -1;
 
 static void handle_signal(int signal_number)
 {
@@ -82,6 +83,10 @@ static void handle_signal(int signal_number)
         close(fd);
     fd = clipboard_owner_pid;
     clipboard_owner_pid = -1;
+    if (fd > 0)
+        kill(fd, SIGTERM);
+    fd = primary_owner_pid;
+    primary_owner_pid = -1;
     if (fd > 0)
         kill(fd, SIGTERM);
 }
@@ -166,13 +171,13 @@ static bool write_fd_all(int fd, const void *buffer, size_t size)
     return true;
 }
 
-static void stop_clipboard_owner(void)
+static void stop_selection_owner(volatile sig_atomic_t *owner_pid)
 {
-    pid_t pid = (pid_t)clipboard_owner_pid;
+    pid_t pid = (pid_t)*owner_pid;
     int status;
     unsigned int attempt;
 
-    clipboard_owner_pid = -1;
+    *owner_pid = -1;
     if (pid <= 0)
         return;
     kill(pid, SIGTERM);
@@ -190,8 +195,16 @@ static void stop_clipboard_owner(void)
         ;
 }
 
-static bool start_clipboard_owner(const x11_api *api, Display *display,
-                                  const char *text, size_t size)
+static void stop_clipboard_owner(void)
+{
+    stop_selection_owner(&clipboard_owner_pid);
+    stop_selection_owner(&primary_owner_pid);
+}
+
+static bool start_selection_owner(const x11_api *api, Display *display,
+                                  const char *selection_name,
+                                  const char *text, size_t size,
+                                  volatile sig_atomic_t *owner_pid)
 {
     int input_pipe[2];
     pid_t pid;
@@ -202,8 +215,7 @@ static bool start_clipboard_owner(const x11_api *api, Display *display,
     Window previous_owner;
     Window current_owner = 0;
 
-    stop_clipboard_owner();
-    clipboard = api->intern_atom(display, "CLIPBOARD", 0);
+    clipboard = api->intern_atom(display, selection_name, 0);
     if (clipboard == 0)
         return false;
     api->sync(display, 0);
@@ -228,16 +240,16 @@ static bool start_clipboard_owner(const x11_api *api, Display *display,
             close(null_fd);
         }
         setenv("LC_ALL", "C.UTF-8", 1);
-        execl("/usr/bin/xclip", "xclip", "-selection", "clipboard",
+        execl("/usr/bin/xclip", "xclip", "-selection", selection_name,
               "-in", "-loops", "0", "-quiet", (char *)NULL);
         _exit(127);
     }
 
     close(input_pipe[0]);
-    clipboard_owner_pid = (sig_atomic_t)pid;
+    *owner_pid = (sig_atomic_t)pid;
     if (!write_fd_all(input_pipe[1], text, size)) {
         close(input_pipe[1]);
-        stop_clipboard_owner();
+        stop_selection_owner(owner_pid);
         return false;
     }
     close(input_pipe[1]);
@@ -254,7 +266,7 @@ static bool start_clipboard_owner(const x11_api *api, Display *display,
             break;
         result = waitpid(pid, &status, WNOHANG);
         if (result == pid || (result < 0 && errno == ECHILD)) {
-            clipboard_owner_pid = -1;
+            *owner_pid = -1;
             return false;
         }
         if (result < 0 && errno != EINTR)
@@ -262,6 +274,20 @@ static bool start_clipboard_owner(const x11_api *api, Display *display,
         sleep_milliseconds(5);
     }
     if (current_owner == 0 || current_owner == previous_owner) {
+        stop_selection_owner(owner_pid);
+        return false;
+    }
+    return true;
+}
+
+static bool start_clipboard_owner(const x11_api *api, Display *display,
+                                  const char *text, size_t size)
+{
+    stop_clipboard_owner();
+    if (!start_selection_owner(api, display, "CLIPBOARD", text, size,
+                               &clipboard_owner_pid) ||
+        !start_selection_owner(api, display, "PRIMARY", text, size,
+                               &primary_owner_pid)) {
         stop_clipboard_owner();
         return false;
     }

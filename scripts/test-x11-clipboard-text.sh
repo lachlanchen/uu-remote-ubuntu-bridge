@@ -14,11 +14,15 @@ openbox_pid=""
 editor_pid=""
 helper_pid=""
 broker_pid=""
+stale_primary_pid=""
 
 cleanup() {
+    local status=$?
     local pid
 
+    trap - EXIT
     for pid in "$broker_pid" "$helper_pid" "$editor_pid" \
+        "$stale_primary_pid" \
         "$openbox_pid" "$xvfb_pid"; do
         if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
             kill "$pid" 2>/dev/null || true
@@ -29,9 +33,12 @@ cleanup() {
             >/dev/null 2>&1 || true
     fi
     wait 2>/dev/null || true
-    if [[ "$temporary_dir" == "${TMPDIR:-/tmp}/uurb-x11-clipboard."* ]]; then
+    if [[ "${UURB_KEEP_TEST_TMP:-0}" == 1 || "$status" -ne 0 ]]; then
+        printf 'isolated test artifacts: %s\n' "$temporary_dir" >&2
+    elif [[ "$temporary_dir" == "${TMPDIR:-/tmp}/uurb-x11-clipboard."* ]]; then
         rm -rf -- "$temporary_dir"
     fi
+    exit "$status"
 }
 trap cleanup EXIT
 
@@ -97,6 +104,16 @@ if [[ -z "$editor_window" ]]; then
 fi
 DISPLAY="$display" xdotool windowactivate --sync "$editor_window"
 
+# Shift+Insert is selection-sensitive: VTE terminals read PRIMARY while other
+# applications read CLIPBOARD. Seed a stale PRIMARY value so the acceptance
+# test catches the exact regression where old desktop text was pasted instead
+# of the semantic phone text.
+printf '%s' 'stale-primary-must-never-be-pasted' | \
+    DISPLAY="$display" xclip -selection primary -in -loops 0 \
+        >"$temporary_dir/primary-fixture.log" 2>&1 &
+stale_primary_pid=$!
+sleep 0.2
+
 DISPLAY="$display" UURB_X11_INPUT_TOKEN="$token" \
     "$temporary_dir/compat/uu-x11-input" --ready-file "$ready_file" \
     --min-hold-ms 0 >"$temporary_dir/x11-input.log" 2>&1 &
@@ -129,6 +146,21 @@ DISPLAY="$display" WINEPREFIX="$wine_prefix" WINEDEBUG=-all \
     /opt/wine-stable/bin/wine \
     "$temporary_dir/uu-clipboard-text-probe.exe"
 sleep 0.3
+
+expected_primary='🙂'
+primary_text="$(
+    DISPLAY="$display" timeout 1 \
+        xclip -selection primary -out 2>/dev/null || true
+)"
+if [[ "$primary_text" != "$expected_primary" ]]; then
+    if [[ "$primary_text" == 'stale-primary-must-never-be-pasted' ]]; then
+        printf 'semantic helper did not replace the stale PRIMARY selection\n' >&2
+    else
+        printf 'semantic PRIMARY owner exposed an unexpected %s-character value\n' \
+            "${#primary_text}" >&2
+    fi
+    exit 1
+fi
 
 DISPLAY="$display" xdotool key --clearmodifiers alt+o
 for _ in {1..30}; do

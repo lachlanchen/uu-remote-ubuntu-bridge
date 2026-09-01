@@ -163,8 +163,9 @@ that are representable by the active layout are normalized into ordinary
 virtual-key chords. In the default adaptive mode, newline, tab, CJK, emoji,
 and other non-representable text instead cross the same authenticated helper
 as a bounded semantic-text request. The helper validates and converts that
-request to UTF-8, owns the target clipboard through `xclip`, and emits one
-paste chord only after `XGetSelectionOwner` confirms a new clipboard owner.
+request to UTF-8, owns the target `CLIPBOARD` and `PRIMARY` selections through
+`xclip`, and emits one paste chord only after `XGetSelectionOwner` confirms
+both new owners.
 An ownership timeout fails closed instead of pasting stale user data. The
 native helper otherwise preflights the complete translated
 array, maps the established XFree86 scan-code set to X11 keycodes, and maps

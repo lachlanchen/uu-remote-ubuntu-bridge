@@ -757,8 +757,9 @@ The correction is adaptive rather than replacing the proven key path.
 Representable ordinary text still uses `route=x11-text`. Newline, tab, CJK,
 emoji, and other non-representable commits use a bounded semantic-text record
 over the existing authenticated loopback helper. The helper validates UTF-16,
-normalizes CRLF, converts to UTF-8 in memory, gives the target `CLIPBOARD` to a
-scoped `xclip` owner, and emits `Shift+Insert`. Backspace remains an editing
+normalizes CRLF, converts to UTF-8 in memory, gives the target `CLIPBOARD` and
+`PRIMARY` selections to scoped `xclip` owners, and emits `Shift+Insert`.
+Owning both prevents VTE from reading an older `PRIMARY`. Backspace remains an editing
 key. Payloads are neither logged nor written to runtime files.
 
 The first live retest exposed one more composition detail. UU could send
