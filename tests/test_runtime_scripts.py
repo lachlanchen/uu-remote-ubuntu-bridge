@@ -228,11 +228,12 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("-modtweak", launcher)
         self.assertIn("-xkb", launcher)
         self.assertIn("-add_keysyms", launcher)
+        self.assertIn("-seldir recv", launcher)
         self.assertIn(
             '-GrabKeyboard="$vnc_grab_keyboard_value"', launcher
         )
         self.assertIn("-ClientCutText=1", launcher)
-        self.assertIn("-ServerCutText=1", launcher)
+        self.assertIn("-ServerCutText=0", launcher)
         self.assertIn("-SendPrimary=0", launcher)
         self.assertIn("-SendInitialClipboard=0", launcher)
         self.assertIn("DBUS_SESSION_BUS_ADDRESS=unix:path=/dev/null", launcher)
@@ -767,6 +768,8 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn('L"UURB_PHONE_TEXT_MODE"', broker)
         self.assertIn("inject_clipboard_text", helper)
         self.assertIn('execl("/usr/bin/xclip"', helper)
+        self.assertIn('"XGetSelectionOwner"', helper)
+        self.assertIn("current_owner != previous_owner", helper)
         self.assertIn("text_events_to_utf8", helper)
         self.assertIn('"rdp-text-fallback"', broker)
         self.assertIn("TCP_NODELAY", broker)

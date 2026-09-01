@@ -770,19 +770,27 @@ Unicode text, and treats every non-ASCII UTF-16 unit as semantic without
 depending on Wine's `VkKeyScanW` result. Ordinary representable English remains
 on the established fast route.
 
-The nested RealVNC relay was also made explicit: `ClientCutText` and
-`ServerCutText` are enabled, `SendPrimary=0` selects the real clipboard, and
-initial transfer stays disabled to avoid replacing the desktop clipboard at
-startup. This fixes direct UU copy/paste independently of phone typing.
+The first live semantic attempt exposed a timing and feedback defect. The
+helper waited 20 ms and checked only that `xclip` remained alive; it could emit
+`Shift+Insert` before the new clipboard owner existed, repeatedly pasting the
+old clipboard. Bidirectional VNC cut-text could then echo target semantic text
+back into the private display. The corrected helper polls
+`XGetSelectionOwner`, fails without any paste if ownership is not confirmed,
+sets RealVNC `ServerCutText=0`, and starts x11vnc with `-seldir recv`.
+`ClientCutText=1` remains enabled for UU/private-to-Ubuntu copy, while reverse
+feedback is intentionally blocked.
 
 The isolated acceptance is:
 
 ```bash
 ./scripts/test-x11-clipboard-text.sh
+./scripts/test-vnc-clipboard-relay.sh
 ```
 
 It delivered an editing-key-plus-text batch, Chinese, two lines, and an emoji
 whose surrogate pair was split across requests exactly into an editable GTK
 application, then confirmed `route=x11-clipboard-text`, matching result count,
 and `error=0`. The established fast-text and VNC-keyboard tests still passed,
-so the change extends rather than replaces those known-good paths.
+so the change extends rather than replaces those known-good paths. The VNC
+clipboard test additionally confirms receipt of client cut text, exact target
+Unicode paste, and absence of target-to-private clipboard feedback.

@@ -13,9 +13,11 @@ locked by the release manifest.
   authenticated clipboard paste; composition editing keys can remain ordered
   inside the same batch, and an isolated test verifies exact Chinese, two-line,
   and split-surrogate delivery without touching the logged-in desktop
-- explicit bidirectional VNC clipboard settings that relay `CLIPBOARD` rather
-  than stale X11 `PRIMARY` text and avoid overwriting the desktop clipboard at
-  bridge startup
+- fail-closed semantic paste ownership verification plus a one-way VNC
+  clipboard boundary: UU/private cut text may enter Ubuntu, while target text
+  cannot feed back into the private viewer and trigger stale repeated pastes
+- an isolated VNC clipboard acceptance test covering client cut-text receipt,
+  exact target Unicode paste, and absence of reverse clipboard feedback
 
 - a persistent, validated `UURB_VNC_GRAB_KEYBOARD` setting that defaults to
   `on` for the dedicated nested VNC relay, plus explicit layout-aware x11vnc

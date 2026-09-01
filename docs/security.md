@@ -91,7 +91,10 @@ emoji, and other non-representable commits may cross the token-authenticated
 loopback protocol as bounded UTF-16, are converted in memory to UTF-8, and are
 owned by a target-desktop `xclip` process for paste. Payloads are never logged
 or written to repository/runtime files, but they deliberately remain in the
-user's clipboard after a successful paste. The helper preflights each complete
+user's clipboard after a successful paste. The helper verifies a new X11
+clipboard owner before synthesizing the paste and fails closed on timeout, so
+stale clipboard content is not pasted. The nested VNC relay accepts client
+cut-text but blocks target-to-private clipboard feedback. The helper preflights each complete
 request before the first XTEST call and releases all tracked held keys and
 buttons when its authenticated broker connection closes. Mouse coordinates,
 key values, and text are never logged. The token is supplied through inherited

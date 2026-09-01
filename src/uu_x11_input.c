@@ -20,11 +20,15 @@
 /* Keep the helper buildable with runtime X11 libraries only. */
 typedef struct _XDisplay Display;
 typedef int Bool;
+typedef unsigned long Atom;
 typedef unsigned long KeySym;
+typedef unsigned long Window;
 typedef unsigned char KeyCode;
 typedef Display *(*x_open_display_fn)(const char *);
 typedef int (*x_close_display_fn)(Display *);
 typedef int (*x_sync_fn)(Display *, Bool);
+typedef Atom (*x_intern_atom_fn)(Display *, const char *, Bool);
+typedef Window (*x_get_selection_owner_fn)(Display *, Atom);
 typedef int (*x_default_screen_fn)(Display *);
 typedef int (*x_display_dimension_fn)(Display *, int);
 typedef KeyCode (*x_keysym_to_keycode_fn)(Display *, KeySym);
@@ -44,6 +48,8 @@ typedef struct x11_api {
     x_open_display_fn open_display;
     x_close_display_fn close_display;
     x_sync_fn sync;
+    x_intern_atom_fn intern_atom;
+    x_get_selection_owner_fn get_selection_owner;
     x_default_screen_fn default_screen;
     x_display_dimension_fn display_width;
     x_display_dimension_fn display_height;
@@ -184,14 +190,24 @@ static void stop_clipboard_owner(void)
         ;
 }
 
-static bool start_clipboard_owner(const char *text, size_t size)
+static bool start_clipboard_owner(const x11_api *api, Display *display,
+                                  const char *text, size_t size)
 {
     int input_pipe[2];
     pid_t pid;
     int status;
     int null_fd;
+    unsigned int attempt;
+    Atom clipboard;
+    Window previous_owner;
+    Window current_owner = 0;
 
     stop_clipboard_owner();
+    clipboard = api->intern_atom(display, "CLIPBOARD", 0);
+    if (clipboard == 0)
+        return false;
+    api->sync(display, 0);
+    previous_owner = api->get_selection_owner(display, clipboard);
     if (pipe2(input_pipe, O_CLOEXEC) != 0)
         return false;
     pid = fork();
@@ -226,11 +242,27 @@ static bool start_clipboard_owner(const char *text, size_t size)
     }
     close(input_pipe[1]);
 
-    /* xclip acquires CLIPBOARD after consuming stdin.  Keep this bounded so
-     * one text commit cannot stall the input broker indefinitely. */
-    sleep_milliseconds(20);
-    if (waitpid(pid, &status, WNOHANG) == pid) {
-        clipboard_owner_pid = -1;
+    /* Never paste on the strength of a timer alone.  A busy desktop can leave
+     * xclip alive but not yet owning CLIPBOARD, which would make Shift+Insert
+     * paste stale user data.  Wait for a new, non-None owner and fail closed. */
+    for (attempt = 0; attempt < 100; attempt++) {
+        pid_t result;
+
+        api->sync(display, 0);
+        current_owner = api->get_selection_owner(display, clipboard);
+        if (current_owner != 0 && current_owner != previous_owner)
+            break;
+        result = waitpid(pid, &status, WNOHANG);
+        if (result == pid || (result < 0 && errno == ECHILD)) {
+            clipboard_owner_pid = -1;
+            return false;
+        }
+        if (result < 0 && errno != EINTR)
+            break;
+        sleep_milliseconds(5);
+    }
+    if (current_owner == 0 || current_owner == previous_owner) {
+        stop_clipboard_owner();
         return false;
     }
     return true;
@@ -383,7 +415,7 @@ static bool inject_clipboard_text(const x11_api *api, Display *display,
     insert_keycode = api->keysym_to_keycode(display, insert);
     if (shift_keycode == 0 || shift_keycode >= 256 ||
         insert_keycode == 0 || insert_keycode >= 256 ||
-        !start_clipboard_owner(text, size))
+        !start_clipboard_owner(api, display, text, size))
         return false;
 
     shift_was_pressed = pressed_keys[shift_keycode];
@@ -628,6 +660,10 @@ static bool load_x11_api(x11_api *api)
     api->close_display = (x_close_display_fn)dlsym(api->x11_library,
                                                    "XCloseDisplay");
     api->sync = (x_sync_fn)dlsym(api->x11_library, "XSync");
+    api->intern_atom = (x_intern_atom_fn)dlsym(api->x11_library,
+                                               "XInternAtom");
+    api->get_selection_owner = (x_get_selection_owner_fn)dlsym(
+        api->x11_library, "XGetSelectionOwner");
     api->default_screen = (x_default_screen_fn)dlsym(
         api->x11_library, "XDefaultScreen");
     api->display_width = (x_display_dimension_fn)dlsym(
@@ -648,6 +684,7 @@ static bool load_x11_api(x11_api *api)
         (xtest_fake_relative_motion_event_fn)dlsym(
             api->xtst_library, "XTestFakeRelativeMotionEvent");
     if (!api->open_display || !api->close_display || !api->sync ||
+        !api->intern_atom || !api->get_selection_owner ||
         !api->default_screen || !api->display_width ||
         !api->display_height || !api->keysym_to_keycode ||
         !api->query_extension || !api->fake_key_event ||

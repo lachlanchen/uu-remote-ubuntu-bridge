@@ -250,7 +250,9 @@ Physical keys, layout-representable phone text, and mouse movement/buttons/
 wheel go through an authenticated loopback helper and XTEST into the selected
 X11 desktop. With the default `UURB_PHONE_TEXT_MODE=auto`, representable text
 stays on that fast key route, while newline, tab, CJK, emoji, and other
-non-representable Unicode become a real clipboard paste. This preserves
+non-representable Unicode become a real clipboard paste. The helper confirms
+that the new `xclip` process owns `CLIPBOARD` before emitting the paste; a
+timeout fails closed without pasting stale clipboard data. This preserves
 multiline dictation instead of turning each newline into a prompt-submitting
 Enter key. The global keyboard default remains `rdp`; `auto` selects the
 direct route only for an X11 target. If
@@ -260,9 +262,11 @@ ambiguous partial injection. Extended navigation keys are resolved from
 keysyms on the active display rather than a fixed X11 keycode table, so the
 mapping follows the host layout.
 
-The VNC desktop relay also explicitly synchronizes the X11 `CLIPBOARD` in both
-directions and does not substitute the `PRIMARY` selection. This allows text
-copied through UU itself to reach Ubuntu without sending stale selected text.
+The VNC desktop relay explicitly permits clipboard updates from UU's private
+desktop to Ubuntu while blocking the reverse target-to-private direction.
+`SendPrimary=0` avoids stale selected text, and the receive-only server plus
+`ServerCutText=0` prevent semantic target text from feeding back into the VNC
+viewer and being pasted again.
 See [semantic phone text and clipboard relay](docs/semantic-text-and-clipboard.md).
 
 On the validated XRDP workstation, the first live direct-UU run produced 256

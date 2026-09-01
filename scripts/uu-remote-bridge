@@ -723,6 +723,7 @@ start_desktop_relay() {
             -modtweak \
             -xkb \
             -add_keysyms \
+            -seldir recv \
             -autoport 5922 \
             >>"$desktop_vnc_log" 2>&1 &
         desktop_x11vnc_pid=$!
@@ -1177,7 +1178,7 @@ else
         -SendKeyEvents=1 \
         -SendPointerEvents=1 \
         -ClientCutText=1 \
-        -ServerCutText=1 \
+        -ServerCutText=0 \
         -SendPrimary=0 \
         -SendInitialClipboard=0 \
         -ServerClipboardGraceTime=5000 \
