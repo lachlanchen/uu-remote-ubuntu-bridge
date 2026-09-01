@@ -84,15 +84,21 @@ int main(void)
         0x4f60, 0x597d, L' ', L'l', L'i', L'n', L'e', L' ', L'o', L'n', L'e',
         L'\r', L'\n', L'l', L'i', L'n', L'e', L' ', L't', L'w', L'o'
     };
-    INPUT inputs[ARRAYSIZE(text) * 2U];
+    INPUT inputs[ARRAYSIZE(text) * 2U + 2U];
     INPUT surrogate[2];
     HANDLE pipe;
     DWORD index;
 
     ZeroMemory(inputs, sizeof(inputs));
+    /* Dictation may mix composition editing keys and Unicode replacement text
+     * in one SendInput batch. Backspace on an empty editor is harmless here. */
+    inputs[0].type = INPUT_KEYBOARD;
+    inputs[0].ki.wVk = VK_BACK;
+    inputs[1] = inputs[0];
+    inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
     for (index = 0; index < ARRAYSIZE(text); index++) {
-        INPUT *press = &inputs[index * 2U];
-        INPUT *release = &inputs[index * 2U + 1U];
+        INPUT *press = &inputs[index * 2U + 2U];
+        INPUT *release = &inputs[index * 2U + 3U];
 
         press->type = INPUT_KEYBOARD;
         press->ki.wScan = text[index];

@@ -761,6 +761,15 @@ normalizes CRLF, converts to UTF-8 in memory, gives the target `CLIPBOARD` to a
 scoped `xclip` owner, and emits `Shift+Insert`. Backspace remains an editing
 key. Payloads are neither logged nor written to runtime files.
 
+The first live retest exposed one more composition detail. UU could send
+deletion/editing events around a revised dictation commit. The deletion reached
+the target, while the Chinese replacement still took the old translation path
+and returned error 1113, leaving the visible text stripped. The semantic route
+therefore accepts ordered mixtures of ordinary keyboard/mouse records and
+Unicode text, and treats every non-ASCII UTF-16 unit as semantic without
+depending on Wine's `VkKeyScanW` result. Ordinary representable English remains
+on the established fast route.
+
 The nested RealVNC relay was also made explicit: `ClientCutText` and
 `ServerCutText` are enabled, `SendPrimary=0` selects the real clipboard, and
 initial transfer stays disabled to avoid replacing the desktop clipboard at
@@ -772,7 +781,8 @@ The isolated acceptance is:
 ./scripts/test-x11-clipboard-text.sh
 ```
 
-It delivered Chinese and two lines exactly into an editable GTK application,
-then confirmed `route=x11-clipboard-text`, matching result count, and
-`error=0`. The established fast-text and VNC-keyboard tests still passed, so
-the change extends rather than replaces those known-good paths.
+It delivered an editing-key-plus-text batch, Chinese, two lines, and an emoji
+whose surrogate pair was split across requests exactly into an editable GTK
+application, then confirmed `route=x11-clipboard-text`, matching result count,
+and `error=0`. The established fast-text and VNC-keyboard tests still passed,
+so the change extends rather than replaces those known-good paths.

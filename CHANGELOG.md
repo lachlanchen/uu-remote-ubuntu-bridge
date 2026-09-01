@@ -10,8 +10,9 @@ locked by the release manifest.
 
 - adaptive direct-X11 phone text: ordinary representable characters retain
   the fast key route, while multiline and non-English Unicode use a bounded,
-  authenticated clipboard paste; an isolated test verifies exact Chinese and
-  two-line delivery without touching the logged-in desktop
+  authenticated clipboard paste; composition editing keys can remain ordered
+  inside the same batch, and an isolated test verifies exact Chinese, two-line,
+  and split-surrogate delivery without touching the logged-in desktop
 - explicit bidirectional VNC clipboard settings that relay `CLIPBOARD` rather
   than stale X11 `PRIMARY` text and avoid overwriting the desktop clipboard at
   bridge startup

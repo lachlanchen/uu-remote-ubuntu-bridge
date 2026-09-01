@@ -35,7 +35,9 @@ Two explicit behavior tracks remain available:
 
 `keys` preserves the former key-only behavior. `clipboard` pastes every phone
 text commit except editing keys. `auto` is preferable because it retains fast
-ASCII typing while fixing multiline dictation and non-English commits.
+ASCII typing while fixing dictation revisions, multiline text, and non-English
+commits. Composition editing keys may be interleaved with a semantic text
+batch; the broker preserves their order instead of rejecting the whole batch.
 
 Clipboard paste deliberately leaves the committed text in the desktop
 clipboard. This makes a later manual paste useful and avoids racing an

@@ -357,18 +357,19 @@ static BOOL phone_text_uses_clipboard(DWORD count, const INPUT *inputs)
 
         if (input->type != INPUT_KEYBOARD ||
             (input->ki.dwFlags & KEYEVENTF_UNICODE) == 0)
-            return FALSE;
+            continue;
         if ((input->ki.dwFlags & KEYEVENTF_KEYUP) != 0)
             continue;
         has_press = TRUE;
         character = (WCHAR)input->ki.wScan;
-        /* Backspace is an editing command, not clipboard text. */
+        /* Backspace stays an editing command inside a semantic batch. */
         if (character == L'\b')
-            return FALSE;
+            continue;
         if (configured_phone_text_mode == PHONE_TEXT_MODE_CLIPBOARD)
             continue;
         if (character == L'\r' || character == L'\n' ||
-            character == L'\t' || VkKeyScanW(character) == (SHORT)-1)
+            character == L'\t' || character >= UINT16_C(0x0080) ||
+            VkKeyScanW(character) == (SHORT)-1)
             requires_clipboard = TRUE;
     }
     if (!has_press)
@@ -383,6 +384,8 @@ static x11_route_result send_x11_clipboard_text(
     uurb_x11_input_event events[INPUT_BRIDGE_MAX_INPUTS];
     DWORD event_count = 0;
     DWORD index;
+    BOOL segment_is_text = FALSE;
+    BOOL sent_any = FALSE;
 
     *considered = FALSE;
     if (!x11_input_configured || count == 0 ||
@@ -390,23 +393,68 @@ static x11_route_result send_x11_clipboard_text(
         return X11_ROUTE_NOT_USED;
     for (index = 0; index < count; index++) {
         const INPUT *input = &inputs[index];
+        uurb_x11_input_event event;
+        BOOL event_is_text;
+        x11_route_result result;
 
-        if (input->type != INPUT_KEYBOARD ||
-            (input->ki.dwFlags & KEYEVENTF_UNICODE) == 0)
-            return X11_ROUTE_NOT_USED;
-        if ((input->ki.dwFlags & KEYEVENTF_KEYUP) != 0)
-            continue;
-        ZeroMemory(&events[event_count], sizeof(events[event_count]));
-        events[event_count].type = UURB_X11_INPUT_TEXT;
-        events[event_count].data = input->ki.wScan;
-        event_count++;
+        ZeroMemory(&event, sizeof(event));
+        if (input->type == INPUT_KEYBOARD &&
+            (input->ki.dwFlags & KEYEVENTF_UNICODE) != 0) {
+            if ((WCHAR)input->ki.wScan == L'\b') {
+                INPUT editing = *input;
+
+                editing.ki.wVk = VK_BACK;
+                editing.ki.wScan = 0;
+                editing.ki.dwFlags &= KEYEVENTF_KEYUP;
+                if (!input_to_x11_event(&editing, &event))
+                    return sent_any ? X11_ROUTE_FAILED : X11_ROUTE_NOT_USED;
+                event_is_text = FALSE;
+            } else {
+                if ((input->ki.dwFlags & KEYEVENTF_KEYUP) != 0)
+                    continue;
+                event.type = UURB_X11_INPUT_TEXT;
+                event.data = input->ki.wScan;
+                event_is_text = TRUE;
+            }
+        } else {
+            if (!input_to_x11_event(input, &event))
+                return sent_any ? X11_ROUTE_FAILED : X11_ROUTE_NOT_USED;
+            event_is_text = FALSE;
+        }
+
+        if (event_count > 0 && event_is_text != segment_is_text) {
+            result = send_x11_events(event_count, events, error);
+            if (result != X11_ROUTE_SUCCESS) {
+                if (sent_any || result == X11_ROUTE_FAILED) {
+                    if (*error == ERROR_SUCCESS)
+                        *error = ERROR_CONNECTION_ABORTED;
+                    return X11_ROUTE_FAILED;
+                }
+                return result;
+            }
+            sent_any = TRUE;
+            event_count = 0;
+        }
+        if (event_count == 0)
+            segment_is_text = event_is_text;
+        events[event_count++] = event;
     }
     *considered = TRUE;
-    if (event_count == 0) {
-        *error = ERROR_SUCCESS;
-        return X11_ROUTE_SUCCESS;
+    if (event_count > 0) {
+        x11_route_result result =
+            send_x11_events(event_count, events, error);
+
+        if (result != X11_ROUTE_SUCCESS) {
+            if (sent_any || result == X11_ROUTE_FAILED) {
+                if (*error == ERROR_SUCCESS)
+                    *error = ERROR_CONNECTION_ABORTED;
+                return X11_ROUTE_FAILED;
+            }
+            return result;
+        }
     }
-    return send_x11_events(event_count, events, error);
+    *error = ERROR_SUCCESS;
+    return X11_ROUTE_SUCCESS;
 }
 
 static BOOL append_key_event(INPUT *inputs, DWORD *count, WORD virtual_key,
