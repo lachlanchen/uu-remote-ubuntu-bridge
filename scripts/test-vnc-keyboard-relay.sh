@@ -26,7 +26,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for command in Xvfb python3 setxkbmap ss stdbuf x11vnc xdotool xdpyinfo \
+for command in flock Xvfb python3 setxkbmap ss stdbuf x11vnc xdotool xdpyinfo \
     xev; do
     command -v "$command" >/dev/null 2>&1 || {
         printf 'missing VNC keyboard-test command: %s\n' "$command" >&2
@@ -34,6 +34,8 @@ for command in Xvfb python3 setxkbmap ss stdbuf x11vnc xdotool xdpyinfo \
     }
 done
 
+exec 9>"${TMPDIR:-/tmp}/uurb-isolated-x-display.lock"
+flock -x 9
 display=""
 for number in {111..127}; do
     if [[ ! -S "/tmp/.X11-unix/X$number" ]]; then
@@ -68,6 +70,7 @@ for _ in {1..50}; do
     sleep 0.1
 done
 DISPLAY="$display" xdpyinfo >/dev/null
+flock -u 9
 
 target_layout="${UURB_TEST_TARGET_LAYOUT:-jp}"
 DISPLAY="$display" setxkbmap -model pc105 -layout "$target_layout"

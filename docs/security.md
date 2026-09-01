@@ -85,13 +85,18 @@ Diagnostic input logs contain only count, Windows input type, flag bits,
 route, result, and error. They intentionally omit virtual key codes, scan
 codes, Unicode values, mouse coordinates, and clipboard data.
 
-The X11 helper accepts only bounded keyboard and mouse records. Phone text is
-normalized to ordinary key chords before this boundary; no raw text crosses
-the protocol. The helper preflights each complete request before the first
-XTEST call and releases all tracked held keys and buttons when its authenticated
-broker connection closes. Mouse coordinates and key values are never logged.
-The token is supplied through inherited process environments, not a command-
-line argument or persistent configuration file.
+The X11 helper accepts bounded keyboard, mouse, and semantic-text records.
+Representable phone text is normalized to ordinary key chords. Newline, CJK,
+emoji, and other non-representable commits may cross the token-authenticated
+loopback protocol as bounded UTF-16, are converted in memory to UTF-8, and are
+owned by a target-desktop `xclip` process for paste. Payloads are never logged
+or written to repository/runtime files, but they deliberately remain in the
+user's clipboard after a successful paste. The helper preflights each complete
+request before the first XTEST call and releases all tracked held keys and
+buttons when its authenticated broker connection closes. Mouse coordinates,
+key values, and text are never logged. The token is supplied through inherited
+process environments, not a command-line argument or persistent configuration
+file.
 
 The local FreeRDP `cliprdr` channel is enabled for normal copy and paste.
 Clipboard content can therefore cross between the Wine relay and the logged-in

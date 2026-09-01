@@ -741,3 +741,38 @@ and all 97 repository tests continued to pass. Live verification then confirmed
 that the private canvas and selected desktop were both 1920x1080 and that the
 same supervised X11 helper remained active; no XRDP, GNOME, GDM, PipeWire, or
 WirePlumber process was restarted.
+
+## 21. Preserve dictated text semantics instead of turning it into keys
+
+Direct UU phone input later exposed a different boundary. English dictation
+worked, but a second line behaved like a real Enter and Chinese commits failed.
+The broker evidence separated this from network loss: most phone characters
+arrived as paired `KEYEVENTF_UNICODE` records and returned exact counts, while
+212 non-representable requests ended with Windows error 1113. The bridge was
+faithfully converting a newline to `VK_RETURN` and relying on `VkKeyScanW` for
+every other character. That is correct key emulation but incorrect text
+semantics for a terminal prompt or arbitrary Unicode.
+
+The correction is adaptive rather than replacing the proven key path.
+Representable ordinary text still uses `route=x11-text`. Newline, tab, CJK,
+emoji, and other non-representable commits use a bounded semantic-text record
+over the existing authenticated loopback helper. The helper validates UTF-16,
+normalizes CRLF, converts to UTF-8 in memory, gives the target `CLIPBOARD` to a
+scoped `xclip` owner, and emits `Shift+Insert`. Backspace remains an editing
+key. Payloads are neither logged nor written to runtime files.
+
+The nested RealVNC relay was also made explicit: `ClientCutText` and
+`ServerCutText` are enabled, `SendPrimary=0` selects the real clipboard, and
+initial transfer stays disabled to avoid replacing the desktop clipboard at
+startup. This fixes direct UU copy/paste independently of phone typing.
+
+The isolated acceptance is:
+
+```bash
+./scripts/test-x11-clipboard-text.sh
+```
+
+It delivered Chinese and two lines exactly into an editable GTK application,
+then confirmed `route=x11-clipboard-text`, matching result count, and
+`error=0`. The established fast-text and VNC-keyboard tests still passed, so
+the change extends rather than replaces those known-good paths.

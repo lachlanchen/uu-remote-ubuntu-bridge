@@ -42,6 +42,12 @@ typedef enum x11_route_result {
     X11_ROUTE_FAILED
 } x11_route_result;
 
+typedef enum phone_text_mode {
+    PHONE_TEXT_MODE_AUTO,
+    PHONE_TEXT_MODE_KEYS,
+    PHONE_TEXT_MODE_CLIPBOARD
+} phone_text_mode;
+
 static HANDLE log_file = INVALID_HANDLE_VALUE;
 static volatile LONG input_call_count;
 static volatile LONG keyboard_call_count;
@@ -51,6 +57,7 @@ static volatile LONG text_call_count;
 static DWORD text_key_delay_ms = INPUT_BRIDGE_DEFAULT_TEXT_KEY_DELAY_MS;
 static DWORD physical_key_delay_ms =
     INPUT_BRIDGE_DEFAULT_PHYSICAL_KEY_DELAY_MS;
+static phone_text_mode configured_phone_text_mode = PHONE_TEXT_MODE_AUTO;
 static BOOL x11_input_configured;
 static BOOL winsock_initialized;
 static SOCKET x11_input_socket = INVALID_SOCKET;
@@ -276,43 +283,32 @@ static BOOL input_to_x11_event(const INPUT *input,
     return TRUE;
 }
 
-static x11_route_result send_x11_inputs(DWORD count, const INPUT *inputs,
-                                        DWORD *error, BOOL *considered)
+static x11_route_result send_x11_events(
+    DWORD count, const uurb_x11_input_event *events, DWORD *error)
 {
-    struct {
-        uurb_x11_request request;
-        uurb_x11_input_event events[INPUT_BRIDGE_MAX_INPUTS];
-    } packet;
+    uurb_x11_request request;
     uurb_x11_response response;
-    DWORD index;
 
-    *considered = FALSE;
     if (!x11_input_configured || count == 0 ||
-        count > INPUT_BRIDGE_MAX_INPUTS)
+        count > UURB_X11_INPUT_MAX_EVENTS)
         return X11_ROUTE_NOT_USED;
-    *considered = TRUE;
-    for (index = 0; index < count; index++) {
-        if (!input_to_x11_event(&inputs[index], &packet.events[index]))
-            return X11_ROUTE_NOT_USED;
-    }
     if (!connect_x11_input())
         return X11_ROUTE_NOT_USED;
 
-    packet.request.magic = UURB_X11_INPUT_MAGIC;
-    packet.request.sequence = (uint32_t)InterlockedIncrement(&x11_sequence);
-    packet.request.count = count;
-    packet.request.reserved = 0;
-    if (!socket_write_all(
-            x11_input_socket, &packet,
-            (int)(sizeof(packet.request) +
-                  count * sizeof(packet.events[0]))) ||
+    request.magic = UURB_X11_INPUT_MAGIC;
+    request.sequence = (uint32_t)InterlockedIncrement(&x11_sequence);
+    request.count = count;
+    request.reserved = 0;
+    if (!socket_write_all(x11_input_socket, &request, sizeof(request)) ||
+        !socket_write_all(x11_input_socket, events,
+                          (int)(count * sizeof(events[0]))) ||
         !socket_read_all(x11_input_socket, &response, sizeof(response))) {
         close_x11_input_socket();
         *error = ERROR_CONNECTION_ABORTED;
         return X11_ROUTE_FAILED;
     }
     if (response.magic != UURB_X11_INPUT_MAGIC ||
-        response.sequence != packet.request.sequence) {
+        response.sequence != request.sequence) {
         close_x11_input_socket();
         *error = ERROR_INVALID_DATA;
         return X11_ROUTE_FAILED;
@@ -326,6 +322,91 @@ static x11_route_result send_x11_inputs(DWORD count, const INPUT *inputs,
         return X11_ROUTE_NOT_USED;
     *error = ERROR_GEN_FAILURE;
     return X11_ROUTE_FAILED;
+}
+
+static x11_route_result send_x11_inputs(DWORD count, const INPUT *inputs,
+                                        DWORD *error, BOOL *considered)
+{
+    uurb_x11_input_event events[INPUT_BRIDGE_MAX_INPUTS];
+    DWORD index;
+
+    *considered = FALSE;
+    if (!x11_input_configured || count == 0 ||
+        count > INPUT_BRIDGE_MAX_INPUTS)
+        return X11_ROUTE_NOT_USED;
+    *considered = TRUE;
+    for (index = 0; index < count; index++) {
+        if (!input_to_x11_event(&inputs[index], &events[index]))
+            return X11_ROUTE_NOT_USED;
+    }
+    return send_x11_events(count, events, error);
+}
+
+static BOOL phone_text_uses_clipboard(DWORD count, const INPUT *inputs)
+{
+    DWORD index;
+    BOOL has_press = FALSE;
+    BOOL requires_clipboard = FALSE;
+
+    if (!x11_input_configured || configured_phone_text_mode ==
+                                     PHONE_TEXT_MODE_KEYS)
+        return FALSE;
+    for (index = 0; index < count; index++) {
+        const INPUT *input = &inputs[index];
+        WCHAR character;
+
+        if (input->type != INPUT_KEYBOARD ||
+            (input->ki.dwFlags & KEYEVENTF_UNICODE) == 0)
+            return FALSE;
+        if ((input->ki.dwFlags & KEYEVENTF_KEYUP) != 0)
+            continue;
+        has_press = TRUE;
+        character = (WCHAR)input->ki.wScan;
+        /* Backspace is an editing command, not clipboard text. */
+        if (character == L'\b')
+            return FALSE;
+        if (configured_phone_text_mode == PHONE_TEXT_MODE_CLIPBOARD)
+            continue;
+        if (character == L'\r' || character == L'\n' ||
+            character == L'\t' || VkKeyScanW(character) == (SHORT)-1)
+            requires_clipboard = TRUE;
+    }
+    if (!has_press)
+        return FALSE;
+    return configured_phone_text_mode == PHONE_TEXT_MODE_CLIPBOARD ||
+           requires_clipboard;
+}
+
+static x11_route_result send_x11_clipboard_text(
+    DWORD count, const INPUT *inputs, DWORD *error, BOOL *considered)
+{
+    uurb_x11_input_event events[INPUT_BRIDGE_MAX_INPUTS];
+    DWORD event_count = 0;
+    DWORD index;
+
+    *considered = FALSE;
+    if (!x11_input_configured || count == 0 ||
+        count > INPUT_BRIDGE_MAX_INPUTS)
+        return X11_ROUTE_NOT_USED;
+    for (index = 0; index < count; index++) {
+        const INPUT *input = &inputs[index];
+
+        if (input->type != INPUT_KEYBOARD ||
+            (input->ki.dwFlags & KEYEVENTF_UNICODE) == 0)
+            return X11_ROUTE_NOT_USED;
+        if ((input->ki.dwFlags & KEYEVENTF_KEYUP) != 0)
+            continue;
+        ZeroMemory(&events[event_count], sizeof(events[event_count]));
+        events[event_count].type = UURB_X11_INPUT_TEXT;
+        events[event_count].data = input->ki.wScan;
+        event_count++;
+    }
+    *considered = TRUE;
+    if (event_count == 0) {
+        *error = ERROR_SUCCESS;
+        return X11_ROUTE_SUCCESS;
+    }
+    return send_x11_events(event_count, events, error);
 }
 
 static BOOL append_key_event(INPUT *inputs, DWORD *count, WORD virtual_key,
@@ -523,6 +604,24 @@ static DWORD send_relay_inputs(DWORD source_count, const INPUT *source,
     *focus_wait_ms = 0;
     *route = "rdp";
 
+    /* Preserve semantic text when a key chord cannot represent it.  Newline,
+     * tab, CJK, and other Unicode commits become one authenticated X11
+     * clipboard update followed by a paste chord.  Ordinary representable
+     * text keeps the faster established key-event path. */
+    if (phone_text_uses_clipboard(source_count, source)) {
+        *normalized_unicode = TRUE;
+        x11_result = send_x11_clipboard_text(source_count, source, error,
+                                             &x11_considered);
+        if (x11_result == X11_ROUTE_SUCCESS) {
+            *route = "x11-clipboard-text";
+            return source_count;
+        }
+        if (x11_result == X11_ROUTE_FAILED) {
+            *route = "x11-clipboard-text-error";
+            return 0;
+        }
+    }
+
     if (!translate_inputs(source_count, source, translated, &translated_count,
                           segments, &segment_count, normalized_unicode)) {
         *error = ERROR_NO_UNICODE_TRANSLATION;
@@ -535,9 +634,10 @@ static DWORD send_relay_inputs(DWORD source_count, const INPUT *source,
     }
 
     /*
-     * Unicode phone text is normalized into ordinary key chords before this
-     * boundary.  Sending those complete chords through the same authenticated
-     * X11 helper as physical keys avoids the nested Wine/FreeRDP keyboard hop.
+     * Representable Unicode phone text is normalized into ordinary key chords
+     * before this boundary. Sending those complete chords through the same
+     * authenticated X11 helper as physical keys avoids the nested Wine/FreeRDP
+     * keyboard hop.
      * If preflight cannot use X11, no event has been injected and the existing
      * RDP route remains a safe fallback.  A partial/ambiguous X11 failure is
      * never replayed.
@@ -674,6 +774,32 @@ static DWORD configured_physical_key_delay(void)
     return (DWORD)parsed;
 }
 
+static phone_text_mode read_phone_text_mode(void)
+{
+    wchar_t value[16];
+    DWORD length;
+
+    length = GetEnvironmentVariableW(L"UURB_PHONE_TEXT_MODE", value,
+                                     ARRAYSIZE(value));
+    if (length == 0 || length >= ARRAYSIZE(value) ||
+        _wcsicmp(value, L"auto") == 0)
+        return PHONE_TEXT_MODE_AUTO;
+    if (_wcsicmp(value, L"keys") == 0)
+        return PHONE_TEXT_MODE_KEYS;
+    if (_wcsicmp(value, L"clipboard") == 0)
+        return PHONE_TEXT_MODE_CLIPBOARD;
+    return PHONE_TEXT_MODE_AUTO;
+}
+
+static const char *phone_text_mode_name(phone_text_mode mode)
+{
+    if (mode == PHONE_TEXT_MODE_KEYS)
+        return "keys";
+    if (mode == PHONE_TEXT_MODE_CLIPBOARD)
+        return "clipboard";
+    return "auto";
+}
+
 static void serve_client(HANDLE pipe)
 {
     for (;;) {
@@ -804,16 +930,18 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous,
                            OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     text_key_delay_ms = configured_text_key_delay();
     physical_key_delay_ms = configured_physical_key_delay();
+    configured_phone_text_mode = read_phone_text_mode();
     x11_input_configured = configure_x11_input();
     {
         char line[256];
 
         _snprintf(line, sizeof(line),
-                  "UU input broker active text-delay-ms=%lu physical-delay-ms=%lu focus-timeout-ms=%lu keyboard-route=%s\r\n",
+                  "UU input broker active text-delay-ms=%lu physical-delay-ms=%lu focus-timeout-ms=%lu keyboard-route=%s phone-text-mode=%s\r\n",
                   (unsigned long)text_key_delay_ms,
                   (unsigned long)physical_key_delay_ms,
                   (unsigned long)INPUT_BRIDGE_FOCUS_TIMEOUT_MS,
-                  x11_input_configured ? "x11" : "rdp");
+                  x11_input_configured ? "x11" : "rdp",
+                  phone_text_mode_name(configured_phone_text_mode));
         line[sizeof(line) - 1] = '\0';
         write_log(line);
         flush_log();

@@ -52,6 +52,7 @@ runtime_digest_file="$wine_prefix/compat/.runtime-source-sha256"
 # target process's normal GetTempPathW() location.
 bridge_log="$wine_prefix/drive_c/users/$bridge_user/AppData/Local/Temp/uu-input-bridge.log"
 broker_log="$wine_prefix/drive_c/users/$bridge_user/Temp/uu-input-broker.log"
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/uu-remote-bridge"
 server_log_dir="$wine_prefix/drive_c/Program Files/Netease/GameViewer/log/server/log"
 stability_seconds=270
 allow_runtime_drift=false
@@ -73,6 +74,8 @@ saved_desktop_relay="$(saved_setting UURB_DESKTOP_RELAY)"
 desktop_relay="${UURB_DESKTOP_RELAY:-${saved_desktop_relay:-rdp}}"
 saved_keyboard_route="$(saved_setting UURB_KEYBOARD_ROUTE)"
 keyboard_route="${UURB_KEYBOARD_ROUTE:-${saved_keyboard_route:-rdp}}"
+saved_phone_text_mode="$(saved_setting UURB_PHONE_TEXT_MODE)"
+phone_text_mode="${UURB_PHONE_TEXT_MODE:-${saved_phone_text_mode:-auto}}"
 saved_cursor_guard="$(saved_setting UURB_CURSOR_GUARD)"
 cursor_guard_setting="${UURB_CURSOR_GUARD:-${saved_cursor_guard:-off}}"
 
@@ -468,6 +471,15 @@ else
     fail 'input broker physical-key pacing is missing or differs from saved settings'
 fi
 
+if [[ "$phone_text_mode" != auto && "$phone_text_mode" != keys &&
+      "$phone_text_mode" != clipboard ]]; then
+    fail "saved phone-text mode is invalid: $phone_text_mode"
+elif [[ "$broker_configuration" == *"phone-text-mode=$phone_text_mode"* ]]; then
+    pass "input broker uses the $phone_text_mode phone-text mode"
+else
+    fail 'input broker phone-text mode is missing or differs from saved settings'
+fi
+
 active_keyboard_route="$(
     /usr/bin/sed -n 's/.* keyboard-route=\([^[:space:]]*\).*/\1/p' \
         <<<"$broker_configuration"
@@ -492,6 +504,16 @@ elif [[ "$active_keyboard_route" == x11 ]]; then
     fi
 else
     pass 'compatible RDP physical-key route is active'
+fi
+
+if [[ "$active_keyboard_route" == x11 && "$phone_text_mode" != keys ]]; then
+    if [[ -x /usr/bin/xclip ]] &&
+       tail -n 20 "$state_dir/x11-input.log" 2>/dev/null | \
+           grep -q 'clipboard-text=available'; then
+        pass 'semantic Unicode and multiline clipboard text is available'
+    else
+        fail 'X11 phone-text clipboard support is unavailable'
+    fi
 fi
 
 private_display="$(cat "$private_display_file" 2>/dev/null || true)"

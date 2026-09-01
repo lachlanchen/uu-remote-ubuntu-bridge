@@ -139,10 +139,11 @@ localectl status
 setxkbmap -query
 ```
 
-The native phone text mapper follows Wine's active layout. First compare with a
-US English layout and the established ASCII acceptance string. A non-English
-character that `VkKeyScanW` cannot represent fails explicitly rather than
-becoming an unrelated key.
+The fast phone-text mapper follows Wine's active layout. First compare with a
+US English layout and the established ASCII acceptance string. On a current
+direct-X11 deployment, a non-English character or newline that `VkKeyScanW`
+cannot safely represent should use `route=x11-clipboard-text` rather than fail
+or become an unrelated key.
 
 ### Checkout and installed runtime
 
@@ -263,7 +264,8 @@ app/IME and language, network type, and whether UU reports P2P or relay mode.
 | Multi-homed host binds a nonpreferred adapter | UU selected Wine's first adapter instead of Ubuntu's route | Test the post-release `--network-interface default` mode |
 | Mouse and both keyboard modes fail | Injection hook, broker, or relay focus | Run the quick verifier and inspect bounded bridge metadata |
 | Input works after restart, then degrades over hours | GNOME RDP/libei descriptor exhaustion | Inspect FD count and use the reviewed post-release backport |
-| ASCII works but a language-specific character fails | Character unavailable in active Wine layout | Match the intended layout or use the physical-key/clipboard path |
+| ASCII works but a language-specific character fails | Adaptive semantic-text route is absent or undeployed | Require `phone-text-mode=auto`, `clipboard-text=available`, and fresh `route=x11-clipboard-text` metadata |
+| Dictated second line submits or replaces the first | Newline was converted to a physical Enter key | Deploy the adaptive clipboard-text route and run `test-x11-clipboard-text.sh` |
 | Windows UU to RDP works; direct Ubuntu UU does not | Windows pre-converts Unicode before RDP | Verify the Ubuntu broker rather than changing GNOME RDP |
 | Video is black as well as input failing | Capture or local RDP startup | Follow the separate black-video checks in troubleshooting |
 

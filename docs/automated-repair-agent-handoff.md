@@ -52,8 +52,9 @@ UURB_PHYSICAL_KEY_DELAY_MS=0
 ```
 
 The authenticated loopback X11/XTEST helper handles physical keys,
-layout-representable normalized phone text, and mouse motion/buttons/wheel.
-Video and clipboard remain on the selected local desktop relay. The detailed
+layout-representable normalized phone text, adaptive Unicode/multiline
+clipboard paste, and mouse motion/buttons/wheel. The explicit UU clipboard
+channel remains on the selected local desktop relay. The detailed
 recovery and rollback are in
 [XRDP Client Stall and UU Keyboard Recovery](xrdp-and-keyboard-recovery.md).
 
@@ -64,10 +65,11 @@ UU exposes two keyboard surfaces:
 1. The computer-keyboard panel emits ordinary physical Windows key events.
 2. The phone's normal keyboard/IME emits `KEYEVENTF_UNICODE` text batches.
 
-An acceptance test for one surface does not validate the other. The phone text
-path must normalize each representable character with `VkKeyScanW` into
-ordinary modifier and virtual-key chords. Unsupported Unicode fails explicitly
-instead of becoming an unrelated key.
+An acceptance test for one surface does not validate the other. The phone-text
+path normalizes each representable character with `VkKeyScanW` into ordinary
+modifier and virtual-key chords. On a direct X11 target, adaptive mode sends
+newline and non-representable Unicode as semantic clipboard text plus one paste
+chord instead of emitting an unrelated key.
 
 Important evidence from the XRDP workstation:
 

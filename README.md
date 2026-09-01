@@ -248,15 +248,22 @@ desktop, the opt-in direct route removes only that final keyboard hop:
 Video and clipboard continue through the selected local desktop relay.
 Physical keys, layout-representable phone text, and mouse movement/buttons/
 wheel go through an authenticated loopback helper and XTEST into the selected
-X11 desktop. Phone text is still normalized
-into ordinary virtual-key chords before that boundary; unsupported Unicode
-fails explicitly rather than becoming an unrelated key. The global default
-remains `rdp`; `auto` selects the direct route only for an X11 target. If
+X11 desktop. With the default `UURB_PHONE_TEXT_MODE=auto`, representable text
+stays on that fast key route, while newline, tab, CJK, emoji, and other
+non-representable Unicode become a real clipboard paste. This preserves
+multiline dictation instead of turning each newline into a prompt-submitting
+Enter key. The global keyboard default remains `rdp`; `auto` selects the
+direct route only for an X11 target. If
 preflight cannot verify the target display or helper before injection, the
 request safely uses the compatible RDP route. No event is replayed after an
 ambiguous partial injection. Extended navigation keys are resolved from
 keysyms on the active display rather than a fixed X11 keycode table, so the
 mapping follows the host layout.
+
+The VNC desktop relay also explicitly synchronizes the X11 `CLIPBOARD` in both
+directions and does not substitute the `PRIMARY` selection. This allows text
+copied through UU itself to reach Ubuntu without sending stale selected text.
+See [semantic phone text and clipboard relay](docs/semantic-text-and-clipboard.md).
 
 On the validated XRDP workstation, the first live direct-UU run produced 256
 content-free sampled physical-key calls on `route=x11`; every sampled call
@@ -271,6 +278,7 @@ touching the live desktop:
 
 ```bash
 ./scripts/test-x11-phone-text.sh
+./scripts/test-x11-clipboard-text.sh
 ```
 
 The companion mouse acceptance sends absolute movement and a complete click

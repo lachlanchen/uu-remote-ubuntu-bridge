@@ -8,6 +8,14 @@ locked by the release manifest.
 
 ### Added
 
+- adaptive direct-X11 phone text: ordinary representable characters retain
+  the fast key route, while multiline and non-English Unicode use a bounded,
+  authenticated clipboard paste; an isolated test verifies exact Chinese and
+  two-line delivery without touching the logged-in desktop
+- explicit bidirectional VNC clipboard settings that relay `CLIPBOARD` rather
+  than stale X11 `PRIMARY` text and avoid overwriting the desktop clipboard at
+  bridge startup
+
 - a persistent, validated `UURB_VNC_GRAB_KEYBOARD` setting that defaults to
   `on` for the dedicated nested VNC relay, plus explicit layout-aware x11vnc
   options so Shift/Ctrl and semantic symbols survive intermediate desktops

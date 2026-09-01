@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -57,6 +58,7 @@ typedef struct x11_api {
 static volatile sig_atomic_t stop_requested;
 static volatile sig_atomic_t listener_fd = -1;
 static volatile sig_atomic_t active_client_fd = -1;
+static volatile sig_atomic_t clipboard_owner_pid = -1;
 
 static void handle_signal(int signal_number)
 {
@@ -72,6 +74,10 @@ static void handle_signal(int signal_number)
     active_client_fd = -1;
     if (fd >= 0)
         close(fd);
+    fd = clipboard_owner_pid;
+    clipboard_owner_pid = -1;
+    if (fd > 0)
+        kill(fd, SIGTERM);
 }
 
 static bool read_all(int fd, void *buffer, size_t size)
@@ -132,6 +138,264 @@ static void sleep_milliseconds(uint64_t milliseconds)
     delay.tv_nsec = (long)(milliseconds % UINT64_C(1000)) * 1000000L;
     while (nanosleep(&delay, &delay) != 0 && errno == EINTR)
         ;
+}
+
+static bool write_fd_all(int fd, const void *buffer, size_t size)
+{
+    const unsigned char *position = buffer;
+
+    while (size > 0) {
+        ssize_t written = write(fd, position, size);
+
+        if (written < 0) {
+            if (errno == EINTR)
+                continue;
+            return false;
+        }
+        if (written == 0)
+            return false;
+        position += (size_t)written;
+        size -= (size_t)written;
+    }
+    return true;
+}
+
+static void stop_clipboard_owner(void)
+{
+    pid_t pid = (pid_t)clipboard_owner_pid;
+    int status;
+    unsigned int attempt;
+
+    clipboard_owner_pid = -1;
+    if (pid <= 0)
+        return;
+    kill(pid, SIGTERM);
+    for (attempt = 0; attempt < 25; attempt++) {
+        pid_t result = waitpid(pid, &status, WNOHANG);
+
+        if (result == pid || (result < 0 && errno == ECHILD))
+            return;
+        if (result < 0 && errno != EINTR)
+            break;
+        sleep_milliseconds(2);
+    }
+    kill(pid, SIGKILL);
+    while (waitpid(pid, &status, 0) < 0 && errno == EINTR)
+        ;
+}
+
+static bool start_clipboard_owner(const char *text, size_t size)
+{
+    int input_pipe[2];
+    pid_t pid;
+    int status;
+    int null_fd;
+
+    stop_clipboard_owner();
+    if (pipe2(input_pipe, O_CLOEXEC) != 0)
+        return false;
+    pid = fork();
+    if (pid < 0) {
+        close(input_pipe[0]);
+        close(input_pipe[1]);
+        return false;
+    }
+    if (pid == 0) {
+        if (dup2(input_pipe[0], STDIN_FILENO) < 0)
+            _exit(126);
+        close(input_pipe[0]);
+        close(input_pipe[1]);
+        null_fd = open("/dev/null", O_WRONLY | O_CLOEXEC);
+        if (null_fd >= 0) {
+            dup2(null_fd, STDOUT_FILENO);
+            dup2(null_fd, STDERR_FILENO);
+            close(null_fd);
+        }
+        setenv("LC_ALL", "C.UTF-8", 1);
+        execl("/usr/bin/xclip", "xclip", "-selection", "clipboard",
+              "-in", "-loops", "0", "-quiet", (char *)NULL);
+        _exit(127);
+    }
+
+    close(input_pipe[0]);
+    clipboard_owner_pid = (sig_atomic_t)pid;
+    if (!write_fd_all(input_pipe[1], text, size)) {
+        close(input_pipe[1]);
+        stop_clipboard_owner();
+        return false;
+    }
+    close(input_pipe[1]);
+
+    /* xclip acquires CLIPBOARD after consuming stdin.  Keep this bounded so
+     * one text commit cannot stall the input broker indefinitely. */
+    sleep_milliseconds(20);
+    if (waitpid(pid, &status, WNOHANG) == pid) {
+        clipboard_owner_pid = -1;
+        return false;
+    }
+    return true;
+}
+
+static bool append_utf8(char *output, size_t capacity, size_t *length,
+                        uint32_t codepoint)
+{
+    unsigned int bytes;
+
+    if (codepoint == 0 || codepoint > UINT32_C(0x10ffff) ||
+        (codepoint >= UINT32_C(0xd800) &&
+         codepoint <= UINT32_C(0xdfff)))
+        return false;
+    if (codepoint <= UINT32_C(0x7f))
+        bytes = 1;
+    else if (codepoint <= UINT32_C(0x7ff))
+        bytes = 2;
+    else if (codepoint <= UINT32_C(0xffff))
+        bytes = 3;
+    else
+        bytes = 4;
+    if (*length + bytes >= capacity)
+        return false;
+
+    if (bytes == 1) {
+        output[(*length)++] = (char)codepoint;
+    } else if (bytes == 2) {
+        output[(*length)++] = (char)(UINT32_C(0xc0) | (codepoint >> 6));
+        output[(*length)++] = (char)(UINT32_C(0x80) |
+                                     (codepoint & UINT32_C(0x3f)));
+    } else if (bytes == 3) {
+        output[(*length)++] = (char)(UINT32_C(0xe0) | (codepoint >> 12));
+        output[(*length)++] = (char)(UINT32_C(0x80) |
+                                     ((codepoint >> 6) & UINT32_C(0x3f)));
+        output[(*length)++] = (char)(UINT32_C(0x80) |
+                                     (codepoint & UINT32_C(0x3f)));
+    } else {
+        output[(*length)++] = (char)(UINT32_C(0xf0) | (codepoint >> 18));
+        output[(*length)++] = (char)(UINT32_C(0x80) |
+                                     ((codepoint >> 12) & UINT32_C(0x3f)));
+        output[(*length)++] = (char)(UINT32_C(0x80) |
+                                     ((codepoint >> 6) & UINT32_C(0x3f)));
+        output[(*length)++] = (char)(UINT32_C(0x80) |
+                                     (codepoint & UINT32_C(0x3f)));
+    }
+    return true;
+}
+
+static bool valid_text_event(const uurb_x11_input_event *event)
+{
+    return event->type == UURB_X11_INPUT_TEXT && event->flags == 0 &&
+           event->x == 0 && event->y == 0 && event->virtual_key == 0 &&
+           event->scan_code == 0 && event->data <= UINT32_C(0xffff);
+}
+
+static bool text_events_to_utf8(const uurb_x11_input_event *events,
+                                uint32_t count, char *output,
+                                size_t capacity, size_t *length,
+                                bool *previous_ended_cr,
+                                uint32_t *pending_high_surrogate)
+{
+    uint32_t index = 0;
+
+    *length = 0;
+    if (*pending_high_surrogate != 0) {
+        uint32_t low;
+        uint32_t codepoint;
+
+        if (!valid_text_event(&events[0])) {
+            *pending_high_surrogate = 0;
+            return false;
+        }
+        low = events[0].data;
+        if (low < UINT32_C(0xdc00) || low > UINT32_C(0xdfff)) {
+            *pending_high_surrogate = 0;
+            return false;
+        }
+        codepoint = UINT32_C(0x10000) +
+                    ((*pending_high_surrogate - UINT32_C(0xd800)) << 10) +
+                    (low - UINT32_C(0xdc00));
+        *pending_high_surrogate = 0;
+        if (!append_utf8(output, capacity, length, codepoint))
+            return false;
+        index = 1;
+    }
+    for (; index < count; index++) {
+        uint32_t unit;
+        uint32_t codepoint;
+
+        if (!valid_text_event(&events[index]))
+            return false;
+        unit = events[index].data;
+        if (unit == (uint32_t)'\n' && *previous_ended_cr) {
+            *previous_ended_cr = false;
+            continue;
+        }
+        *previous_ended_cr = false;
+        if (unit == (uint32_t)'\r') {
+            codepoint = (uint32_t)'\n';
+            if (index + 1 < count &&
+                valid_text_event(&events[index + 1]) &&
+                events[index + 1].data == (uint32_t)'\n') {
+                index++;
+            } else {
+                *previous_ended_cr = true;
+            }
+        } else if (unit >= UINT32_C(0xd800) &&
+                   unit <= UINT32_C(0xdbff)) {
+            uint32_t low;
+
+            if (index + 1 >= count) {
+                *pending_high_surrogate = unit;
+                continue;
+            }
+            if (!valid_text_event(&events[index + 1]))
+                return false;
+            low = events[++index].data;
+            if (low < UINT32_C(0xdc00) || low > UINT32_C(0xdfff))
+                return false;
+            codepoint = UINT32_C(0x10000) +
+                        ((unit - UINT32_C(0xd800)) << 10) +
+                        (low - UINT32_C(0xdc00));
+        } else if (unit >= UINT32_C(0xdc00) &&
+                   unit <= UINT32_C(0xdfff)) {
+            return false;
+        } else {
+            codepoint = unit;
+        }
+        if (!append_utf8(output, capacity, length, codepoint))
+            return false;
+    }
+    output[*length] = '\0';
+    return true;
+}
+
+static bool inject_clipboard_text(const x11_api *api, Display *display,
+                                  const char *text, size_t size,
+                                  bool pressed_keys[256])
+{
+    const KeySym shift_left = 0xffe1UL;
+    const KeySym insert = 0xff63UL;
+    unsigned int shift_keycode;
+    unsigned int insert_keycode;
+    bool shift_was_pressed;
+
+    if (size == 0)
+        return true;
+    shift_keycode = api->keysym_to_keycode(display, shift_left);
+    insert_keycode = api->keysym_to_keycode(display, insert);
+    if (shift_keycode == 0 || shift_keycode >= 256 ||
+        insert_keycode == 0 || insert_keycode >= 256 ||
+        !start_clipboard_owner(text, size))
+        return false;
+
+    shift_was_pressed = pressed_keys[shift_keycode];
+    if ((!shift_was_pressed &&
+         !api->fake_key_event(display, shift_keycode, 1, 0)) ||
+        !api->fake_key_event(display, insert_keycode, 1, 0) ||
+        !api->fake_key_event(display, insert_keycode, 0, 0) ||
+        (!shift_was_pressed &&
+         !api->fake_key_event(display, shift_keycode, 0, 0)))
+        return false;
+    api->sync(display, 0);
+    return true;
 }
 
 static KeySym extended_scan_to_keysym(unsigned int scan)
@@ -510,6 +774,8 @@ static void serve_client(int client, const char *token, x11_api *api,
     bool pressed_keys[256] = {false};
     bool pressed_buttons[10] = {false};
     uint64_t pressed_at[256] = {0};
+    bool previous_text_ended_cr = false;
+    uint32_t pending_high_surrogate = 0;
     uurb_x11_handshake handshake;
 
     if (!read_all(client, &handshake, sizeof(handshake)) ||
@@ -526,6 +792,7 @@ static void serve_client(int client, const char *token, x11_api *api,
         uint32_t index;
         uint32_t injected = 0;
         uint32_t error = 0;
+        bool text_request;
 
         if (!read_all(client, &request, sizeof(request)))
             break;
@@ -539,6 +806,34 @@ static void serve_client(int client, const char *token, x11_api *api,
         if (!read_all(client, events,
                       request.count * sizeof(events[0])))
             break;
+
+        text_request = events[0].type == UURB_X11_INPUT_TEXT;
+        if (text_request) {
+            char text[UURB_X11_INPUT_MAX_EVENTS * 4U + 1U];
+            size_t text_length;
+            bool ended_cr = previous_text_ended_cr;
+
+            if (!text_events_to_utf8(events, request.count, text,
+                                     sizeof(text), &text_length,
+                                     &ended_cr,
+                                     &pending_high_surrogate)) {
+                if (!send_response(client, request.sequence, 0,
+                                   UURB_X11_ERROR_UNSUPPORTED))
+                    break;
+                continue;
+            }
+            if (!inject_clipboard_text(api, display, text, text_length,
+                                       pressed_keys)) {
+                if (!send_response(client, request.sequence, 0,
+                                   UURB_X11_ERROR_INJECTION))
+                    break;
+                continue;
+            }
+            previous_text_ended_cr = ended_cr;
+            if (!send_response(client, request.sequence, request.count, 0))
+                break;
+            continue;
+        }
 
         for (index = 0; index < request.count; index++) {
             keycodes[index] = 0;
@@ -656,14 +951,17 @@ int main(int argc, char **argv)
     sigemptyset(&action.sa_mask);
     sigaction(SIGINT, &action, NULL);
     sigaction(SIGTERM, &action, NULL);
+    signal(SIGPIPE, SIG_IGN);
 
     listener_fd = create_listener(ready_file);
     if (listener_fd < 0) {
         fprintf(stderr, "Cannot create the private X11 input listener.\n");
         goto cleanup;
     }
-    fprintf(stderr, "X11 input helper ready; minimum-hold-ms=%u.\n",
-            minimum_hold_ms);
+    fprintf(stderr,
+            "X11 input helper ready; minimum-hold-ms=%u clipboard-text=%s.\n",
+            minimum_hold_ms,
+            access("/usr/bin/xclip", X_OK) == 0 ? "available" : "unavailable");
 
     while (!stop_requested) {
         int client = accept(listener_fd, NULL, NULL);
@@ -684,6 +982,7 @@ int main(int argc, char **argv)
     status = stop_requested ? EXIT_SUCCESS : EXIT_FAILURE;
 
 cleanup:
+    stop_clipboard_owner();
     if (listener_fd >= 0)
         close(listener_fd);
     unlink(ready_file);

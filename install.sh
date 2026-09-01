@@ -59,6 +59,7 @@ saved_grd_fd_restart_threshold="$(
 saved_text_key_delay_ms="$(saved_setting UURB_TEXT_KEY_DELAY_MS)"
 saved_physical_key_delay_ms="$(saved_setting UURB_PHYSICAL_KEY_DELAY_MS)"
 saved_keyboard_route="$(saved_setting UURB_KEYBOARD_ROUTE)"
+saved_phone_text_mode="$(saved_setting UURB_PHONE_TEXT_MODE)"
 saved_network_interface="$(saved_setting UURB_NETWORK_INTERFACE)"
 saved_cursor_guard="$(saved_setting UURB_CURSOR_GUARD)"
 saved_cursor_size="$(saved_setting UURB_CURSOR_SIZE)"
@@ -76,6 +77,7 @@ text_key_delay_ms="$(resolve_text_key_delay \
     "$environment_file" "$saved_text_key_delay_ms")"
 physical_key_delay_ms="${UURB_PHYSICAL_KEY_DELAY_MS:-${saved_physical_key_delay_ms:-0}}"
 keyboard_route="${UURB_KEYBOARD_ROUTE:-${saved_keyboard_route:-rdp}}"
+phone_text_mode="${UURB_PHONE_TEXT_MODE:-${saved_phone_text_mode:-auto}}"
 network_interface="${UURB_NETWORK_INTERFACE:-${saved_network_interface:-all}}"
 cursor_guard="${UURB_CURSOR_GUARD:-${saved_cursor_guard:-off}}"
 cursor_size="${UURB_CURSOR_SIZE:-${saved_cursor_size:-auto}}"
@@ -125,6 +127,10 @@ usage: ./install.sh [options]
                          route physical keys through the compatible RDP path,
                          directly into an X11 desktop, or auto-detect X11
                          (default: rdp; x11 is opt-in)
+  --phone-text-mode auto|keys|clipboard
+                         keep representable phone text on fast key events and
+                         paste newline/CJK as semantic clipboard text (auto),
+                         or force one route (default: auto)
   --network-interface all|default|IFACE
                          use all adapters (the default), Ubuntu's preferred
                          route, or one named interface
@@ -199,6 +205,10 @@ while (($#)); do
             ;;
         --keyboard-route)
             keyboard_route="${2:?--keyboard-route requires rdp, x11, or auto}"
+            shift 2
+            ;;
+        --phone-text-mode)
+            phone_text_mode="${2:?--phone-text-mode requires auto, keys, or clipboard}"
             shift 2
             ;;
         --network-interface)
@@ -345,6 +355,11 @@ if [[ "$keyboard_route" != rdp && "$keyboard_route" != x11 &&
     printf 'The keyboard route must be rdp, x11, or auto.\n' >&2
     exit 2
 fi
+if [[ "$phone_text_mode" != auto && "$phone_text_mode" != keys &&
+      "$phone_text_mode" != clipboard ]]; then
+    printf 'The phone-text mode must be auto, keys, or clipboard.\n' >&2
+    exit 2
+fi
 if [[ "$network_interface" != all &&
       "$network_interface" != default &&
       ! "$network_interface" =~ ^[a-zA-Z0-9_.:-]{1,15}$ ]]; then
@@ -453,7 +468,7 @@ install_packages() {
         libxml2-utils libxtst6 meson novnc \
         ninja-build openbox openssl p7zip-full patch python3 python3-attr \
         python3-gi python3-jinja2 tar tigervnc-viewer websockify \
-        x11-utils x11vnc xauth \
+        x11-utils x11vnc xauth xclip \
         xdotool xvfb zstd
     install_winehq
 }
@@ -511,7 +526,8 @@ for command in curl meson ninja patch readelf sha256sum /usr/bin/systemctl \
     "$wine_bin" "$wineserver_bin" /usr/bin/Xvfb /usr/bin/gsettings \
     /usr/bin/awk /usr/bin/ip /usr/bin/mcookie /usr/bin/openbox \
     /usr/bin/script /usr/bin/sort /usr/bin/ss /usr/bin/xauth \
-    /usr/bin/vncviewer /usr/bin/websockify /usr/bin/x11vnc /usr/bin/xdotool \
+    /usr/bin/vncviewer /usr/bin/websockify /usr/bin/x11vnc /usr/bin/xclip \
+    /usr/bin/xdotool \
     /usr/libexec/gnome-remote-desktop-daemon; do
     if ! command -v "$command" >/dev/null 2>&1; then
         printf 'missing required command: %s\n' "$command" >&2
@@ -747,6 +763,8 @@ printf 'UURB_PHYSICAL_KEY_DELAY_MS=%s\n' \
     "$physical_key_delay_ms" >>"$environment_tmp"
 printf 'UURB_KEYBOARD_ROUTE=%s\n' \
     "$keyboard_route" >>"$environment_tmp"
+printf 'UURB_PHONE_TEXT_MODE=%s\n' \
+    "$phone_text_mode" >>"$environment_tmp"
 printf 'UURB_NETWORK_INTERFACE=%s\n' \
     "$network_interface" >>"$environment_tmp"
 printf 'UURB_CURSOR_GUARD=%s\n' \

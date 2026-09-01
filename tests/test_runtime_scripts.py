@@ -231,6 +231,10 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn(
             '-GrabKeyboard="$vnc_grab_keyboard_value"', launcher
         )
+        self.assertIn("-ClientCutText=1", launcher)
+        self.assertIn("-ServerCutText=1", launcher)
+        self.assertIn("-SendPrimary=0", launcher)
+        self.assertIn("-SendInitialClipboard=0", launcher)
         self.assertIn("DBUS_SESSION_BUS_ADDRESS=unix:path=/dev/null", launcher)
         self.assertIn("^127\\.0\\.0\\.1:.* - RealVNC Viewer$", launcher)
         self.assertIn("-AcceptBell=0", launcher)
@@ -265,6 +269,7 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("UURB_TEXT_KEY_DELAY_MS=%s", installer)
         self.assertIn("UURB_PHYSICAL_KEY_DELAY_MS=%s", installer)
         self.assertIn("UURB_KEYBOARD_ROUTE=%s", installer)
+        self.assertIn("UURB_PHONE_TEXT_MODE=%s", installer)
         self.assertIn("UURB_NETWORK_INTERFACE=%s", installer)
         self.assertIn("UURB_CURSOR_GUARD=%s", installer)
         self.assertIn("UURB_CURSOR_SIZE=%s", installer)
@@ -294,6 +299,10 @@ class RuntimeScriptTests(unittest.TestCase):
         )
         self.assertIn(
             'keyboard_route="${UURB_KEYBOARD_ROUTE:-rdp}"',
+            launcher,
+        )
+        self.assertIn(
+            'phone_text_mode="${UURB_PHONE_TEXT_MODE:-auto}"',
             launcher,
         )
         self.assertIn(
@@ -740,6 +749,7 @@ class RuntimeScriptTests(unittest.TestCase):
     def test_phone_ime_unicode_input_is_normalized(self):
         bridge = (REPOSITORY / "src" / "uu_input_bridge.c").read_text()
         broker = (REPOSITORY / "src" / "uu_input_broker.c").read_text()
+        helper = (REPOSITORY / "src" / "uu_x11_input.c").read_text()
 
         self.assertIn("contains_unicode_keyboard", bridge)
         self.assertIn("KEYEVENTF_UNICODE", bridge)
@@ -751,6 +761,13 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("Sleep(text_key_delay_ms)", broker)
         self.assertIn('L"UURB_TEXT_KEY_DELAY_MS"', broker)
         self.assertIn('"x11-text"', broker)
+        self.assertIn('"x11-clipboard-text"', broker)
+        self.assertIn("phone_text_uses_clipboard", broker)
+        self.assertIn("UURB_X11_INPUT_TEXT", broker)
+        self.assertIn('L"UURB_PHONE_TEXT_MODE"', broker)
+        self.assertIn("inject_clipboard_text", helper)
+        self.assertIn('execl("/usr/bin/xclip"', helper)
+        self.assertIn("text_events_to_utf8", helper)
         self.assertIn('"rdp-text-fallback"', broker)
         self.assertIn("TCP_NODELAY", broker)
         translated = broker.index("if (!translate_inputs")

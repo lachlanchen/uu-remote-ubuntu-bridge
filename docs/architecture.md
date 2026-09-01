@@ -159,11 +159,15 @@ after that boundary succeeds.
 On an X11 target with `UURB_KEYBOARD_ROUTE=x11`, the broker sends bounded
 keyboard, mouse, or mixed arrays to `uu-x11-input` over a token-authenticated
 loopback socket. Physical keys are mapped directly. Unicode phone-text arrays
-are first normalized into ordinary virtual-key chords, so neither Unicode
-values nor text cross the helper protocol. The native helper preflights the
-complete translated array, maps the established XFree86 scan-code set to X11
-keycodes, and maps Windows relative/normalized motion, buttons, vertical and
-horizontal wheel events to XTEST on the discovered live desktop. A helper that
+that are representable by the active layout are normalized into ordinary
+virtual-key chords. In the default adaptive mode, newline, tab, CJK, emoji,
+and other non-representable text instead cross the same authenticated helper
+as a bounded semantic-text request. The helper validates and converts that
+request to UTF-8, owns the target clipboard through `xclip`, and emits one
+paste chord. The native helper otherwise preflights the complete translated
+array, maps the established XFree86 scan-code set to X11 keycodes, and maps
+Windows relative/normalized motion, buttons, vertical and horizontal wheel
+events to XTEST on the discovered live desktop. A helper that
 is absent, unreachable before injection, or presented with an unsupported
 event safely falls back to the selected desktop relay. A communication failure
 after injection begins returns an error without replay, preventing duplicate
@@ -176,7 +180,8 @@ enabled globally because the original RDP route is known-good on other hosts
 and is still required for Wayland targets.
 
 No key code, Unicode character, clipboard payload, or text is written to the
-diagnostic logs.
+diagnostic logs. Semantic text exists only in process memory and the user's
+target clipboard.
 
 ### Phone text input
 
@@ -189,11 +194,12 @@ directly to the broker, where each representable character is converted with
 `VkKeyScanW` into an ordinary virtual-key chord. On `rdp`, character chords are
 submitted separately with a persistent, configurable 8 ms delay so the
 SDL/RDP event loop can consume each chord before UU sends the next one. On
-`x11`, the complete translated request is preflighted and injected through the
-authenticated XTEST helper, bypassing both nested RDP keyboard conversions.
-The original request count is returned to UU only after every translated event
-is accepted. Unsupported characters fail explicitly rather than being emitted
-as an unrelated key.
+`x11`, representable text is preflighted and injected through the authenticated
+XTEST helper, bypassing both nested RDP keyboard conversions. Adaptive text
+that has no safe key chord—or that contains a line break—is placed on the
+target clipboard and pasted, preserving its Unicode and multiline semantics.
+The original request count is returned to UU only after the selected boundary
+accepts the complete request.
 
 Physical-key segments are unchanged by default. On the RDP route, an optional
 0-50 ms delay can add back-pressure after each accepted segment. On the direct

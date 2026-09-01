@@ -33,7 +33,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for command in Xvfb xev xdotool xdpyinfo python3 stdbuf \
+for command in flock Xvfb xev xdotool xdpyinfo python3 stdbuf \
     x86_64-w64-mingw32-gcc /opt/wine-stable/bin/wine \
     /opt/wine-stable/bin/wineboot /opt/wine-stable/bin/winepath; do
     command -v "$command" >/dev/null 2>&1 || {
@@ -42,6 +42,8 @@ for command in Xvfb xev xdotool xdpyinfo python3 stdbuf \
     }
 done
 
+exec 9>"${TMPDIR:-/tmp}/uurb-isolated-x-display.lock"
+flock -x 9
 display=""
 for number in {88..99}; do
     if [[ ! -S "/tmp/.X11-unix/X$number" ]]; then
@@ -69,6 +71,7 @@ for _ in {1..50}; do
     sleep 0.1
 done
 DISPLAY="$display" xdpyinfo >/dev/null
+flock -u 9
 
 DISPLAY="$display" stdbuf -oL -eL xev -geometry 400x240 \
     >"$xev_log" 2>&1 &
