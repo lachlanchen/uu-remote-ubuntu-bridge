@@ -13,13 +13,13 @@ static SecurityFunctionTableA patched_a;
 static SecurityFunctionTableW patched_w;
 static SecurityFunctionTableA *original_a;
 static SecurityFunctionTableW *original_w;
-static const char negotiate_name[] = "Negotiate";
+#define SSPI_PACKAGE_NEGOTIATE_ID 3u
 
-static void fix_handle_name(PSecHandle handle)
+static void fix_handle_package_identity(PSecHandle handle)
 {
     if (handle != NULL && handle->dwLower != 0) {
-        /* WinPR stores handle pointers with every bit inverted. */
-        handle->dwUpper = ~((ULONG_PTR)negotiate_name);
+        /* WinPR 3.31 stores an inverted numeric package ID here. */
+        handle->dwUpper = ~((ULONG_PTR)SSPI_PACKAGE_NEGOTIATE_ID);
     }
 }
 
@@ -33,7 +33,7 @@ static SECURITY_STATUS WINAPI patched_acquire_credentials_a(
         get_key_argument, credential, expiry);
 
     if (status == SEC_E_OK)
-        fix_handle_name(credential);
+        fix_handle_package_identity(credential);
     return status;
 }
 
@@ -47,7 +47,7 @@ static SECURITY_STATUS WINAPI patched_acquire_credentials_w(
         get_key_argument, credential, expiry);
 
     if (status == SEC_E_OK)
-        fix_handle_name(credential);
+        fix_handle_package_identity(credential);
     return status;
 }
 
@@ -57,15 +57,15 @@ static SECURITY_STATUS WINAPI patched_initialize_context_a(
     PSecBufferDesc input, ULONG reserved2, PCtxtHandle new_context,
     PSecBufferDesc output, ULONG *context_attributes, PTimeStamp expiry)
 {
-    fix_handle_name(credential);
-    fix_handle_name(context);
+    fix_handle_package_identity(credential);
+    fix_handle_package_identity(context);
 
     SECURITY_STATUS status = original_a->InitializeSecurityContextA(
         credential, context, target, context_requirements, reserved1,
         data_representation, input, reserved2, new_context, output,
         context_attributes, expiry);
 
-    fix_handle_name(new_context);
+    fix_handle_package_identity(new_context);
     return status;
 }
 
@@ -75,15 +75,15 @@ static SECURITY_STATUS WINAPI patched_initialize_context_w(
     PSecBufferDesc input, ULONG reserved2, PCtxtHandle new_context,
     PSecBufferDesc output, ULONG *context_attributes, PTimeStamp expiry)
 {
-    fix_handle_name(credential);
-    fix_handle_name(context);
+    fix_handle_package_identity(credential);
+    fix_handle_package_identity(context);
 
     SECURITY_STATUS status = original_w->InitializeSecurityContextW(
         credential, context, target, context_requirements, reserved1,
         data_representation, input, reserved2, new_context, output,
         context_attributes, expiry);
 
-    fix_handle_name(new_context);
+    fix_handle_package_identity(new_context);
     return status;
 }
 

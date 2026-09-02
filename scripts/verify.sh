@@ -394,7 +394,7 @@ fi
 
 if [[ -f "$freerdp" ]] && \
    [[ "$(sha256sum "$freerdp" | awk '{print $1}')" == \
-      1534187d731b2e4a6cb6d1107c0129727517fe3acf1441b5a2567aea5ea31d60 ]]; then
+      b384347b6d0dd1e0c9912d18f5993b4e30643470e2a627e112debb34e8710762 ]]; then
     pass 'pinned Windows FreeRDP SDL client is installed'
 else
     fail 'Windows FreeRDP SDL client verification failed'
