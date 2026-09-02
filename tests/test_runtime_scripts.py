@@ -856,6 +856,80 @@ class RuntimeScriptTests(unittest.TestCase):
                 cwd=REPOSITORY,
             )
 
+    def test_uu_terminal_uses_authenticated_native_pty_bridge(self):
+        builder = (REPOSITORY / "scripts" / "build-compat.sh").read_text()
+        installer = (REPOSITORY / "install.sh").read_text()
+        uninstaller = (REPOSITORY / "uninstall.sh").read_text()
+        launcher = (REPOSITORY / "scripts" / "uu-remote-bridge").read_text()
+        verifier = (REPOSITORY / "scripts" / "verify.sh").read_text()
+        digest = (REPOSITORY / "scripts" / "runtime-source-digest").read_text()
+        native = (REPOSITORY / "src" / "uu_terminal_bridge.c").read_text()
+        proxy = (REPOSITORY / "src" / "uu_terminal_proxy.c").read_text()
+
+        self.assertIn("uu-terminal-bridge", builder)
+        self.assertIn("uu-terminal-proxy.exe", builder)
+        self.assertIn("-lutil", builder)
+        self.assertIn("-lws2_32", builder)
+        self.assertIn("Refusing to replace an unknown", installer)
+        self.assertIn("bin/powershell.exe", installer)
+        self.assertIn("Refusing to remove an unknown", uninstaller)
+        self.assertIn("start_terminal_bridge", launcher)
+        self.assertIn("UURB_TERMINAL_BRIDGE_TOKEN", launcher)
+        self.assertIn("authenticated native Ubuntu PTY bridge", verifier)
+        self.assertIn("src/uu_terminal_bridge.c", digest)
+        self.assertIn("src/uu_terminal_proxy.c", digest)
+        self.assertIn("INADDR_LOOPBACK", native)
+        self.assertIn("constant_time_equal", native)
+        self.assertIn("forkpty", native)
+        self.assertIn("MAX_SESSIONS 4", native)
+        self.assertIn("UURB_TERMINAL_FRAME_RESIZE", native)
+        self.assertIn("UURB_TERMINAL_BRIDGE_TOKEN", proxy)
+        self.assertIn("INADDR_LOOPBACK", proxy)
+        self.assertIn("GetConsoleScreenBufferInfo", proxy)
+        self.assertTrue(
+            (REPOSITORY / "scripts" / "test-terminal-bridge.sh").exists()
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            subprocess.run(
+                [
+                    "gcc",
+                    "-std=c11",
+                    "-O2",
+                    "-Wall",
+                    "-Wextra",
+                    "-Werror",
+                    "-I",
+                    str(REPOSITORY / "src"),
+                    "-o",
+                    str(root / "uu-terminal-bridge"),
+                    str(REPOSITORY / "src" / "uu_terminal_bridge.c"),
+                    "-lutil",
+                ],
+                check=True,
+                cwd=REPOSITORY,
+            )
+            subprocess.run(
+                [
+                    "x86_64-w64-mingw32-gcc",
+                    "-std=c11",
+                    "-O2",
+                    "-Wall",
+                    "-Wextra",
+                    "-Werror",
+                    "-I",
+                    str(REPOSITORY / "src"),
+                    "-Wl,--no-insert-timestamp",
+                    "-o",
+                    str(root / "uu-terminal-proxy.exe"),
+                    str(REPOSITORY / "src" / "uu_terminal_proxy.c"),
+                    "-lws2_32",
+                ],
+                check=True,
+                cwd=REPOSITORY,
+            )
+
     def test_text_delay_migration_preserves_v010_behavior(self):
         resolver = REPOSITORY / "scripts" / "runtime-settings.sh"
 

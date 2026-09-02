@@ -149,8 +149,12 @@ network_filter="$compat_dir/uu-network-filter.so"
 input_injector_exe="$compat_dir/uu-injector.exe"
 service_control_exe="$compat_dir/uu-service-control.exe"
 uu_app_dir="$WINEPREFIX/drive_c/Program Files/Netease/GameViewer"
+terminal_bridge_helper="$compat_dir/uu-terminal-bridge"
+terminal_proxy_compat="$compat_dir/uu-terminal-proxy.exe"
+terminal_proxy_exe="$uu_app_dir/bin/powershell.exe"
 xauth_file="$runtime_dir/Xauthority"
 x11_input_ready_file="$runtime_dir/x11-input.port"
+terminal_ready_file="$runtime_dir/terminal.port"
 private_display_file="$runtime_dir/private-display"
 console_focus_file="$runtime_dir/console-focus"
 wine_stop_bin="$HOME/.local/libexec/uu-remote-stop-wine-prefix"
@@ -170,6 +174,7 @@ vncviewer_pid=""
 winlogon_pid=""
 input_broker_pid=""
 x11_input_pid=""
+terminal_bridge_pid=""
 server_supervisor_pid=""
 grd_user_service_was_active=false
 desktop_bus=""
@@ -186,6 +191,8 @@ desktop_vnc_port=""
 cursor_size=""
 x11_input_port=""
 x11_input_token=""
+terminal_bridge_port=""
+terminal_bridge_token=""
 
 log() {
     printf '%s %s\n' "$(date --iso-8601=seconds)" "$*"
@@ -382,6 +389,7 @@ cleanup() {
         "$server_supervisor_pid" \
         "$input_broker_pid" \
         "$x11_input_pid" \
+        "$terminal_bridge_pid" \
         "$winlogon_pid" \
         "$vncviewer_pid" \
         "$freerdp_pid" \
@@ -400,6 +408,7 @@ cleanup() {
             "$server_supervisor_pid" \
             "$input_broker_pid" \
             "$x11_input_pid" \
+            "$terminal_bridge_pid" \
             "$winlogon_pid" \
             "$vncviewer_pid" \
             "$freerdp_pid" \
@@ -420,6 +429,7 @@ cleanup() {
         "$server_supervisor_pid" \
         "$input_broker_pid" \
         "$x11_input_pid" \
+        "$terminal_bridge_pid" \
         "$winlogon_pid" \
         "$vncviewer_pid" \
         "$freerdp_pid" \
@@ -455,6 +465,7 @@ cleanup() {
     rm -f \
         "$xauth_file" \
         "$x11_input_ready_file" \
+        "$terminal_ready_file" \
         "$private_display_file" \
         "$console_focus_file"
 }
@@ -877,6 +888,49 @@ start_x11_input_helper() {
     rm -f "$x11_input_ready_file"
 }
 
+start_terminal_bridge() {
+    if [[ ! -x "$terminal_bridge_helper" ||
+          ! -f "$terminal_proxy_compat" ||
+          ! -f "$terminal_proxy_exe" ]] ||
+       ! /usr/bin/cmp -s "$terminal_proxy_compat" "$terminal_proxy_exe"; then
+        log 'The native Ubuntu terminal compatibility bridge is missing or inconsistent.'
+        return 1
+    fi
+    rm -f "$terminal_ready_file"
+    terminal_bridge_token="$(/usr/bin/openssl rand -hex 32)"
+    /usr/bin/env \
+        UURB_TERMINAL_BRIDGE_TOKEN="$terminal_bridge_token" \
+        "$terminal_bridge_helper" --ready-file "$terminal_ready_file" \
+        >>"$state_dir/terminal-bridge.log" 2>&1 &
+    terminal_bridge_pid=$!
+
+    for _ in {1..50}; do
+        if [[ -s "$terminal_ready_file" ]] && \
+           kill -0 "$terminal_bridge_pid" >/dev/null 2>&1; then
+            read -r terminal_bridge_port <"$terminal_ready_file"
+            if [[ "$terminal_bridge_port" =~ ^[1-9][0-9]{0,4}$ ]] && \
+               ((terminal_bridge_port <= 65535)); then
+                export UURB_TERMINAL_BRIDGE_PORT="$terminal_bridge_port"
+                export UURB_TERMINAL_BRIDGE_TOKEN="$terminal_bridge_token"
+                log "UU terminal requests use the authenticated native Ubuntu PTY bridge on loopback port $terminal_bridge_port."
+                return 0
+            fi
+        fi
+        if ! kill -0 "$terminal_bridge_pid" >/dev/null 2>&1; then
+            break
+        fi
+        sleep 0.1
+    done
+
+    log 'The native Ubuntu terminal bridge did not become ready.'
+    kill "$terminal_bridge_pid" >/dev/null 2>&1 || true
+    terminal_bridge_pid=""
+    terminal_bridge_port=""
+    terminal_bridge_token=""
+    rm -f "$terminal_ready_file"
+    return 1
+}
+
 mkdir -p \
     "$state_dir" \
     "$runtime_dir" \
@@ -899,6 +953,9 @@ if [[ "$cursor_guard_setting" == on ]]; then
     resolve_cursor_size
 fi
 start_x11_input_helper
+if ! start_terminal_bridge; then
+    exit 1
+fi
 
 touch "$xauth_file"
 chmod 600 "$xauth_file"
@@ -945,8 +1002,12 @@ if [[ "$desktop_relay" == vnc && ! -x /usr/bin/vncviewer ]]; then
 fi
 
 if [[ ! -f "$input_bridge_dll" || ! -f "$input_broker_exe" ||
-      ! -f "$input_injector_exe" || ! -f "$service_control_exe" ]]; then
-    log 'The UU input compatibility bridge is missing from the Wine prefix.'
+      ! -f "$input_injector_exe" || ! -f "$service_control_exe" ||
+      ! -x "$terminal_bridge_helper" ||
+      ! -f "$terminal_proxy_compat" ||
+      ! -f "$terminal_proxy_exe" ]] ||
+   ! /usr/bin/cmp -s "$terminal_proxy_compat" "$terminal_proxy_exe"; then
+    log 'The UU input or terminal compatibility bridge is missing from the Wine prefix.'
     exit 1
 fi
 if [[ "$cursor_guard_setting" == on && ! -f "$cursor_guard_dll" ]]; then
@@ -1404,7 +1465,8 @@ for optional_pid in \
     "$freerdp_pid" \
     "$desktop_x11vnc_pid" \
     "$vncviewer_pid" \
-    "$x11_input_pid"; do
+    "$x11_input_pid" \
+    "$terminal_bridge_pid"; do
     if [[ -n "$optional_pid" ]]; then
         critical_pids+=("$optional_pid")
     fi

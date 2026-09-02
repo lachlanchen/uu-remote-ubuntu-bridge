@@ -813,6 +813,36 @@ Complete sign-in, then close the GUI normally. Forcibly terminating it during
 its bootstrap handshake can ask the background server to exit; the supervisor
 will recover, but the device can be briefly offline.
 
+## UU Terminal immediately says exit code 0
+
+On an unpatched Wine host, UU successfully opens its terminal channel and then
+launches Wine's placeholder `powershell.exe`. That executable returns success
+without creating an interactive shell, so exit code 0 is the symptom—not a UU
+account or network failure.
+
+Install the current bridge and verify the native broker:
+
+```bash
+./install.sh --skip-packages --skip-account-login
+./scripts/verify.sh --quick
+./scripts/test-terminal-bridge.sh
+```
+
+In UU, choose the `PowerShell` shell even though the resulting PTY is the
+native Ubuntu login shell. If verification reports a missing or stale terminal
+bridge, do not copy an arbitrary executable over
+`GameViewer/bin/powershell.exe`; rerun the installer so its byte-identity guard
+can repair a known installation or refuse unknown vendor drift.
+
+Inspect only metadata when diagnosing:
+
+```bash
+tail -n 30 ~/.local/state/uu-remote-bridge/terminal-bridge.log
+```
+
+Do not add an SSH password or expose another listening port as a workaround.
+The intended listener is ephemeral, token-authenticated, and localhost-only.
+
 ## GNOME RDP authentication fails
 
 The UU bridge uses a separate local RDP credential from the login keyring:

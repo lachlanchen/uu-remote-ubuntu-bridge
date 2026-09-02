@@ -76,6 +76,18 @@ The current CLI advertises `powershell`, `cmd`, `zsh`, and `bash`. Actual
 support depends on the controlled platform and UU host version. In particular,
 the tested Windows 7 host reports that its terminal agent is unsupported.
 
+## Terminal into this Ubuntu bridge host
+
+The same UU terminal panel can now control the Ubuntu machine that hosts this
+Wine bridge. Select `PowerShell`: the name is the vendor compatibility entry
+point, but the installed proxy opens the Ubuntu user's native interactive
+login shell. It does not run Wine PowerShell and does not use SSH.
+
+The old immediate `exit 0` was caused by Wine's placeholder
+`powershell.exe`, not by UU networking. Installation, security boundaries,
+tests, and rollback are documented in
+[Native Ubuntu terminal through UU Remote](native-ubuntu-terminal.md).
+
 ## GUI Fallback
 
 Use GUI control only when the task inherently needs Xcode, Simulator, System

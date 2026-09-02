@@ -37,6 +37,9 @@ mkdir -p "$output_dir"
 "$cc" "${common[@]}" "${pe_link[@]}" -municode \
     -o "$output_dir/uu-service-control.exe" \
     "$repo_dir/src/uu_service_control.c" -ladvapi32
+"$cc" "${common[@]}" "${pe_link[@]}" -I "$repo_dir/src" \
+    -o "$output_dir/uu-terminal-proxy.exe" \
+    "$repo_dir/src/uu_terminal_proxy.c" -lws2_32
 "$cc" "${common[@]}" "${pe_link[@]}" -mwindows \
     -o "$output_dir/uu-healthd-stub.exe" \
     "$repo_dir/src/winlogon.c"
@@ -49,6 +52,9 @@ mkdir -p "$output_dir"
 "$host_cc" "${common[@]}" -I "$repo_dir/src" \
     -o "$output_dir/uu-x11-input" \
     "$repo_dir/src/uu_x11_input.c" -ldl
+"$host_cc" "${common[@]}" -I "$repo_dir/src" \
+    -o "$output_dir/uu-terminal-bridge" \
+    "$repo_dir/src/uu_terminal_bridge.c" -lutil
 
 "$strip" \
     "$output_dir/uu-cursor-guard.dll" \
@@ -56,11 +62,13 @@ mkdir -p "$output_dir"
     "$output_dir/uu-input-broker.exe" \
     "$output_dir/uu-injector.exe" \
     "$output_dir/uu-service-control.exe" \
+    "$output_dir/uu-terminal-proxy.exe" \
     "$output_dir/uu-healthd-stub.exe" \
     "$output_dir/winpr-sspi-shim.dll"
 "$host_strip" \
     "$output_dir/uu-network-filter.so" \
-    "$output_dir/uu-x11-input"
+    "$output_dir/uu-x11-input" \
+    "$output_dir/uu-terminal-bridge"
 
 rm -f "$output_dir/winlogon.exe" "$output_dir/winlogon.exe.so"
 "$winegcc" -O2 -mwindows -o "$output_dir/winlogon.exe" \

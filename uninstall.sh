@@ -6,6 +6,8 @@ repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 bridge_user="${USER:-$(id -un)}"
 wine_prefix="${WINEPREFIX:-$HOME/.local/share/wineprefixes/uu-remote}"
 uu_bin="$wine_prefix/drive_c/Program Files/Netease/GameViewer/bin"
+terminal_proxy="$uu_bin/powershell.exe"
+installed_terminal_proxy="$wine_prefix/compat/uu-terminal-proxy.exe"
 release_manifest="${UURB_RELEASE_MANIFEST:-$wine_prefix/compat/release-manifest.json}"
 if [[ ! -f "$release_manifest" ]]; then
     release_manifest="$repo_dir/patches/uu-remote-4.33.0.8907.json"
@@ -83,6 +85,12 @@ if [[ -f "$devcon_backup" && -e "$devcon" ]] &&
     printf 'Refusing to overwrite an unknown live devcon.exe.\n' >&2
     exit 1
 fi
+if [[ -e "$terminal_proxy" ]] &&
+   { [[ ! -f "$installed_terminal_proxy" ]] ||
+     ! /usr/bin/cmp -s "$terminal_proxy" "$installed_terminal_proxy"; }; then
+    printf 'Refusing to remove an unknown GameViewer bin/powershell.exe.\n' >&2
+    exit 1
+fi
 
 if [[ "$dry_run" == true ]]; then
     printf 'PASS  audited server, health-monitor, and driver-helper backups can be restored.\n'
@@ -118,6 +126,10 @@ if [[ -f "$healthd.uu-original" ]]; then
 fi
 if [[ -f "$devcon_backup" ]]; then
     install -m 0755 "$devcon_backup" "$devcon"
+fi
+if [[ -f "$terminal_proxy" ]] &&
+   /usr/bin/cmp -s "$terminal_proxy" "$installed_terminal_proxy"; then
+    rm -f "$terminal_proxy"
 fi
 if [[ "$purge" == false && -f "$wine_prefix/system.reg" ]]; then
     WINEPREFIX="$wine_prefix" WINEDEBUG=-all \

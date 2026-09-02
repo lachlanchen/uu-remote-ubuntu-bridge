@@ -37,6 +37,8 @@ uu_download_url=''
 uu_installer_filename=''
 uu_installer_sha256=''
 healthd_sha256=''
+terminal_proxy_install="$uu_bin/powershell.exe"
+installed_terminal_proxy="$wine_prefix/compat/uu-terminal-proxy.exe"
 saved_setting() {
     local name="$1"
 
@@ -666,6 +668,13 @@ fi
 "$repo_dir/scripts/build-libei.sh" "$libei_build"
 
 mkdir -p "$wine_prefix/compat" "$freerdp_install" "$libei_install"
+if [[ -e "$terminal_proxy_install" ]] &&
+   { [[ ! -f "$installed_terminal_proxy" ]] ||
+     ! /usr/bin/cmp -s "$terminal_proxy_install" \
+        "$installed_terminal_proxy"; }; then
+    printf 'Refusing to replace an unknown GameViewer bin/powershell.exe.\n' >&2
+    exit 1
+fi
 install -m 0644 "$release_manifest" "$installed_manifest"
 install -m 0755 \
     "$compat_build/uu-cursor-guard.dll" \
@@ -673,11 +682,16 @@ install -m 0755 \
     "$compat_build/uu-input-broker.exe" \
     "$compat_build/uu-injector.exe" \
     "$compat_build/uu-service-control.exe" \
+    "$compat_build/uu-terminal-proxy.exe" \
     "$wine_prefix/compat/"
 install -m 0755 "$compat_build/uu-network-filter.so" \
     "$wine_prefix/compat/uu-network-filter.so"
 install -m 0755 "$compat_build/uu-x11-input" \
     "$wine_prefix/compat/uu-x11-input"
+install -m 0755 "$compat_build/uu-terminal-bridge" \
+    "$wine_prefix/compat/uu-terminal-bridge"
+install -m 0755 "$compat_build/uu-terminal-proxy.exe" \
+    "$terminal_proxy_install"
 install -m 0755 "$compat_build/winlogon.exe" \
     "$wine_prefix/compat/winlogon.exe"
 install -m 0755 "$compat_build/winlogon.exe.so" \

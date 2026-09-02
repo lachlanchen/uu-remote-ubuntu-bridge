@@ -8,6 +8,12 @@ locked by the release manifest.
 
 ### Added
 
+- an authenticated loopback terminal compatibility bridge that keeps UU's
+  native terminal transport but replaces Wine's immediately exiting
+  PowerShell placeholder with the Ubuntu user's real PTY login shell; the
+  isolated acceptance covers wrong-token rejection, exact UTF-8, home-directory
+  startup, and terminal resizing without adding SSH or storing credentials
+
 - adaptive direct-X11 phone text: ordinary representable characters retain
   the fast key route, while multiline and non-English Unicode use a bounded,
   authenticated clipboard paste; composition editing keys can remain ordered

@@ -37,6 +37,13 @@ GNOME Remote Desktop, TCP 3390
 Logged-in GNOME desktop (Wayland or Xorg/XRDP)
 ```
 
+UU's separate terminal channel follows a smaller path:
+
+```text
+UU Terminal -> Wine ConPTY helper -> uu-terminal-proxy.exe
+            -> authenticated 127.0.0.1 socket -> native forkpty login shell
+```
+
 ## Components
 
 ### Private X11 display
@@ -185,6 +192,22 @@ and is still required for Wayland targets.
 No key code, Unicode character, clipboard payload, or text is written to the
 diagnostic logs. Semantic text exists only in process memory and the user's
 target clipboard.
+
+### Native terminal bridge
+
+Wine's compatibility `powershell.exe` exits successfully without providing a
+shell, which made a valid UU terminal request immediately display exit code
+0. The installed `GameViewer/bin/powershell.exe` is therefore a small Windows
+stdio proxy. It retains UU's authenticated terminal and ConPTY transport while
+forwarding bytes and resize events to `uu-terminal-bridge` on IPv4 loopback.
+
+The native helper authenticates a fresh 256-bit token inherited from the
+supervised launcher, limits concurrency to four sessions, and uses `forkpty`
+to start the current Ubuntu user's interactive login shell in the user's home.
+Neither helper logs terminal payloads. The token is absent from command lines
+and ready files. This design avoids an SSH listener, SSH key, stored password,
+or extra account boundary. See
+[Native Ubuntu terminal through UU Remote](native-ubuntu-terminal.md).
 
 ### Phone text input
 

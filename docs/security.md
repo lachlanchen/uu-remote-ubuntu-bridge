@@ -17,6 +17,9 @@ that the same setup script can reverse.
 - The optional X11 input helper binds an ephemeral loopback-only port,
   requires a fresh 256-bit token from the supervised launcher, and publishes
   its port only in the user's mode-0700 runtime directory.
+- The native terminal helper independently binds an ephemeral IPv4
+  loopback-only port, requires its own fresh 256-bit inherited token, accepts
+  at most four sessions, and launches only the bridge user's login shell.
 - The local management-window sidecar binds an uncredentialed VNC listener to
   IPv4 loopback only, exports one UU X window rather than the private root
   desktop, and exists only while its local TigerVNC viewer is open.
@@ -84,6 +87,13 @@ signaling endpoints, and account metadata.
 Diagnostic input logs contain only count, Windows input type, flag bits,
 route, result, and error. They intentionally omit virtual key codes, scan
 codes, Unicode values, mouse coordinates, and clipboard data.
+
+Terminal commands and output cross the authenticated UU channel and an
+authenticated localhost socket only. They are never written to bridge logs;
+the terminal log records only readiness, session PID/size, rejection, and
+close metadata. The helper neither starts `sshd` nor stores a password or SSH
+key. A terminal has the normal authority of the logged-in Ubuntu user, and
+`sudo` retains the host's normal policy.
 
 The X11 helper accepts bounded keyboard, mouse, and semantic-text records.
 Representable phone text is normalized to ordinary key chords. Newline, CJK,

@@ -795,3 +795,30 @@ and `error=0`. The established fast-text and VNC-keyboard tests still passed,
 so the change extends rather than replaces those known-good paths. The VNC
 clipboard test additionally confirms receipt of client cut text, exact target
 Unicode paste, and absence of target-to-private clipboard feedback.
+
+## 22. Keep UU's terminal transport and replace only Wine's empty shell
+
+UU's direct terminal on the Ubuntu bridge host appeared to fail with
+`exit 0`. Server evidence showed the opposite: the controller request arrived,
+verification succeeded, a terminal session opened, and UU returned
+`code=0 message=ok`. The process then closed immediately. Running Wine's
+bundled `powershell.exe` directly reproduced a silent successful exit, while a
+self-directed UU terminal request using `cmd` delivered a unique marker. That
+separated a missing shell executable from the UU account, signaling, ConPTY,
+or network paths.
+
+Adding localhost SSH would have duplicated authentication and introduced a
+key plus persistent listener. The narrower correction preserves the proven UU
+channel. A tiny Windows `powershell.exe` compatibility proxy receives the
+existing ConPTY streams and forwards framed input, output, EOF, and resize
+events to a native helper. The helper binds only IPv4 loopback, validates a
+fresh inherited 256-bit token in constant time, caps concurrent sessions, and
+opens the current user's login shell with `forkpty`. Commands and output are
+never logged.
+
+Installer and uninstaller guards compare the deployed executable with the
+canonical proxy and refuse unknown files. The isolated test first proves that
+a wrong token fails explicitly, then verifies exact native-shell, Chinese
+UTF-8, home-directory, and `24x80` resize markers in a disposable Wine prefix.
+The terminal broker joins the existing service supervision, so no new system
+service, SSH daemon, password, desktop logout, or reboot is required.
