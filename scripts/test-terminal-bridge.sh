@@ -9,6 +9,9 @@ wineserver_bin="${UURB_WINESERVER_BIN:-/opt/wine-stable/bin/wineserver}"
 temporary_dir="$(mktemp -d "${TMPDIR:-/tmp}/uurb-terminal-test.XXXXXX")"
 wine_prefix="$temporary_dir/prefix"
 ready_file="$temporary_dir/terminal.port"
+proxy_dir="$temporary_dir/proxy"
+proxy_exe="$proxy_dir/powershell.exe"
+proxy_config="$proxy_dir/uu-terminal-bridge.runtime"
 bridge_pid=""
 
 cleanup() {
@@ -44,6 +47,9 @@ done
 
 WINEPREFIX="$wine_prefix" WINEDEBUG=-all DISPLAY= \
     "$wine_bin" wineboot -u >/dev/null 2>&1
+install -d -m 0700 "$proxy_dir"
+install -m 0755 \
+    "$repo_dir/build/compat/uu-terminal-proxy.exe" "$proxy_exe"
 
 token="$(openssl rand -hex 32)"
 UURB_TERMINAL_BRIDGE_TOKEN="$token" \
@@ -68,12 +74,13 @@ port="$(<"$ready_file")"
 }
 
 set +e
+printf 'version=1\nport=%s\ntoken=%064d\n' "$port" 0 >"$proxy_config"
+chmod 600 "$proxy_config"
 printf 'exit\n' | env \
+    -u UURB_TERMINAL_BRIDGE_PORT \
+    -u UURB_TERMINAL_BRIDGE_TOKEN \
     WINEPREFIX="$wine_prefix" WINEDEBUG=-all DISPLAY= \
-    UURB_TERMINAL_BRIDGE_PORT="$port" \
-    UURB_TERMINAL_BRIDGE_TOKEN="$(printf '%064d' 0)" \
-    timeout 10 "$wine_bin" \
-    "$repo_dir/build/compat/uu-terminal-proxy.exe" \
+    timeout 10 "$wine_bin" "$proxy_exe" \
     >"$temporary_dir/rejected.stdout" 2>"$temporary_dir/rejected.stderr"
 rejected_status=$?
 set -e
@@ -83,13 +90,15 @@ if ((rejected_status == 0)) ||
     exit 1
 fi
 
+printf 'version=1\nport=%s\ntoken=%s\n' \
+    "$port" "$token" >"$proxy_config"
+chmod 600 "$proxy_config"
 commands=$'printf "UURB_NATIVE_SHELL_OK\\n"\nprintf "UURB_UNICODE_你好\\n"\nprintf "UURB_CWD=%s\\n" "$PWD"\nstty size\nexit\n'
 printf '%s' "$commands" | env \
+    -u UURB_TERMINAL_BRIDGE_PORT \
+    -u UURB_TERMINAL_BRIDGE_TOKEN \
     WINEPREFIX="$wine_prefix" WINEDEBUG=-all DISPLAY= \
-    UURB_TERMINAL_BRIDGE_PORT="$port" \
-    UURB_TERMINAL_BRIDGE_TOKEN="$token" \
-    timeout 20 "$wine_bin" \
-    "$repo_dir/build/compat/uu-terminal-proxy.exe" \
+    timeout 20 "$wine_bin" "$proxy_exe" \
     >"$temporary_dir/accepted.stdout" 2>"$temporary_dir/accepted.stderr"
 
 python3 - "$temporary_dir/accepted.stdout" <<'PY'
@@ -116,4 +125,4 @@ if [[ -s "$temporary_dir/accepted.stderr" ]]; then
     exit 1
 fi
 
-printf 'terminal-bridge=authenticated native-shell=exact unicode=exact resize=24x80\n'
+printf 'terminal-bridge=authenticated runtime-file-handoff=exact native-shell=exact unicode=exact resize=24x80\n'

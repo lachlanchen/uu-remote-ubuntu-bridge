@@ -8,6 +8,7 @@ wine_prefix="${WINEPREFIX:-$HOME/.local/share/wineprefixes/uu-remote}"
 uu_bin="$wine_prefix/drive_c/Program Files/Netease/GameViewer/bin"
 terminal_proxy="$uu_bin/powershell.exe"
 installed_terminal_proxy="$wine_prefix/compat/uu-terminal-proxy.exe"
+terminal_config="$uu_bin/uu-terminal-bridge.runtime"
 release_manifest="${UURB_RELEASE_MANIFEST:-$wine_prefix/compat/release-manifest.json}"
 if [[ ! -f "$release_manifest" ]]; then
     release_manifest="$repo_dir/patches/uu-remote-4.33.0.8907.json"
@@ -129,7 +130,7 @@ if [[ -f "$devcon_backup" ]]; then
 fi
 if [[ -f "$terminal_proxy" ]] &&
    /usr/bin/cmp -s "$terminal_proxy" "$installed_terminal_proxy"; then
-    rm -f "$terminal_proxy"
+    rm -f "$terminal_proxy" "$terminal_config"
 fi
 if [[ "$purge" == false && -f "$wine_prefix/system.reg" ]]; then
     WINEPREFIX="$wine_prefix" WINEDEBUG=-all \

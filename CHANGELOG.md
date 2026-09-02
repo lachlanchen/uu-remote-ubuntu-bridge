@@ -116,6 +116,11 @@ locked by the release manifest.
 
 ### Fixed
 
+- carry the native-terminal port and per-start token across UU's
+  `CreateProcessAsUser` environment reconstruction with an atomic mode-0600
+  runtime handoff; the proxy still prefers inherited configuration, and the
+  isolated test now removes both variables before proving authentication
+
 - keep UU's layered Wine/Qt login window mapped behind the focused relay;
   minimizing it during window replacement could raise `BadWindow`, close the
   login IPC client, and destroy an otherwise healthy signaling room

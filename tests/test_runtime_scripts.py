@@ -875,7 +875,9 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("Refusing to remove an unknown", uninstaller)
         self.assertIn("start_terminal_bridge", launcher)
         self.assertIn("UURB_TERMINAL_BRIDGE_TOKEN", launcher)
+        self.assertIn("uu-terminal-bridge.runtime", launcher)
         self.assertIn("authenticated native Ubuntu PTY bridge", verifier)
+        self.assertIn("terminal_config_mode", verifier)
         self.assertIn("src/uu_terminal_bridge.c", digest)
         self.assertIn("src/uu_terminal_proxy.c", digest)
         self.assertIn("INADDR_LOOPBACK", native)
@@ -884,6 +886,8 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("MAX_SESSIONS 4", native)
         self.assertIn("UURB_TERMINAL_FRAME_RESIZE", native)
         self.assertIn("UURB_TERMINAL_BRIDGE_TOKEN", proxy)
+        self.assertIn("load_runtime_configuration", proxy)
+        self.assertIn("UURB_TERMINAL_CONFIG_FILENAME", proxy)
         self.assertIn("INADDR_LOOPBACK", proxy)
         self.assertIn("GetConsoleScreenBufferInfo", proxy)
         self.assertTrue(

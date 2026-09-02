@@ -822,3 +822,15 @@ a wrong token fails explicitly, then verifies exact native-shell, Chinese
 UTF-8, home-directory, and `24x80` resize markers in a disposable Wine prefix.
 The terminal broker joins the existing service supervision, so no new system
 service, SSH daemon, password, desktop logout, or reboot is required.
+
+The first real controller launch exposed one more process boundary that a
+direct proxy test had hidden. `GameViewerServer.exe` inherited both bridge
+variables, but UU used `CreateProcessAsUser` with a newly constructed default
+environment for the ConPTY child. The proxy therefore reported “not
+configured” before contacting the broker. The corrected launcher atomically
+writes one exact, mode-0600 runtime handoff beside the proxy. The proxy prefers
+the inherited values when present and otherwise discovers that sibling file
+from its own module path. The acceptance test explicitly removes both
+environment variables, exercises this fallback, and still rejects a wrong
+token. Verification also requires exact schema, owner, mode, token, port, and
+listener agreement.

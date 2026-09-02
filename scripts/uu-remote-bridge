@@ -152,6 +152,7 @@ uu_app_dir="$WINEPREFIX/drive_c/Program Files/Netease/GameViewer"
 terminal_bridge_helper="$compat_dir/uu-terminal-bridge"
 terminal_proxy_compat="$compat_dir/uu-terminal-proxy.exe"
 terminal_proxy_exe="$uu_app_dir/bin/powershell.exe"
+terminal_config_file="$uu_app_dir/bin/uu-terminal-bridge.runtime"
 xauth_file="$runtime_dir/Xauthority"
 x11_input_ready_file="$runtime_dir/x11-input.port"
 terminal_ready_file="$runtime_dir/terminal.port"
@@ -384,6 +385,10 @@ cleanup() {
     local processes_alive
 
     trap - EXIT INT TERM HUP
+
+    rm -f \
+        "$terminal_config_file" \
+        "${terminal_config_file}.$$.tmp"
 
     for pid in \
         "$server_supervisor_pid" \
@@ -889,6 +894,8 @@ start_x11_input_helper() {
 }
 
 start_terminal_bridge() {
+    local config_temporary
+
     if [[ ! -x "$terminal_bridge_helper" ||
           ! -f "$terminal_proxy_compat" ||
           ! -f "$terminal_proxy_exe" ]] ||
@@ -896,7 +903,11 @@ start_terminal_bridge() {
         log 'The native Ubuntu terminal compatibility bridge is missing or inconsistent.'
         return 1
     fi
-    rm -f "$terminal_ready_file"
+    config_temporary="${terminal_config_file}.$$.tmp"
+    rm -f \
+        "$terminal_ready_file" \
+        "$terminal_config_file" \
+        "$config_temporary"
     terminal_bridge_token="$(/usr/bin/openssl rand -hex 32)"
     /usr/bin/env \
         UURB_TERMINAL_BRIDGE_TOKEN="$terminal_bridge_token" \
@@ -910,6 +921,16 @@ start_terminal_bridge() {
             read -r terminal_bridge_port <"$terminal_ready_file"
             if [[ "$terminal_bridge_port" =~ ^[1-9][0-9]{0,4}$ ]] && \
                ((terminal_bridge_port <= 65535)); then
+                if ! (
+                    umask 077
+                    printf 'version=1\nport=%s\ntoken=%s\n' \
+                        "$terminal_bridge_port" \
+                        "$terminal_bridge_token" >"$config_temporary"
+                ) || ! chmod 600 "$config_temporary" ||
+                   ! mv -f -- "$config_temporary" "$terminal_config_file"; then
+                    log 'The UU terminal runtime handoff could not be written.'
+                    break
+                fi
                 export UURB_TERMINAL_BRIDGE_PORT="$terminal_bridge_port"
                 export UURB_TERMINAL_BRIDGE_TOKEN="$terminal_bridge_token"
                 log "UU terminal requests use the authenticated native Ubuntu PTY bridge on loopback port $terminal_bridge_port."
@@ -927,7 +948,10 @@ start_terminal_bridge() {
     terminal_bridge_pid=""
     terminal_bridge_port=""
     terminal_bridge_token=""
-    rm -f "$terminal_ready_file"
+    rm -f \
+        "$terminal_ready_file" \
+        "$terminal_config_file" \
+        "$config_temporary"
     return 1
 }
 

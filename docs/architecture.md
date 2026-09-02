@@ -201,12 +201,15 @@ shell, which made a valid UU terminal request immediately display exit code
 stdio proxy. It retains UU's authenticated terminal and ConPTY transport while
 forwarding bytes and resize events to `uu-terminal-bridge` on IPv4 loopback.
 
-The native helper authenticates a fresh 256-bit token inherited from the
-supervised launcher, limits concurrency to four sessions, and uses `forkpty`
-to start the current Ubuntu user's interactive login shell in the user's home.
-Neither helper logs terminal payloads. The token is absent from command lines
-and ready files. This design avoids an SSH listener, SSH key, stored password,
-or extra account boundary. See
+The native helper authenticates a fresh 256-bit token from the supervised
+launcher, limits concurrency to four sessions, and uses `forkpty` to start the
+current Ubuntu user's interactive login shell in the user's home. UU creates
+terminal processes with a reconstructed user environment, so a mode-0600
+ephemeral file beside the proxy carries the port and token across that
+boundary. It is atomically replaced at startup and removed at shutdown; a
+stale token is useless after its broker exits. Neither helper logs terminal
+payloads. The token is absent from command lines and ready files. This design
+avoids an SSH listener, SSH key, stored password, or extra account boundary. See
 [Native Ubuntu terminal through UU Remote](native-ubuntu-terminal.md).
 
 ### Phone text input

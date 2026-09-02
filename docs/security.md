@@ -18,8 +18,10 @@ that the same setup script can reverse.
   requires a fresh 256-bit token from the supervised launcher, and publishes
   its port only in the user's mode-0700 runtime directory.
 - The native terminal helper independently binds an ephemeral IPv4
-  loopback-only port, requires its own fresh 256-bit inherited token, accepts
-  at most four sessions, and launches only the bridge user's login shell.
+  loopback-only port, requires its own fresh 256-bit token, accepts at most
+  four sessions, and launches only the bridge user's login shell. A mode-0600
+  ephemeral handoff beside the audited proxy crosses UU's reconstructed user
+  environment and is removed when the bridge stops.
 - The local management-window sidecar binds an uncredentialed VNC listener to
   IPv4 loopback only, exports one UU X window rather than the private root
   desktop, and exists only while its local TigerVNC viewer is open.
@@ -91,9 +93,13 @@ codes, Unicode values, mouse coordinates, and clipboard data.
 Terminal commands and output cross the authenticated UU channel and an
 authenticated localhost socket only. They are never written to bridge logs;
 the terminal log records only readiness, session PID/size, rejection, and
-close metadata. The helper neither starts `sshd` nor stores a password or SSH
-key. A terminal has the normal authority of the logged-in Ubuntu user, and
-`sudo` retains the host's normal policy.
+close metadata. The per-start terminal token is absent from command lines and
+the port-only ready file. It exists in a user-readable-only runtime handoff
+because UU deliberately rebuilds the terminal child's environment; shutdown
+removes that file, and an old token cannot reach a stopped broker. The helper
+neither starts `sshd` nor stores a password or SSH key. A terminal has the
+normal authority of the logged-in Ubuntu user, and `sudo` retains the host's
+normal policy.
 
 The X11 helper accepts bounded keyboard, mouse, and semantic-text records.
 Representable phone text is normalized to ordinary key chords. Newline, CJK,

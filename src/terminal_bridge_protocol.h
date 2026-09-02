@@ -8,6 +8,7 @@
 #define UURB_TERMINAL_TOKEN_LENGTH 64U
 #define UURB_TERMINAL_MAX_FRAME 65536U
 #define UURB_TERMINAL_ACCEPTED 0x06U
+#define UURB_TERMINAL_CONFIG_FILENAME "uu-terminal-bridge.runtime"
 
 enum uurb_terminal_frame_type {
     UURB_TERMINAL_FRAME_DATA = 1,

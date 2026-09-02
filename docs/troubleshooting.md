@@ -834,6 +834,13 @@ bridge, do not copy an arbitrary executable over
 `GameViewer/bin/powershell.exe`; rerun the installer so its byte-identity guard
 can repair a known installation or refuse unknown vendor drift.
 
+If the proxy instead says `UU Ubuntu terminal bridge is not configured`, UU
+has launched it through a reconstructed user environment. Current releases
+handle that normal vendor boundary with an atomic mode-0600 sibling runtime
+file. Rerun the current installer; `verify.sh` checks that the file has exactly
+three fields, belongs to the current UID, has mode 600, matches the live
+broker/server token and port, and points to the owning loopback listener.
+
 Inspect only metadata when diagnosing:
 
 ```bash

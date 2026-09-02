@@ -46,6 +46,7 @@ x11_input_helper="$wine_prefix/compat/uu-x11-input"
 x11_terminal_bridge="$wine_prefix/compat/uu-terminal-bridge"
 terminal_proxy_compat="$wine_prefix/compat/uu-terminal-proxy.exe"
 terminal_proxy="$wine_prefix/drive_c/Program Files/Netease/GameViewer/bin/powershell.exe"
+terminal_config="$wine_prefix/drive_c/Program Files/Netease/GameViewer/bin/uu-terminal-bridge.runtime"
 x11_input_ready_file="${XDG_RUNTIME_DIR:-/run/user/$UID}/uu-remote-bridge/x11-input.port"
 terminal_ready_file="${XDG_RUNTIME_DIR:-/run/user/$UID}/uu-remote-bridge/terminal.port"
 private_display_file="${XDG_RUNTIME_DIR:-/run/user/$UID}/uu-remote-bridge/private-display"
@@ -692,20 +693,46 @@ server_terminal_port="$(
 server_terminal_token="$(
     process_environment_value UURB_TERMINAL_BRIDGE_TOKEN "$server_pid" || true
 )"
+terminal_config_version="$(
+    /usr/bin/sed -n 's/^version=//p' "$terminal_config" 2>/dev/null || true
+)"
+terminal_config_port="$(
+    /usr/bin/sed -n 's/^port=//p' "$terminal_config" 2>/dev/null || true
+)"
+terminal_config_token="$(
+    /usr/bin/sed -n 's/^token=//p' "$terminal_config" 2>/dev/null || true
+)"
+terminal_config_lines="$(
+    /usr/bin/wc -l <"$terminal_config" 2>/dev/null || true
+)"
+terminal_config_mode="$(
+    /usr/bin/stat -c '%a' "$terminal_config" 2>/dev/null || true
+)"
+terminal_config_owner="$(
+    /usr/bin/stat -c '%u' "$terminal_config" 2>/dev/null || true
+)"
 if [[ -x "$x11_terminal_bridge" &&
-      -f "$terminal_proxy_compat" && -f "$terminal_proxy" ]] &&
+      -f "$terminal_proxy_compat" && -f "$terminal_proxy" &&
+      -f "$terminal_config" && ! -L "$terminal_config" ]] &&
    /usr/bin/cmp -s "$terminal_proxy_compat" "$terminal_proxy" &&
    [[ -n "$terminal_bridge_pid" &&
       "$terminal_bridge_port" =~ ^[1-9][0-9]{0,4}$ &&
       "$server_terminal_port" == "$terminal_bridge_port" &&
-      ${#server_terminal_token} -eq 64 ]] &&
+      ${#server_terminal_token} -eq 64 &&
+      "$terminal_config_version" == 1 &&
+      "$terminal_config_port" == "$terminal_bridge_port" &&
+      "$terminal_config_token" == "$server_terminal_token" &&
+      "$terminal_config_token" =~ ^[0-9a-f]{64}$ &&
+      "$terminal_config_lines" == 3 &&
+      "$terminal_config_mode" == 600 &&
+      "$terminal_config_owner" == "$UID" ]] &&
    /usr/bin/ss -H -ltnp "sport = :$terminal_bridge_port" 2>/dev/null | \
        /usr/bin/grep -q "pid=$terminal_bridge_pid,"; then
-    pass 'UU terminal uses the authenticated native Ubuntu PTY bridge'
+    pass 'UU terminal uses the authenticated native Ubuntu PTY bridge and runtime handoff'
 else
-    fail 'UU native Ubuntu terminal bridge is missing, stale, or not inherited by the server'
+    fail 'UU native Ubuntu terminal bridge or its runtime handoff is missing or stale'
 fi
-unset server_terminal_token
+unset server_terminal_token terminal_config_token
 
 saved_network_interface="$(saved_setting UURB_NETWORK_INTERFACE)"
 network_interface="${UURB_NETWORK_INTERFACE:-${saved_network_interface:-all}}"

@@ -58,8 +58,15 @@ controller and delivered the terminal stream to the local host. The bridge
 therefore continues that stream through an ephemeral localhost socket instead
 of logging back into the same computer.
 
-Each service start generates a new 256-bit token. The token is inherited by
-the UU server and proxy but is not written to the ready file or command line.
+Each service start generates a new 256-bit token. UU rebuilds a default user
+environment when it launches the terminal through `CreateProcessAsUser`, so
+the proxy cannot rely on inheriting service-only variables. The launcher
+instead writes the port and token to `uu-terminal-bridge.runtime` beside the
+audited proxy with mode `0600`, then removes it during bridge shutdown. The
+ready file still contains only the port, and the token is absent from command
+lines. A stale file cannot authenticate after its one broker exits and is
+atomically replaced at the next start.
+
 The native listener binds only to IPv4 loopback, compares the complete token,
 accepts at most four sessions, and logs session metadata—not commands, output,
 or terminal text. It grants no root access and does not bypass `sudo`.
@@ -97,9 +104,11 @@ logged-in desktop:
 ./scripts/test-terminal-bridge.sh
 ```
 
-It proves that an incorrect token is rejected and that the accepted path
-delivers an interactive native shell, exact UTF-8 Chinese, the user's home
-directory, and a `24x80` PTY.
+It launches the proxy without either service environment variable, proving
+the same mode-0600 runtime-file handoff used by UU's reconstructed user
+environment. It also proves that an incorrect token is rejected and that the
+accepted path delivers an interactive native shell, exact UTF-8 Chinese, the
+user's home directory, and a `24x80` PTY.
 
 For the installed service:
 
