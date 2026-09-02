@@ -763,6 +763,16 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertLess(reader_injection, injection)
         self.assertLess(injection, bootstrap)
         self.assertIn("pgrep -n -u \"$UID\" -x 'sdl-freerdp.exe'", verifier)
+        guard_enabled = verifier.index(
+            'if [[ "$cursor_guard_setting" == on ]]; then'
+        )
+        guard_wait = verifier.index("for _ in {1..100}; do", guard_enabled)
+        guard_result = verifier.index(
+            "opt-in relay and UU cursor guards are active", guard_wait
+        )
+        self.assertLess(guard_enabled, guard_wait)
+        self.assertLess(guard_wait, guard_result)
+        self.assertIn("sleep 0.05", verifier[guard_wait:guard_result])
 
     def test_phone_ime_unicode_input_is_normalized(self):
         bridge = (REPOSITORY / "src" / "uu_input_bridge.c").read_text()
