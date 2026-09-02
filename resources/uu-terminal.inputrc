@@ -1,0 +1,5 @@
+# UU's Wine/ConPTY terminal does not preserve Readline's bracketed-paste
+# cursor state. Keep this scoped to native shells opened through UU.
+$include /etc/inputrc
+$include ~/.inputrc
+set enable-bracketed-paste off

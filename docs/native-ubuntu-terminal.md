@@ -3,13 +3,13 @@
 ## Result
 
 The UU controller's **Terminal** feature can open the bridge host's real
-Ubuntu login shell. The controller may still label the choice `PowerShell`;
+Ubuntu shell. The controller may still label the choice `PowerShell`;
 on this Wine-hosted Ubuntu device that label is a compatibility entry point,
 not the shell that ultimately runs.
 
 Choose `PowerShell` in the UU terminal panel. The resulting PTY runs as the
 same unprivileged Ubuntu user as `uu-remote-bridge.service`, starts in that
-user's home directory, loads the normal login-shell configuration, supports
+user's home directory, loads normal interactive Bash configuration, supports
 interactive programs and UTF-8, and follows controller resize events.
 
 The UU terminal gets a deliberately plain prompt while keeping the user's
@@ -48,7 +48,7 @@ uu-terminal-bridge
         |
         | forkpty()
         v
-Ubuntu user's interactive login shell
+Ubuntu user's interactive shell
 ```
 
 The Windows proxy is deliberately small. It forwards standard input and
@@ -87,16 +87,25 @@ its 92-column row to wrap the final prompt character onto the next line.
 
 The native broker now removes inherited VTE-only variables while preserving
 `TERM=xterm-256color`, which is the capability model UU's ConPTY renderer
-expects. For Bash, a `PROMPT_COMMAND` applied after normal login startup
+expects. For Bash, a `PROMPT_COMMAND` applied after normal interactive startup
 replaces only the decorated `PS1` with a plain prompt; aliases, Conda setup,
-and other shell configuration still load. `PROMPT_DIRTRIM=3` also bounds very
-long working-directory prompts.
+and other `~/.bashrc` configuration still load. `PROMPT_DIRTRIM=3` also bounds
+very long working-directory prompts.
 
 An intermediate `TERM=screen` fix removed the wrapping but made UU draw typed
 characters at the upper-left instead of after `$`. It was rejected because a
 terminal identity must describe the renderer, not merely suppress decoration.
-The acceptance test now rejects VTE title/color sequences and cursor-home
-sequences while requiring `xterm-256color`, so both regressions are guarded.
+The remaining cursor jump came from Readline's `ESC[?2004h` bracketed-paste
+control. A sibling, installed `uu-terminal.inputrc` disables only that feature
+for UU sessions before Readline starts; no global input or Bash file changes.
+
+Bash runs as an interactive non-login shell, matching an ordinary desktop
+terminal. It therefore reads `~/.bashrc` but does not execute Ubuntu's
+console-clearing `.bash_logout`, whose `ESC[3J ESC[H ESC[2J` sequence made a
+clean `exit` look like another upper-left failure. Other configured shells
+retain their login invocation. The acceptance test models the systemd shell
+level and rejects VTE title/color, bracketed-paste, and cursor-home controls
+while requiring `xterm-256color`.
 
 ## Install and use
 

@@ -44,6 +44,10 @@ for executable in "$wine_bin" "$repo_dir/build/compat/uu-terminal-bridge" \
         exit 1
     }
 done
+[[ -r "$repo_dir/build/compat/uu-terminal.inputrc" ]] || {
+    printf 'missing UU terminal Readline configuration\n' >&2
+    exit 1
+}
 
 WINEPREFIX="$wine_prefix" WINEDEBUG=-all DISPLAY= \
     "$wine_bin" wineboot -u >/dev/null 2>&1
@@ -52,7 +56,7 @@ install -m 0755 \
     "$repo_dir/build/compat/uu-terminal-proxy.exe" "$proxy_exe"
 
 token="$(openssl rand -hex 32)"
-UURB_TERMINAL_BRIDGE_TOKEN="$token" \
+SHLVL=0 UURB_TERMINAL_BRIDGE_TOKEN="$token" \
     "$repo_dir/build/compat/uu-terminal-bridge" \
     --ready-file "$ready_file" \
     >"$temporary_dir/bridge.stdout" 2>"$temporary_dir/bridge.stderr" &
@@ -94,7 +98,7 @@ printf 'version=1\nport=%s\ntoken=%s\n' \
     "$port" "$token" >"$proxy_config"
 chmod 600 "$proxy_config"
 commands=$'printf "UURB_NATIVE_SHELL_OK\\n"\nprintf "UURB_UNICODE_你好\\n"\nprintf "UURB_CWD=%s\\n" "$PWD"\nprintf "UURB_TERMINAL_MODE=%s\\n" "$UURB_NATIVE_TERMINAL"\nprintf "UURB_PROMPT_TRIM=%s\\n" "$PROMPT_DIRTRIM"\nprintf "UURB_TERM=%s\\n" "$TERM"\nstty size\nexit\n'
-printf '%s' "$commands" | env \
+{ sleep 1; printf '%s' "$commands"; sleep 0.2; } | env \
     -u UURB_TERMINAL_BRIDGE_PORT \
     -u UURB_TERMINAL_BRIDGE_TOKEN \
     WINEPREFIX="$wine_prefix" WINEDEBUG=-all DISPLAY= \
@@ -125,9 +129,16 @@ raw = Path(sys.argv[1]).read_bytes()
 for sequence in (b"\x1b]0;", b"\x1b[01;32m", b"\x1b[01;34m"):
     if sequence in raw:
         raise SystemExit("UU Bash prompt retained ANSI/title decoration")
-for sequence in (b"\x1b[H", b"\x1b[1;1H"):
+for sequence in (
+    b"\x1b[?2004h",
+    b"\x1b[?2004l",
+    b"\x1b[2J",
+    b"\x1b[3J",
+    b"\x1b[H",
+    b"\x1b[1;1H",
+):
     if sequence in raw:
-        raise SystemExit("UU Bash prompt moved the input cursor to the upper-left")
+        raise SystemExit("UU Bash emitted a cursor-displacing control sequence")
 PY
 
 if [[ -s "$temporary_dir/accepted.stderr" ]]; then

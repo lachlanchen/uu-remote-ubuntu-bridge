@@ -829,8 +829,8 @@ Install the current bridge and verify the native broker:
 ```
 
 In UU, choose the `PowerShell` shell even though the resulting PTY is the
-native Ubuntu login shell. If verification reports a missing or stale terminal
-bridge, do not copy an arbitrary executable over
+native Ubuntu interactive shell. If verification reports a missing or stale
+terminal bridge, do not copy an arbitrary executable over
 `GameViewer/bin/powershell.exe`; rerun the installer so its byte-identity guard
 can repair a known installation or refuse unknown vendor drift.
 
@@ -860,7 +860,14 @@ alter RDP, VNC, and physical terminals.
 Do not work around wrapping by changing the UU child to `TERM=screen`. UU's
 ConPTY renderer expects xterm semantics; that mismatch can draw typed text at
 the upper-left even though Bash receives it correctly. Current releases keep
-`xterm-256color` and sanitize only the Bash prompt after login startup.
+`xterm-256color` and sanitize only the Bash prompt after interactive startup.
+
+If typing still appears at the upper-left, verify that
+`~/.local/share/wineprefixes/uu-remote/compat/uu-terminal.inputrc` exists and
+matches `resources/uu-terminal.inputrc`, then reinstall. It disables only
+Readline's bracketed-paste controls for UU. Current Bash sessions are
+interactive non-login shells, so `exit` also avoids Ubuntu's console-clearing
+logout hook while retaining normal `~/.bashrc` aliases and Conda setup.
 
 ## GNOME RDP authentication fails
 

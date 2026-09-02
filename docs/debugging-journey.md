@@ -813,7 +813,7 @@ channel. A tiny Windows `powershell.exe` compatibility proxy receives the
 existing ConPTY streams and forwards framed input, output, EOF, and resize
 events to a native helper. The helper binds only IPv4 loopback, validates a
 fresh inherited 256-bit token in constant time, caps concurrent sessions, and
-opens the current user's login shell with `forkpty`. Commands and output are
+opens the current user's shell with `forkpty`. Commands and output are
 never logged.
 
 Installer and uninstaller guards compare the deployed executable with the
@@ -845,7 +845,22 @@ columns. Setting `PS1` before startup was not reliable because VTE and Conda
 hooks run later. An intermediate `TERM=screen` boundary removed the wrapping,
 but real-controller input then rendered at the upper-left: UU's ConPTY surface
 expects xterm cursor semantics. The final fix keeps `TERM=xterm-256color`,
-unsets only inherited VTE markers, and uses Bash's `PROMPT_COMMAND` after login
-startup to replace the decorated prompt. The normal login files and aliases
-still load. The integration test now fails if OSC title, prompt colors, or
-cursor-home sequences reappear and requires the xterm identity explicitly.
+unsets only inherited VTE markers, and uses Bash's `PROMPT_COMMAND` after
+interactive startup to replace the decorated prompt. The normal `~/.bashrc`
+and aliases still load. The integration test now fails if OSC title, prompt
+colors, or cursor-home sequences reappear and requires the xterm identity
+explicitly.
+
+Real byte capture then exposed the control that the earlier test sent too
+quickly to observe: every prompt began with Readline's `ESC[?2004h` and every
+command ended with `ESC[?2004l`. UU moved its logical input cursor to the
+upper-left after those controls. Running `bind` from `PROMPT_COMMAND` was
+rejected because it interacted with already queued startup input. The final
+boundary uses a read-only `uu-terminal.inputrc` beside the broker, selected
+before Readline initializes. The test now waits for shell startup before
+typing and rejects both bracketed-paste controls.
+
+Production capture also found `ESC[3J ESC[H ESC[2J` after `exit`, emitted by
+Ubuntu's default `.bash_logout` for a top-level login shell. Bash now uses the
+same interactive non-login invocation as a normal terminal emulator, retaining
+`~/.bashrc`, aliases, and Conda while avoiding that console-only logout clear.

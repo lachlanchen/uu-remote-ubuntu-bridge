@@ -3,6 +3,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <poll.h>
 #include <pty.h>
 #include <pwd.h>
@@ -44,6 +45,30 @@ static int constant_time_equal(const char *left, const char *right, size_t size)
     for (index = 0; index < size; index++)
         difference |= (unsigned char)left[index] ^ (unsigned char)right[index];
     return difference == 0;
+}
+
+static int sibling_path(char *path, size_t path_size, const char *filename)
+{
+    char *separator;
+    ssize_t executable_length;
+    size_t directory_length;
+    size_t filename_length;
+
+    if (path_size < 2)
+        return 0;
+    executable_length = readlink("/proc/self/exe", path, path_size - 1);
+    if (executable_length <= 0 || (size_t)executable_length >= path_size - 1)
+        return 0;
+    path[executable_length] = '\0';
+    separator = strrchr(path, '/');
+    if (separator == NULL)
+        return 0;
+    directory_length = (size_t)(separator - path) + 1;
+    filename_length = strlen(filename);
+    if (directory_length + filename_length >= path_size)
+        return 0;
+    memcpy(path + directory_length, filename, filename_length + 1);
+    return 1;
 }
 
 static int token_is_valid(const char *token)
@@ -142,12 +167,14 @@ static void stop_shell(pid_t child)
         ;
 }
 
-static void run_login_shell(void)
+static void run_user_shell(void)
 {
     struct passwd *account = getpwuid(getuid());
+    char inputrc_path[PATH_MAX];
     const char *shell_name;
     const char *home;
     const char *shell;
+    bool is_bash;
 
     if (account == NULL)
         _exit(126);
@@ -168,13 +195,21 @@ static void run_login_shell(void)
     setenv("UURB_NATIVE_TERMINAL", "1", 1);
     shell_name = strrchr(shell, '/');
     shell_name = shell_name != NULL ? shell_name + 1 : shell;
-    if (strcmp(shell_name, "bash") == 0) {
+    is_bash = strcmp(shell_name, "bash") == 0;
+    if (is_bash) {
+        if (!sibling_path(inputrc_path, sizeof(inputrc_path),
+                          "uu-terminal.inputrc") ||
+            access(inputrc_path, R_OK) != 0)
+            _exit(126);
+        setenv("INPUTRC", inputrc_path, 1);
         setenv("PROMPT_DIRTRIM", "3", 1);
         setenv("PROMPT_COMMAND",
                "PS1='${CONDA_PROMPT_MODIFIER:-}\\u@\\h:\\w\\$ '", 1);
     }
     if (chdir(home) != 0)
         _exit(126);
+    if (is_bash)
+        execl(shell, shell, "-i", (char *)NULL);
     execl(shell, shell, "-l", (char *)NULL);
     _exit(127);
 }
@@ -244,7 +279,7 @@ static int relay_session(int client, const char *expected_token)
     if (shell_pid < 0)
         goto done;
     if (shell_pid == 0)
-        run_login_shell();
+        run_user_shell();
 
     fprintf(stderr, "terminal session opened pid=%ld size=%ux%u\n",
             (long)shell_pid, initial_size.ws_col, initial_size.ws_row);
