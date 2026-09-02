@@ -85,12 +85,18 @@ ANSI prompt colors. They are harmless in VTE, where non-printing sequences are
 understood, but UU's ConPTY renderer counted enough of those raw bytes toward
 its 92-column row to wrap the final prompt character onto the next line.
 
-The native broker now removes inherited VTE-only variables and advertises the
-widely supported `screen` terminal entry before starting the UU login shell.
-This suppresses only desktop-emulator decoration; it does not replace the
-user's shell configuration. `PROMPT_DIRTRIM=3` also bounds very long working
-directory prompts. The acceptance test rejects VTE title and color sequences,
-so this regression cannot silently return.
+The native broker now removes inherited VTE-only variables while preserving
+`TERM=xterm-256color`, which is the capability model UU's ConPTY renderer
+expects. For Bash, a `PROMPT_COMMAND` applied after normal login startup
+replaces only the decorated `PS1` with a plain prompt; aliases, Conda setup,
+and other shell configuration still load. `PROMPT_DIRTRIM=3` also bounds very
+long working-directory prompts.
+
+An intermediate `TERM=screen` fix removed the wrapping but made UU draw typed
+characters at the upper-left instead of after `$`. It was rejected because a
+terminal identity must describe the renderer, not merely suppress decoration.
+The acceptance test now rejects VTE title/color sequences and cursor-home
+sequences while requiring `xterm-256color`, so both regressions are guarded.
 
 ## Install and use
 

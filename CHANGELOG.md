@@ -8,10 +8,11 @@ locked by the release manifest.
 
 ### Fixed
 
-- prevent UU's native Ubuntu prompt from wrapping its final `$` onto a new row
-  by removing inherited VTE-only controls and using a plain `screen` terminal
-  profile only inside UU child shells; normal desktop terminal prompts remain
-  unchanged and the Wine-to-PTY acceptance test guards the regression
+- prevent UU's native Ubuntu prompt from wrapping its final `$` and prevent
+  typed text from jumping to the upper-left: retain ConPTY's expected
+  `xterm-256color` identity, remove inherited VTE-only controls, and apply a
+  plain Bash prompt after login startup; normal desktop terminals remain
+  unchanged and the Wine-to-PTY acceptance test guards both regressions
 
 ### Added
 

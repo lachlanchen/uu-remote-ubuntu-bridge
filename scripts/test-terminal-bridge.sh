@@ -115,7 +115,7 @@ required = (
     "UURB_CWD=/home/",
     "UURB_TERMINAL_MODE=1",
     "UURB_PROMPT_TRIM=3",
-    "UURB_TERM=screen",
+    "UURB_TERM=xterm-256color",
     "24 80",
 )
 missing = [marker for marker in required if marker not in text]
@@ -125,6 +125,9 @@ raw = Path(sys.argv[1]).read_bytes()
 for sequence in (b"\x1b]0;", b"\x1b[01;32m", b"\x1b[01;34m"):
     if sequence in raw:
         raise SystemExit("UU Bash prompt retained ANSI/title decoration")
+for sequence in (b"\x1b[H", b"\x1b[1;1H"):
+    if sequence in raw:
+        raise SystemExit("UU Bash prompt moved the input cursor to the upper-left")
 PY
 
 if [[ -s "$temporary_dir/accepted.stderr" ]]; then

@@ -164,12 +164,15 @@ static void run_login_shell(void)
     setenv("USER", account->pw_name, 1);
     setenv("LOGNAME", account->pw_name, 1);
     setenv("SHELL", shell, 1);
-    setenv("TERM", "screen", 1);
+    setenv("TERM", "xterm-256color", 1);
     setenv("UURB_NATIVE_TERMINAL", "1", 1);
     shell_name = strrchr(shell, '/');
     shell_name = shell_name != NULL ? shell_name + 1 : shell;
-    if (strcmp(shell_name, "bash") == 0)
+    if (strcmp(shell_name, "bash") == 0) {
         setenv("PROMPT_DIRTRIM", "3", 1);
+        setenv("PROMPT_COMMAND",
+               "PS1='${CONDA_PROMPT_MODIFIER:-}\\u@\\h:\\w\\$ '", 1);
+    }
     if (chdir(home) != 0)
         _exit(126);
     execl(shell, shell, "-l", (char *)NULL);

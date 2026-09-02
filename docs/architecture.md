@@ -212,10 +212,11 @@ payloads. The token is absent from command lines and ready files. This design
 avoids an SSH listener, SSH key, stored password, or extra account boundary. See
 [Native Ubuntu terminal through UU Remote](native-ubuntu-terminal.md).
 
-The broker removes inherited GNOME VTE markers and uses the standard `screen`
-terminal capability only for UU child shells. This avoids ConPTY prompt
-wrapping without changing any normal desktop terminal or bypassing the user's
-login configuration.
+The broker removes inherited GNOME VTE markers but retains
+`TERM=xterm-256color` to match UU's ConPTY renderer. A Bash prompt hook runs
+after normal login startup and removes only the decorated prompt. This avoids
+both prompt wrapping and cursor displacement without changing any normal
+desktop terminal or bypassing the user's login configuration.
 
 ### Phone text input
 

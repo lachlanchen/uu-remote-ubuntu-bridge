@@ -857,6 +857,11 @@ suppresses those controls only in UU child shells and the isolated terminal
 test checks the exact regression; global prompt changes would unnecessarily
 alter RDP, VNC, and physical terminals.
 
+Do not work around wrapping by changing the UU child to `TERM=screen`. UU's
+ConPTY renderer expects xterm semantics; that mismatch can draw typed text at
+the upper-left even though Bash receives it correctly. Current releases keep
+`xterm-256color` and sanitize only the Bash prompt after login startup.
+
 ## GNOME RDP authentication fails
 
 The UU bridge uses a separate local RDP credential from the login keyring:

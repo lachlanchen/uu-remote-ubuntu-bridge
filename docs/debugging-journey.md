@@ -842,7 +842,10 @@ longer than the row because the service had inherited GNOME VTE state. Login
 startup added OSC title/working-directory markers and ANSI colors that VTE
 knows are non-printing, while the UU/ConPTY path treated them as occupying
 columns. Setting `PS1` before startup was not reliable because VTE and Conda
-hooks run later. The stable boundary fix instead unsets VTE-only environment
-markers and identifies only the UU child as `TERM=screen`; the normal login
-files and aliases still load. The integration test now fails if OSC title or
-the prior prompt-color sequences reappear.
+hooks run later. An intermediate `TERM=screen` boundary removed the wrapping,
+but real-controller input then rendered at the upper-left: UU's ConPTY surface
+expects xterm cursor semantics. The final fix keeps `TERM=xterm-256color`,
+unsets only inherited VTE markers, and uses Bash's `PROMPT_COMMAND` after login
+startup to replace the decorated prompt. The normal login files and aliases
+still load. The integration test now fails if OSC title, prompt colors, or
+cursor-home sequences reappear and requires the xterm identity explicitly.
