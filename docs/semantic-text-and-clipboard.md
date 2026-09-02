@@ -44,6 +44,16 @@ ASCII typing while fixing dictation revisions, multiline text, and non-English
 commits. Composition editing keys may be interleaved with a semantic text
 batch; the broker preserves their order instead of rejecting the whole batch.
 
+Continuous dictation can grow one provisional Windows `SendInput` call far
+beyond a normal keystroke pair. The original 64-record transport therefore
+accepted a short phrase but rejected live calls of 70, 76, 92, 98, 114, and
+332 records with `result=0 error=5`. The bridge now preserves one complete call
+through a bounded 2,048-record transaction. It deliberately does not split a
+semantic text call into several clipboard pastes: X11 selections are lazy, so
+rapidly replacing the owner can make every queued paste read only the final
+fragment. A call beyond the bound fails before injection rather than partially
+replacing text.
+
 Clipboard paste deliberately leaves the committed text in the desktop
 `CLIPBOARD` and `PRIMARY` selections. This makes a later manual paste useful,
 keeps `Shift+Insert` deterministic across application toolkits, and avoids
@@ -85,9 +95,9 @@ the logged-in desktop or inspect the user's clipboard:
 ./scripts/test-vnc-clipboard-relay.sh
 ```
 
-The first pass proves that Chinese, an emoji split across two commits, and two
-lines survive exactly, the target app receives one real paste, and broker
-metadata reports:
+The first pass proves that Chinese, an emoji split across two commits, two
+lines, and a 2,000-record Unicode composition survive exactly, the target app
+receives one real paste for the long composition, and broker metadata reports:
 
 ```text
 route=x11-clipboard-text error=0
@@ -104,8 +114,9 @@ Retain the established regression tests as separate boundaries:
 ./scripts/test-vnc-keyboard-relay.sh
 ```
 
-The first proves the fast representable-text route. The second proves physical
-symbols and CJK keysyms through the nested VNC keyboard path.
+The first proves the fast representable-text route, including one 2,000-record
+call delivered in exact order. The second proves physical symbols and CJK
+keysyms through the nested VNC keyboard path.
 
 ## Live diagnosis
 
@@ -122,3 +133,7 @@ Expected routes are `x11-text` for representable text and
 key-only path could not translate a Unicode character; after this feature is
 deployed, CJK/newline requests should no longer reach that failure on an X11
 target.
+On an older deployment, a bridge record with `count` above 64 followed by
+`result=0 error=5` identifies the former continuous-dictation size limit. A
+successful current deployment reports the full original count from both the
+bridge and broker.

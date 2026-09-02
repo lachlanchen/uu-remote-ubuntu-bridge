@@ -7,6 +7,7 @@ temporary_dir="$(mktemp -d "${TMPDIR:-/tmp}/uurb-x11-clipboard.XXXXXX")"
 wine_prefix="$temporary_dir/wine"
 ready_file="$temporary_dir/x11-input.port"
 broker_log="$temporary_dir/input-broker.log"
+bridge_log="$temporary_dir/input-bridge.log"
 editor_output="$temporary_dir/editor-output.txt"
 token="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
 xvfb_pid=""
@@ -69,6 +70,9 @@ fi
 x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \
     -o "$temporary_dir/uu-clipboard-text-probe.exe" \
     "$repo_dir/tests/probes/uu_clipboard_text_probe.c"
+x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \
+    -o "$temporary_dir/uu-long-text-probe.exe" \
+    "$repo_dir/tests/probes/uu_long_text_probe.c" -luser32
 
 Xvfb "$display" -screen 0 800x600x24 -ac -nolisten tcp \
     >"$temporary_dir/xvfb.log" 2>&1 &
@@ -130,6 +134,11 @@ DISPLAY="$display" WINEPREFIX="$wine_prefix" WINEDEBUG=-all \
     /opt/wine-stable/bin/wineboot -u >/dev/null 2>&1
 broker_log_windows="$(DISPLAY="$display" WINEPREFIX="$wine_prefix" \
     WINEDEBUG=-all /opt/wine-stable/bin/winepath -w "$broker_log")"
+bridge_log_windows="$(DISPLAY="$display" WINEPREFIX="$wine_prefix" \
+    WINEDEBUG=-all /opt/wine-stable/bin/winepath -w "$bridge_log")"
+bridge_dll_windows="$(DISPLAY="$display" WINEPREFIX="$wine_prefix" \
+    WINEDEBUG=-all /opt/wine-stable/bin/winepath -w \
+    "$temporary_dir/compat/uu-input-bridge.dll")"
 DISPLAY="$display" WINEPREFIX="$wine_prefix" WINEDEBUG=-all \
     WINEDLLOVERRIDES='mscoree,mshtml=' \
     UU_INPUT_BROKER_LOG="$broker_log_windows" \
@@ -162,6 +171,13 @@ if [[ "$primary_text" != "$expected_primary" ]]; then
     exit 1
 fi
 
+DISPLAY="$display" WINEPREFIX="$wine_prefix" WINEDEBUG=-all \
+    WINEDLLOVERRIDES='mscoree,mshtml=' \
+    UU_INPUT_BRIDGE_LOG="$bridge_log_windows" \
+    /opt/wine-stable/bin/wine "$temporary_dir/uu-long-text-probe.exe" \
+    "$bridge_dll_windows" unicode
+sleep 0.5
+
 DISPLAY="$display" xdotool key --clearmodifiers alt+o
 for _ in {1..30}; do
     kill -0 "$editor_pid" 2>/dev/null || break
@@ -178,7 +194,7 @@ from pathlib import Path
 import sys
 
 observed = Path(sys.argv[1]).read_text(encoding="utf-8").rstrip("\n")
-expected = "你好 line one\nline two🙂"
+expected = "你好 line one\nline two🙂" + "你" * 1000
 if observed != expected:
     raise SystemExit("multiline clipboard text did not arrive exactly")
 print("clipboard-text=unicode+multiline exact")
@@ -191,4 +207,17 @@ if ! rg -q \
     exit 1
 fi
 printf 'broker-route=x11-clipboard-text error=0\n'
+if ! rg -q \
+    'category=text .*count=2000 .*route=x11-clipboard-text .*result=2000 error=0' \
+    "$broker_log"; then
+    printf 'broker did not accept the complete bounded long Unicode batch\n' >&2
+    exit 1
+fi
+if ! rg -q \
+    'category=text .*count=2000 .*route=broker .*result=2000 error=0' \
+    "$bridge_log"; then
+    printf 'bridge did not report the complete long Unicode text call\n' >&2
+    exit 1
+fi
+printf 'long-unicode-text=2000/2000 one-paste exact\n'
 printf 'isolated Unicode multiline clipboard acceptance passed\n'

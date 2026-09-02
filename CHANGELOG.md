@@ -8,6 +8,11 @@ locked by the release manifest.
 
 ### Fixed
 
+- preserve continuous phone dictation as one bounded input transaction instead
+  of rejecting every `SendInput` array above the former 64-record limit; the
+  bridge, broker, and authenticated X11 helper now accept up to 2,048 records,
+  and isolated regressions verify exact 2,000-record English and Unicode delivery
+  without splitting a semantic clipboard paste
 - restore UU's proven login-shell terminal behavior after real-controller
   testing showed that prompt sanitization made locally echoed input appear at
   column zero even though the host PTY byte stream was correct; correct input

@@ -8,7 +8,7 @@
 typedef UINT(WINAPI *send_input_fn)(UINT, LPINPUT, int);
 
 #define INPUT_BRIDGE_MAGIC 0x42525555UL
-#define INPUT_BRIDGE_MAX_INPUTS 64UL
+#define INPUT_BRIDGE_MAX_INPUTS 2048UL
 #define INPUT_BRIDGE_PIPE L"\\\\.\\pipe\\uurb-input-v1"
 
 typedef struct input_bridge_request {
@@ -150,13 +150,24 @@ static UINT send_through_broker(UINT count, const INPUT *inputs, int size,
 
     *broker_error = ERROR_ACCESS_DENIED;
     if (!broker_lock_initialized || count == 0 || inputs == NULL ||
-        count > INPUT_BRIDGE_MAX_INPUTS || size != (int)sizeof(INPUT))
+        size != (int)sizeof(INPUT))
         return 0;
+    if (count > INPUT_BRIDGE_MAX_INPUTS) {
+        *broker_error = ERROR_INSUFFICIENT_BUFFER;
+        return 0;
+    }
 
     request.magic = INPUT_BRIDGE_MAGIC;
     request.count = count;
     request.input_size = (DWORD)size;
 
+    /*
+     * UU's phone dictation grows a provisional composition into one SendInput
+     * array. Preserve that complete call so a semantic clipboard paste cannot
+     * observe only the final fragment. The bounded protocol allows 1,024
+     * UTF-16 key pairs, comfortably above the live 332-record failure while
+     * keeping every helper allocation finite.
+     */
     EnterCriticalSection(&broker_lock);
     for (attempt = 0; attempt < 2; attempt++) {
         if (connect_broker() &&

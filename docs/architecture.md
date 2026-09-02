@@ -237,6 +237,10 @@ that has no safe key chord—or that contains a line break—is placed on the
 target clipboard and pasted, preserving its Unicode and multiline semantics.
 The original request count is returned to UU only after the selected boundary
 accepts the complete request.
+The bridge keeps up to 2,048 input records from one provisional dictation call
+in the same transaction. This replaces the original 64-record ceiling without
+making the protocol unbounded and avoids fragmenting one semantic commit into
+several lazy X11 clipboard owners.
 
 Physical-key segments are unchanged by default. On the RDP route, an optional
 0-50 ms delay can add back-pressure after each accepted segment. On the direct

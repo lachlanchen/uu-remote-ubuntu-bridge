@@ -101,7 +101,9 @@ neither starts `sshd` nor stores a password or SSH key. A terminal has the
 normal authority of the logged-in Ubuntu user, and `sudo` retains the host's
 normal policy.
 
-The X11 helper accepts bounded keyboard, mouse, and semantic-text records.
+The X11 helper accepts at most 2,048 keyboard, mouse, or semantic-text records
+per request. This finite ceiling covers long provisional dictation while
+preventing caller-controlled unbounded allocation.
 Representable phone text is normalized to ordinary key chords. Newline, CJK,
 emoji, and other non-representable commits may cross the token-authenticated
 loopback protocol as bounded UTF-16, are converted in memory to UTF-8, and are

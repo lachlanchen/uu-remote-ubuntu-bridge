@@ -7,6 +7,7 @@ temporary_dir="$(mktemp -d "${TMPDIR:-/tmp}/uurb-x11-text.XXXXXX")"
 wine_prefix="$temporary_dir/wine"
 ready_file="$temporary_dir/x11-input.port"
 broker_log="$temporary_dir/input-broker.log"
+bridge_log="$temporary_dir/input-bridge.log"
 xev_log="$temporary_dir/xev.log"
 token="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
 xvfb_pid=""
@@ -60,6 +61,9 @@ fi
 x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \
     -o "$temporary_dir/uu-text-probe.exe" \
     "$repo_dir/tests/probes/uu_text_probe.c"
+x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \
+    -o "$temporary_dir/uu-long-text-probe.exe" \
+    "$repo_dir/tests/probes/uu_long_text_probe.c" -luser32
 
 Xvfb "$display" -screen 0 800x600x24 -ac -nolisten tcp \
     >"$temporary_dir/xvfb.log" 2>&1 &
@@ -108,6 +112,11 @@ DISPLAY="$display" WINEPREFIX="$wine_prefix" WINEDEBUG=-all \
     /opt/wine-stable/bin/wineboot -u >/dev/null 2>&1
 broker_log_windows="$(DISPLAY="$display" WINEPREFIX="$wine_prefix" \
     WINEDEBUG=-all /opt/wine-stable/bin/winepath -w "$broker_log")"
+bridge_log_windows="$(DISPLAY="$display" WINEPREFIX="$wine_prefix" \
+    WINEDEBUG=-all /opt/wine-stable/bin/winepath -w "$bridge_log")"
+bridge_dll_windows="$(DISPLAY="$display" WINEPREFIX="$wine_prefix" \
+    WINEDEBUG=-all /opt/wine-stable/bin/winepath -w \
+    "$temporary_dir/compat/uu-input-bridge.dll")"
 DISPLAY="$display" WINEPREFIX="$wine_prefix" WINEDEBUG=-all \
     WINEDLLOVERRIDES='mscoree,mshtml=' \
     UU_INPUT_BROKER_LOG="$broker_log_windows" \
@@ -121,7 +130,12 @@ sleep 0.5
 DISPLAY="$display" WINEPREFIX="$wine_prefix" WINEDEBUG=-all \
     WINEDLLOVERRIDES='mscoree,mshtml=' \
     /opt/wine-stable/bin/wine "$temporary_dir/uu-text-probe.exe"
-sleep 0.2
+DISPLAY="$display" WINEPREFIX="$wine_prefix" WINEDEBUG=-all \
+    WINEDLLOVERRIDES='mscoree,mshtml=' \
+    UU_INPUT_BRIDGE_LOG="$bridge_log_windows" \
+    /opt/wine-stable/bin/wine "$temporary_dir/uu-long-text-probe.exe" \
+    "$bridge_dll_windows"
+sleep 0.5
 
 python3 - "$xev_log" <<'PY'
 import re
@@ -137,12 +151,15 @@ matches = re.findall(
 expected = []
 for character in "abcdefghijklmnopqrstuvwxyz":
     expected.extend((("KeyPress", character), ("KeyRelease", character)))
+for index in range(1000):
+    character = chr(ord("a") + index % 26)
+    expected.extend((("KeyPress", character), ("KeyRelease", character)))
 if matches != expected:
     raise SystemExit(
         f"X11 text mismatch: observed {len(matches)} of {len(expected)} "
         "expected transitions"
     )
-print("x11-transitions=52/52 order=exact")
+print("x11-transitions=2052/2052 order=exact")
 PY
 
 if ! rg -q 'category=text .*route=x11-text .*result=52 error=0' \
@@ -151,4 +168,17 @@ if ! rg -q 'category=text .*route=x11-text .*result=52 error=0' \
     exit 1
 fi
 printf 'broker-route=x11-text result=52 error=0\n'
+if ! rg -q \
+    'category=text .*count=2000 .*route=x11-text .*result=2000 error=0' \
+    "$broker_log"; then
+    printf 'broker did not accept the complete bounded long-text batch\n' >&2
+    exit 1
+fi
+if ! rg -q \
+    'category=text .*count=2000 .*route=broker .*result=2000 error=0' \
+    "$bridge_log"; then
+    printf 'bridge did not report the complete long phone-text call\n' >&2
+    exit 1
+fi
+printf 'long-phone-text=2000/2000 one-batch order=exact\n'
 printf 'isolated phone-text acceptance passed\n'

@@ -796,6 +796,25 @@ so the change extends rather than replaces those known-good paths. The VNC
 clipboard test additionally confirms receipt of client cut text, exact target
 Unicode paste, and absence of target-to-private clipboard feedback.
 
+A later live test separated one-shot dictation from continuous speech. Every
+short request reached `x11-text` or `x11-clipboard-text`, but the injected DLL
+rejected whole arrays above its original 64-record protocol bound before the
+broker could see them. Content-free metadata captured failures at 70, 76, 92,
+98, 114, and 332 records as `route=broker result=0 error=5`. This explained why
+one short message worked while continuing to talk appeared to strip or flush
+the composing text; it was neither an XRDP failure nor dropped network input.
+
+The final correction raises the same explicit bound in the DLL, broker, and
+authenticated X11 protocol to 2,048 records. Keeping the whole composition is
+important: an attempted 64-record streaming design passed English key tests
+but an isolated Unicode test showed that lazy X11 clipboard requests all read
+the last replacement owner, leaving only the final eight characters. The
+accepted design therefore performs one semantic paste and rejects an oversized
+call before injection. The isolated regressions submit 2,000 input records
+through the real hooked `SendInput` boundary; English produced every key
+transition in exact order, and Unicode produced all 1,000 characters in one
+paste. All repository tests passed afterward.
+
 ## 22. Keep UU's terminal transport and replace only Wine's empty shell
 
 UU's direct terminal on the Ubuntu bridge host appeared to fail with
