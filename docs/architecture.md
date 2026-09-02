@@ -212,6 +212,11 @@ payloads. The token is absent from command lines and ready files. This design
 avoids an SSH listener, SSH key, stored password, or extra account boundary. See
 [Native Ubuntu terminal through UU Remote](native-ubuntu-terminal.md).
 
+The broker removes inherited GNOME VTE markers and uses the standard `screen`
+terminal capability only for UU child shells. This avoids ConPTY prompt
+wrapping without changing any normal desktop terminal or bypassing the user's
+login configuration.
+
 ### Phone text input
 
 UU exposes two mobile keyboard paths. Its computer-keyboard panel emits normal

@@ -834,3 +834,15 @@ from its own module path. The acceptance test explicitly removes both
 environment variables, exercises this fallback, and still rejects a wrong
 token. Verification also requires exact schema, owner, mode, token, port, and
 listener agreement.
+
+The first working shell exposed a presentation-only edge case: at UU's real
+`92x30` size, the visible prompt fit comfortably, but `$` appeared alone on
+the next row. Capturing raw PTY output showed that the bytes before `$` were
+longer than the row because the service had inherited GNOME VTE state. Login
+startup added OSC title/working-directory markers and ANSI colors that VTE
+knows are non-printing, while the UU/ConPTY path treated them as occupying
+columns. Setting `PS1` before startup was not reliable because VTE and Conda
+hooks run later. The stable boundary fix instead unsets VTE-only environment
+markers and identifies only the UU child as `TERM=screen`; the normal login
+files and aliases still load. The integration test now fails if OSC title or
+the prior prompt-color sequences reappear.

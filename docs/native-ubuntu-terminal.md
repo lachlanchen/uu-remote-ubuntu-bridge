@@ -12,6 +12,11 @@ same unprivileged Ubuntu user as `uu-remote-bridge.service`, starts in that
 user's home directory, loads the normal login-shell configuration, supports
 interactive programs and UTF-8, and follows controller resize events.
 
+The UU terminal gets a deliberately plain prompt while keeping the user's
+normal aliases, Conda setup, and login configuration. This affects only shells
+opened through UU; RDP, VNC, and physical terminals retain their usual colors
+and title integration.
+
 ## Why the terminal previously closed with exit code 0
 
 UU's host received and accepted the remote request. Its log recorded a new
@@ -71,6 +76,22 @@ The native listener binds only to IPv4 loopback, compares the complete token,
 accepts at most four sessions, and logs session metadata—not commands, output,
 or terminal text. It grants no root access and does not bypass `sudo`.
 
+## Why `$` no longer wraps onto a separate row
+
+The first native-terminal build inherited `VTE_VERSION`, `COLORTERM`, and an
+`xterm-256color` terminal identity from the GNOME desktop service. Ubuntu's
+login startup therefore added OSC window-title updates, command markers, and
+ANSI prompt colors. They are harmless in VTE, where non-printing sequences are
+understood, but UU's ConPTY renderer counted enough of those raw bytes toward
+its 92-column row to wrap the final prompt character onto the next line.
+
+The native broker now removes inherited VTE-only variables and advertises the
+widely supported `screen` terminal entry before starting the UU login shell.
+This suppresses only desktop-emulator decoration; it does not replace the
+user's shell configuration. `PROMPT_DIRTRIM=3` also bounds very long working
+directory prompts. The acceptance test rejects VTE title and color sequences,
+so this regression cannot silently return.
+
 ## Install and use
 
 The normal installer builds and deploys both helpers:
@@ -108,7 +129,7 @@ It launches the proxy without either service environment variable, proving
 the same mode-0600 runtime-file handoff used by UU's reconstructed user
 environment. It also proves that an incorrect token is rejected and that the
 accepted path delivers an interactive native shell, exact UTF-8 Chinese, the
-user's home directory, and a `24x80` PTY.
+user's home directory, a plain UU-only prompt, and a `24x80` PTY.
 
 For the installed service:
 

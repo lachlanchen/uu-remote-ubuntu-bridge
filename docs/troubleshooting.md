@@ -850,6 +850,13 @@ tail -n 30 ~/.local/state/uu-remote-bridge/terminal-bridge.log
 Do not add an SSH password or expose another listening port as a workaround.
 The intended listener is ephemeral, token-authenticated, and localhost-only.
 
+If the terminal works but `$` starts on a separate row, install the current
+bridge rather than editing `~/.bashrc`. UU's renderer can count inherited VTE
+title and ANSI-decoration bytes toward its row width. The current broker
+suppresses those controls only in UU child shells and the isolated terminal
+test checks the exact regression; global prompt changes would unnecessarily
+alter RDP, VNC, and physical terminals.
+
 ## GNOME RDP authentication fails
 
 The UU bridge uses a separate local RDP credential from the login keyring:

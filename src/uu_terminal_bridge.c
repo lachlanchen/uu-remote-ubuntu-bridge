@@ -145,6 +145,7 @@ static void stop_shell(pid_t child)
 static void run_login_shell(void)
 {
     struct passwd *account = getpwuid(getuid());
+    const char *shell_name;
     const char *home;
     const char *shell;
 
@@ -156,11 +157,19 @@ static void run_login_shell(void)
                 : "/bin/bash";
     unsetenv("UURB_TERMINAL_BRIDGE_TOKEN");
     unsetenv("UURB_TERMINAL_BRIDGE_PORT");
+    unsetenv("VTE_VERSION");
+    unsetenv("VTE_PTY_FD");
+    unsetenv("COLORTERM");
     setenv("HOME", home, 1);
     setenv("USER", account->pw_name, 1);
     setenv("LOGNAME", account->pw_name, 1);
     setenv("SHELL", shell, 1);
-    setenv("TERM", "xterm-256color", 1);
+    setenv("TERM", "screen", 1);
+    setenv("UURB_NATIVE_TERMINAL", "1", 1);
+    shell_name = strrchr(shell, '/');
+    shell_name = shell_name != NULL ? shell_name + 1 : shell;
+    if (strcmp(shell_name, "bash") == 0)
+        setenv("PROMPT_DIRTRIM", "3", 1);
     if (chdir(home) != 0)
         _exit(126);
     execl(shell, shell, "-l", (char *)NULL);

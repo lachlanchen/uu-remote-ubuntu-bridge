@@ -6,6 +6,13 @@ locked by the release manifest.
 
 ## [Unreleased]
 
+### Fixed
+
+- prevent UU's native Ubuntu prompt from wrapping its final `$` onto a new row
+  by removing inherited VTE-only controls and using a plain `screen` terminal
+  profile only inside UU child shells; normal desktop terminal prompts remain
+  unchanged and the Wine-to-PTY acceptance test guards the regression
+
 ### Added
 
 - an authenticated loopback terminal compatibility bridge that keeps UU's
