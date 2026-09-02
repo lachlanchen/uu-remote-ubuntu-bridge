@@ -9,7 +9,6 @@ runtime_files=(
     install.sh
     uninstall.sh
     patches/libei-1.2.1-close-keymap-fd.patch
-    resources/uu-terminal.inputrc
     scripts/build-compat.sh
     scripts/build-libei.sh
     scripts/build-winpr.sh

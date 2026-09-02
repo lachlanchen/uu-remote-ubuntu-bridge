@@ -44,7 +44,6 @@ libei_backport="$wine_prefix/compat/libei/libei.so.1.2.1"
 network_filter="$wine_prefix/compat/uu-network-filter.so"
 x11_input_helper="$wine_prefix/compat/uu-x11-input"
 x11_terminal_bridge="$wine_prefix/compat/uu-terminal-bridge"
-terminal_inputrc="$wine_prefix/compat/uu-terminal.inputrc"
 terminal_proxy_compat="$wine_prefix/compat/uu-terminal-proxy.exe"
 terminal_proxy="$wine_prefix/drive_c/Program Files/Netease/GameViewer/bin/powershell.exe"
 terminal_config="$wine_prefix/drive_c/Program Files/Netease/GameViewer/bin/uu-terminal-bridge.runtime"
@@ -712,11 +711,9 @@ terminal_config_mode="$(
 terminal_config_owner="$(
     /usr/bin/stat -c '%u' "$terminal_config" 2>/dev/null || true
 )"
-if [[ -x "$x11_terminal_bridge" && -f "$terminal_inputrc" &&
+if [[ -x "$x11_terminal_bridge" &&
       -f "$terminal_proxy_compat" && -f "$terminal_proxy" &&
       -f "$terminal_config" && ! -L "$terminal_config" ]] &&
-   /usr/bin/cmp -s "$terminal_inputrc" \
-       "$repo_dir/resources/uu-terminal.inputrc" &&
    /usr/bin/cmp -s "$terminal_proxy_compat" "$terminal_proxy" &&
    [[ -n "$terminal_bridge_pid" &&
       "$terminal_bridge_port" =~ ^[1-9][0-9]{0,4}$ &&

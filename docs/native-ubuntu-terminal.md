@@ -3,19 +3,14 @@
 ## Result
 
 The UU controller's **Terminal** feature can open the bridge host's real
-Ubuntu shell. The controller may still label the choice `PowerShell`;
+Ubuntu login shell. The controller may still label the choice `PowerShell`;
 on this Wine-hosted Ubuntu device that label is a compatibility entry point,
 not the shell that ultimately runs.
 
 Choose `PowerShell` in the UU terminal panel. The resulting PTY runs as the
 same unprivileged Ubuntu user as `uu-remote-bridge.service`, starts in that
-user's home directory, loads normal interactive Bash configuration, supports
+user's home directory, loads the normal login-shell configuration, supports
 interactive programs and UTF-8, and follows controller resize events.
-
-The UU terminal gets a deliberately plain prompt while keeping the user's
-normal aliases, Conda setup, and login configuration. This affects only shells
-opened through UU; RDP, VNC, and physical terminals retain their usual colors
-and title integration.
 
 ## Why the terminal previously closed with exit code 0
 
@@ -48,7 +43,7 @@ uu-terminal-bridge
         |
         | forkpty()
         v
-Ubuntu user's interactive shell
+Ubuntu user's interactive login shell
 ```
 
 The Windows proxy is deliberately small. It forwards standard input and
@@ -76,36 +71,27 @@ The native listener binds only to IPv4 loopback, compares the complete token,
 accepts at most four sessions, and logs session metadata—not commands, output,
 or terminal text. It grants no root access and does not bypass `sudo`.
 
-## Why `$` no longer wraps onto a separate row
+## Prompt rendering compatibility
 
-The first native-terminal build inherited `VTE_VERSION`, `COLORTERM`, and an
-`xterm-256color` terminal identity from the GNOME desktop service. Ubuntu's
-login startup therefore added OSC window-title updates, command markers, and
-ANSI prompt colors. They are harmless in VTE, where non-printing sequences are
-understood, but UU's ConPTY renderer counted enough of those raw bytes toward
-its 92-column row to wrap the final prompt character onto the next line.
+At UU's narrow terminal width, the final `$` can appear on a separate row.
+The prompt contains non-printing title, color, and Readline controls that a
+normal terminal understands but UU may count imperfectly. This is cosmetic:
+commands should still appear at the active input cursor and execute normally.
 
-The native broker now removes inherited VTE-only variables while preserving
-`TERM=xterm-256color`, which is the capability model UU's ConPTY renderer
-expects. For Bash, a `PROMPT_COMMAND` applied after normal interactive startup
-replaces only the decorated `PS1` with a plain prompt; aliases, Conda setup,
-and other `~/.bashrc` configuration still load. `PROMPT_DIRTRIM=3` also bounds
-very long working-directory prompts.
+Several narrower-prompt approaches were tested: changing `TERM`, stripping
+inherited VTE variables, replacing `PS1` after Bash startup, disabling
+Readline bracketed paste with a private inputrc, and avoiding login-shell
+logout controls. Isolated PTY captures looked clean, but the real UU
+controller then drew locally echoed keystrokes at the upper-left or beginning
+of the row. The host still received the correct bytes, proving that the
+controller's local echo depends on cursor state from the original startup
+stream.
 
-An intermediate `TERM=screen` fix removed the wrapping but made UU draw typed
-characters at the upper-left instead of after `$`. It was rejected because a
-terminal identity must describe the renderer, not merely suppress decoration.
-The remaining cursor jump came from Readline's `ESC[?2004h` bracketed-paste
-control. A sibling, installed `uu-terminal.inputrc` disables only that feature
-for UU sessions before Readline starts; no global input or Bash file changes.
-
-Bash runs as an interactive non-login shell, matching an ordinary desktop
-terminal. It therefore reads `~/.bashrc` but does not execute Ubuntu's
-console-clearing `.bash_logout`, whose `ESC[3J ESC[H ESC[2J` sequence made a
-clean `exit` look like another upper-left failure. Other configured shells
-retain their login invocation. The acceptance test models the systemd shell
-level and rejects VTE title/color, bracketed-paste, and cursor-home controls
-while requiring `xterm-256color`.
+The bridge therefore keeps `TERM=xterm-256color` and launches the configured
+shell as a login shell, matching the first proven implementation. Correct
+interactive input placement takes priority over eliminating the wrapped `$`.
+Do not globally edit `.bashrc` or `.inputrc` to hide this UU-only cosmetic
+artifact.
 
 ## Install and use
 
@@ -144,7 +130,7 @@ It launches the proxy without either service environment variable, proving
 the same mode-0600 runtime-file handoff used by UU's reconstructed user
 environment. It also proves that an incorrect token is rejected and that the
 accepted path delivers an interactive native shell, exact UTF-8 Chinese, the
-user's home directory, a plain UU-only prompt, and a `24x80` PTY.
+user's home directory, and a `24x80` PTY.
 
 For the installed service:
 

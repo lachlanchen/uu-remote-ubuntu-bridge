@@ -690,8 +690,6 @@ install -m 0755 "$compat_build/uu-x11-input" \
     "$wine_prefix/compat/uu-x11-input"
 install -m 0755 "$compat_build/uu-terminal-bridge" \
     "$wine_prefix/compat/uu-terminal-bridge"
-install -m 0644 "$compat_build/uu-terminal.inputrc" \
-    "$wine_prefix/compat/uu-terminal.inputrc"
 install -m 0755 "$compat_build/uu-terminal-proxy.exe" \
     "$terminal_proxy_install"
 install -m 0755 "$compat_build/winlogon.exe" \

@@ -81,7 +81,7 @@ the tested Windows 7 host reports that its terminal agent is unsupported.
 The same UU terminal panel can now control the Ubuntu machine that hosts this
 Wine bridge. Select `PowerShell`: the name is the vendor compatibility entry
 point, but the installed proxy opens the Ubuntu user's native interactive
-shell. It does not run Wine PowerShell and does not use SSH.
+login shell. It does not run Wine PowerShell and does not use SSH.
 
 The old immediate `exit 0` was caused by Wine's placeholder
 `powershell.exe`, not by UU networking. Installation, security boundaries,

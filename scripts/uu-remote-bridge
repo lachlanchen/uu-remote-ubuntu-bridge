@@ -150,7 +150,6 @@ input_injector_exe="$compat_dir/uu-injector.exe"
 service_control_exe="$compat_dir/uu-service-control.exe"
 uu_app_dir="$WINEPREFIX/drive_c/Program Files/Netease/GameViewer"
 terminal_bridge_helper="$compat_dir/uu-terminal-bridge"
-terminal_inputrc="$compat_dir/uu-terminal.inputrc"
 terminal_proxy_compat="$compat_dir/uu-terminal-proxy.exe"
 terminal_proxy_exe="$uu_app_dir/bin/powershell.exe"
 terminal_config_file="$uu_app_dir/bin/uu-terminal-bridge.runtime"
@@ -898,7 +897,6 @@ start_terminal_bridge() {
     local config_temporary
 
     if [[ ! -x "$terminal_bridge_helper" ||
-          ! -r "$terminal_inputrc" ||
           ! -f "$terminal_proxy_compat" ||
           ! -f "$terminal_proxy_exe" ]] ||
        ! /usr/bin/cmp -s "$terminal_proxy_compat" "$terminal_proxy_exe"; then

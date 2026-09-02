@@ -8,19 +8,17 @@ locked by the release manifest.
 
 ### Fixed
 
-- prevent UU's native Ubuntu prompt from wrapping its final `$` and prevent
-  typed text from jumping to the upper-left: retain ConPTY's expected
-  `xterm-256color` identity, remove inherited VTE-only controls, disable
-  Readline bracketed-paste mode through a UU-only inputrc, and apply a plain
-  Bash prompt after startup; interactive non-login Bash also avoids Ubuntu's
-  console-clearing logout sequence, while normal desktop terminals remain
-  unchanged and the Wine-to-PTY acceptance test guards all control sequences
+- restore UU's proven login-shell terminal behavior after real-controller
+  testing showed that prompt sanitization made locally echoed input appear at
+  column zero even though the host PTY byte stream was correct; correct input
+  placement takes priority over the cosmetic case where the final `$` wraps
+  onto a separate row
 
 ### Added
 
 - an authenticated loopback terminal compatibility bridge that keeps UU's
   native terminal transport but replaces Wine's immediately exiting
-  PowerShell placeholder with the Ubuntu user's real PTY shell; the
+  PowerShell placeholder with the Ubuntu user's real PTY login shell; the
   isolated acceptance covers wrong-token rejection, exact UTF-8, home-directory
   startup, and terminal resizing without adding SSH or storing credentials
 

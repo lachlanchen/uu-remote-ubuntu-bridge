@@ -813,7 +813,7 @@ channel. A tiny Windows `powershell.exe` compatibility proxy receives the
 existing ConPTY streams and forwards framed input, output, EOF, and resize
 events to a native helper. The helper binds only IPv4 loopback, validates a
 fresh inherited 256-bit token in constant time, caps concurrent sessions, and
-opens the current user's shell with `forkpty`. Commands and output are
+opens the current user's login shell with `forkpty`. Commands and output are
 never logged.
 
 Installer and uninstaller guards compare the deployed executable with the
@@ -836,31 +836,26 @@ token. Verification also requires exact schema, owner, mode, token, port, and
 listener agreement.
 
 The first working shell exposed a presentation-only edge case: at UU's real
-`92x30` size, the visible prompt fit comfortably, but `$` appeared alone on
-the next row. Capturing raw PTY output showed that the bytes before `$` were
-longer than the row because the service had inherited GNOME VTE state. Login
-startup added OSC title/working-directory markers and ANSI colors that VTE
-knows are non-printing, while the UU/ConPTY path treated them as occupying
-columns. Setting `PS1` before startup was not reliable because VTE and Conda
-hooks run later. An intermediate `TERM=screen` boundary removed the wrapping,
-but real-controller input then rendered at the upper-left: UU's ConPTY surface
-expects xterm cursor semantics. The final fix keeps `TERM=xterm-256color`,
-unsets only inherited VTE markers, and uses Bash's `PROMPT_COMMAND` after
-interactive startup to replace the decorated prompt. The normal `~/.bashrc`
-and aliases still load. The integration test now fails if OSC title, prompt
-colors, or cursor-home sequences reappear and requires the xterm identity
-explicitly.
+`92x30` size, `$` appeared alone on the next row. Raw PTY capture showed OSC
+title/working-directory markers, ANSI prompt colors, Readline bracketed-paste
+controls, and a login-shell logout clear sequence. Because UU did not render
+all of these like VTE, a sequence of fixes tried `TERM=screen`, a plain Bash
+`PROMPT_COMMAND`, removal of inherited VTE variables, a private inputrc, and
+interactive non-login Bash. Each approach made the captured output simpler.
 
-Real byte capture then exposed the control that the earlier test sent too
-quickly to observe: every prompt began with Readline's `ESC[?2004h` and every
-command ended with `ESC[?2004l`. UU moved its logical input cursor to the
-upper-left after those controls. Running `bind` from `PROMPT_COMMAND` was
-rejected because it interacted with already queued startup input. The final
-boundary uses a read-only `uu-terminal.inputrc` beside the broker, selected
-before Readline initializes. The test now waits for shell startup before
-typing and rejects both bracketed-paste controls.
+Those captures were not sufficient evidence. In the real UU controller, the
+later variants drew every locally echoed key at the upper-left or beginning of
+the row even while the host PTY received the correct command bytes in order.
+This established that the controller tracks its own input cursor from the
+original startup stream; removing apparently unnecessary controls changes
+that private state. The controller, not a synthetic pipe, is authoritative for
+visual input placement.
 
-Production capture also found `ESC[3J ESC[H ESC[2J` after `exit`, emitted by
-Ubuntu's default `.bash_logout` for a top-level login shell. Bash now uses the
-same interactive non-login invocation as a normal terminal emulator, retaining
-`~/.bashrc`, aliases, and Conda while avoiding that console-only logout clear.
+The prompt experiments were therefore rolled back to the first proven
+implementation: `TERM=xterm-256color` and the configured login shell with its
+normal startup stream. A wrapped `$` is accepted as a cosmetic artifact because
+typing after the active cursor is functional. The acceptance test continues to
+prove authentication, runtime-file handoff, UTF-8, working directory, resize,
+and command transport, but deliberately does not claim to validate UU's local
+echo renderer. Future prompt changes require a fresh real-controller typing
+test before promotion.

@@ -829,8 +829,8 @@ Install the current bridge and verify the native broker:
 ```
 
 In UU, choose the `PowerShell` shell even though the resulting PTY is the
-native Ubuntu interactive shell. If verification reports a missing or stale
-terminal bridge, do not copy an arbitrary executable over
+native Ubuntu login shell. If verification reports a missing or stale terminal
+bridge, do not copy an arbitrary executable over
 `GameViewer/bin/powershell.exe`; rerun the installer so its byte-identity guard
 can repair a known installation or refuse unknown vendor drift.
 
@@ -850,24 +850,18 @@ tail -n 30 ~/.local/state/uu-remote-bridge/terminal-bridge.log
 Do not add an SSH password or expose another listening port as a workaround.
 The intended listener is ephemeral, token-authenticated, and localhost-only.
 
-If the terminal works but `$` starts on a separate row, install the current
-bridge rather than editing `~/.bashrc`. UU's renderer can count inherited VTE
-title and ANSI-decoration bytes toward its row width. The current broker
-suppresses those controls only in UU child shells and the isolated terminal
-test checks the exact regression; global prompt changes would unnecessarily
-alter RDP, VNC, and physical terminals.
+If `$` starts on a separate row but typed commands follow the active cursor,
+the terminal is working. UU can count non-printing login-prompt bytes toward
+its row width. Do not change `TERM`, `.bashrc`, or `.inputrc` merely to remove
+that cosmetic wrap: real-controller tests showed that prompt sanitization can
+make UU draw otherwise correct input at column zero.
 
-Do not work around wrapping by changing the UU child to `TERM=screen`. UU's
-ConPTY renderer expects xterm semantics; that mismatch can draw typed text at
-the upper-left even though Bash receives it correctly. Current releases keep
-`xterm-256color` and sanitize only the Bash prompt after interactive startup.
-
-If typing still appears at the upper-left, verify that
-`~/.local/share/wineprefixes/uu-remote/compat/uu-terminal.inputrc` exists and
-matches `resources/uu-terminal.inputrc`, then reinstall. It disables only
-Readline's bracketed-paste controls for UU. Current Bash sessions are
-interactive non-login shells, so `exit` also avoids Ubuntu's console-clearing
-logout hook while retaining normal `~/.bashrc` aliases and Conda setup.
+If typed text instead appears at the upper-left or beginning of the row,
+install the current bridge and open a genuinely new UU terminal session. The
+current release deliberately restores `TERM=xterm-256color` and the configured
+login shell's normal startup stream. The isolated test proves PTY transport,
+but visual cursor placement must be checked in the real UU controller because
+its input echo is client-side.
 
 ## GNOME RDP authentication fails
 

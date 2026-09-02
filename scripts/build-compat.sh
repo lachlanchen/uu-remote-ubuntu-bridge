@@ -21,8 +21,6 @@ for command in "$cc" "$strip" "$winegcc" "$host_cc" "$host_strip"; do
 done
 
 mkdir -p "$output_dir"
-install -m 0644 "$repo_dir/resources/uu-terminal.inputrc" \
-    "$output_dir/uu-terminal.inputrc"
 
 "$cc" "${common[@]}" "${pe_link[@]}" -shared \
     -o "$output_dir/uu-input-bridge.dll" \

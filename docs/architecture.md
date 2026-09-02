@@ -41,7 +41,7 @@ UU's separate terminal channel follows a smaller path:
 
 ```text
 UU Terminal -> Wine ConPTY helper -> uu-terminal-proxy.exe
-            -> authenticated 127.0.0.1 socket -> native forkpty user shell
+            -> authenticated 127.0.0.1 socket -> native forkpty login shell
 ```
 
 ## Components
@@ -203,9 +203,7 @@ forwarding bytes and resize events to `uu-terminal-bridge` on IPv4 loopback.
 
 The native helper authenticates a fresh 256-bit token from the supervised
 launcher, limits concurrency to four sessions, and uses `forkpty` to start the
-current Ubuntu user's interactive shell in the user's home. Bash follows the
-normal terminal-emulator model and reads `~/.bashrc`; other configured shells
-retain their login invocation. UU creates
+current Ubuntu user's interactive login shell in the user's home. UU creates
 terminal processes with a reconstructed user environment, so a mode-0600
 ephemeral file beside the proxy carries the port and token across that
 boundary. It is atomically replaced at startup and removed at shutdown; a
@@ -214,17 +212,13 @@ payloads. The token is absent from command lines and ready files. This design
 avoids an SSH listener, SSH key, stored password, or extra account boundary. See
 [Native Ubuntu terminal through UU Remote](native-ubuntu-terminal.md).
 
-The broker removes inherited GNOME VTE markers but retains
-`TERM=xterm-256color` to match UU's ConPTY renderer. A Bash prompt hook runs
-after normal interactive startup and removes only the decorated prompt. This
-avoids both prompt wrapping and cursor displacement without changing any
-normal desktop terminal or bypassing the user's login configuration.
-
-A sibling `uu-terminal.inputrc` disables Readline's bracketed-paste mode only
-for UU Bash sessions. UU misplaces its logical cursor after the corresponding
-`ESC[?2004h`/`ESC[?2004l` controls. Bash is interactive but non-login, as in a
-normal desktop terminal, so Ubuntu's console-only `.bash_logout` clear sequence
-is not sent into the UU surface when the user types `exit`.
+The broker deliberately preserves the configured login shell's normal startup
+and `xterm-256color` behavior. UU's real controller locally echoes keyboard
+input using cursor state inferred from that startup stream. Attempts to make
+the prompt cosmetically shorter by filtering VTE/Readline controls produced a
+correct host-side PTY capture but made controller input appear at column zero.
+The final `$` may therefore wrap at a narrow controller width; this cosmetic
+artifact is safer than changing the input-placement contract.
 
 ### Phone text input
 
