@@ -968,6 +968,13 @@ class RuntimeScriptTests(unittest.TestCase):
                 cwd=REPOSITORY,
             )
 
+    def test_ci_installs_the_terminal_proxy_cross_compiler(self):
+        workflow = (
+            REPOSITORY / ".github" / "workflows" / "validate.yml"
+        ).read_text()
+
+        self.assertIn("gcc-mingw-w64-x86-64-win32", workflow)
+
     def test_text_delay_migration_preserves_v010_behavior(self):
         resolver = REPOSITORY / "scripts" / "runtime-settings.sh"
 
