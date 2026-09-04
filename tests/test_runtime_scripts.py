@@ -678,6 +678,23 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn(".build-recipe", builder)
         self.assertIn("sha256sum -c .build-sha256", builder)
 
+    def test_freerdp_runtime_uses_the_retained_matching_revision(self):
+        builder = (REPOSITORY / "scripts" / "build-winpr.sh").read_text()
+        verifier = (REPOSITORY / "scripts" / "verify.sh").read_text()
+
+        self.assertIn("168925dac792142f6d0b66e7e2d568a3d439521c", builder)
+        self.assertIn("/2064/artifact/install/bin/sdl-freerdp.exe", builder)
+        expected = "b384347b6d0dd1e0c9912d18f5993b4e30643470e2a627e112debb34e8710762"
+        self.assertIn(expected, builder)
+        self.assertIn(expected, verifier)
+
+    def test_winpr_shim_uses_numeric_package_identity(self):
+        shim = (REPOSITORY / "src" / "winpr_sspi_shim.c").read_text()
+
+        self.assertIn("SSPI_PACKAGE_NEGOTIATE_ID 3u", shim)
+        self.assertIn("~((ULONG_PTR)SSPI_PACKAGE_NEGOTIATE_ID)", shim)
+        self.assertNotIn("static const char negotiate_name", shim)
+
     def test_clipboard_channel_is_enabled(self):
         launcher = (REPOSITORY / "scripts" / "uu-remote-bridge").read_text()
 
@@ -755,6 +772,16 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertLess(reader_injection, injection)
         self.assertLess(injection, bootstrap)
         self.assertIn("pgrep -n -u \"$UID\" -x 'sdl-freerdp.exe'", verifier)
+        guard_enabled = verifier.index(
+            'if [[ "$cursor_guard_setting" == on ]]; then'
+        )
+        guard_wait = verifier.index("for _ in {1..100}; do", guard_enabled)
+        guard_result = verifier.index(
+            "opt-in relay and UU cursor guards are active", guard_wait
+        )
+        self.assertLess(guard_enabled, guard_wait)
+        self.assertLess(guard_wait, guard_result)
+        self.assertIn("sleep 0.05", verifier[guard_wait:guard_result])
 
     def test_phone_ime_unicode_input_is_normalized(self):
         bridge = (REPOSITORY / "src" / "uu_input_bridge.c").read_text()
@@ -953,6 +980,13 @@ class RuntimeScriptTests(unittest.TestCase):
                 check=True,
                 cwd=REPOSITORY,
             )
+
+    def test_ci_installs_the_terminal_proxy_cross_compiler(self):
+        workflow = (
+            REPOSITORY / ".github" / "workflows" / "validate.yml"
+        ).read_text()
+
+        self.assertIn("gcc-mingw-w64-x86-64-win32", workflow)
 
     def test_text_delay_migration_preserves_v010_behavior(self):
         resolver = REPOSITORY / "scripts" / "runtime-settings.sh"

@@ -209,7 +209,8 @@ The Windows SDL FreeRDP client rendered reliably in the same Wine/X display,
 but Wine's SSPI handle representation did not satisfy its NLA path. The
 solution was:
 
-1. Build `libwinpr3.dll` from pinned FreeRDP 3.30.0 source with MinGW.
+1. Build `libwinpr3.dll` from the source revision matching the pinned FreeRDP
+   Windows client with MinGW.
 2. Enable WinPR's internal MD4, MD5, and RC4 implementations. Wine could not
    reliably load OpenSSL's legacy provider, and NTLM requires MD4.
 3. Disable native SSPI so the shim always reaches WinPR's implementation.
@@ -218,8 +219,9 @@ solution was:
    `none,ntlm` with `/auth-pkg-list`.
 
 The shim calls WinPR's `InitSecurityInterfaceExA/W` and normalizes the private
-credential/context handle-name field around `AcquireCredentialsHandle` and
-`InitializeSecurityContext`.
+credential/context package-identity field around `AcquireCredentialsHandle`
+and `InitializeSecurityContext`. WinPR 3.31 stores an inverted numeric package
+ID in that field; older releases used an inverted package-name pointer.
 
 ## Tools used
 

@@ -40,6 +40,11 @@ jobs:
       - name: Compile Python
         run: python3 -m compileall -q scripts tests
 
+      - name: Install test compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-x86-64-win32
+
       - name: Run unit and documentation tests
         run: python3 -m unittest discover -s tests -v
 

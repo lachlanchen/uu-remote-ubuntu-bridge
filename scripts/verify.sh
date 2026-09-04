@@ -447,7 +447,7 @@ fi
 
 if [[ -f "$freerdp" ]] && \
    [[ "$(sha256sum "$freerdp" | awk '{print $1}')" == \
-      1534187d731b2e4a6cb6d1107c0129727517fe3acf1441b5a2567aea5ea31d60 ]]; then
+      b384347b6d0dd1e0c9912d18f5993b4e30643470e2a627e112debb34e8710762 ]]; then
     pass 'pinned Windows FreeRDP SDL client is installed'
 else
     fail 'Windows FreeRDP SDL client verification failed'
@@ -457,21 +457,39 @@ relay_pid="$(pgrep -n -u "$UID" -x 'sdl-freerdp.exe' || true)"
 cursor_server_pid="$(
     pgrep -o -u "$UID" -f 'GameViewerServer\.exe' || true
 )"
+
+cursor_reader_guard_ready() {
+    [[ -f "$cursor_guard" && -n "$cursor_server_pid" ]] &&
+        grep -Fq "$cursor_guard" "/proc/$cursor_server_pid/maps" \
+            2>/dev/null &&
+        grep -q 'UU cursor reader guard active' \
+            "$cursor_reader_guard_log" 2>/dev/null
+}
+
+cursor_relay_guard_ready() {
+    [[ -f "$cursor_guard" && -n "$relay_pid" ]] &&
+        grep -Fq "$cursor_guard" "/proc/$relay_pid/maps" 2>/dev/null &&
+        grep -q 'UU relay cursor guard active' \
+            "$cursor_guard_log" 2>/dev/null
+}
+
 if [[ "$cursor_guard_setting" == on ]]; then
-    if [[ "$desktop_relay" == vnc && -f "$cursor_guard" &&
-          -n "$cursor_server_pid" ]] &&
-       grep -Fq "$cursor_guard" "/proc/$cursor_server_pid/maps" 2>/dev/null &&
-       grep -q 'UU cursor reader guard active' \
-           "$cursor_reader_guard_log" 2>/dev/null; then
+    for _ in {1..100}; do
+        relay_pid="$(pgrep -n -u "$UID" -x 'sdl-freerdp.exe' || true)"
+        cursor_server_pid="$(
+            pgrep -o -u "$UID" -f 'GameViewerServer\.exe' || true
+        )"
+        if cursor_reader_guard_ready &&
+           { [[ "$desktop_relay" == vnc ]] || cursor_relay_guard_ready; }; then
+            break
+        fi
+        sleep 0.05
+    done
+
+    if [[ "$desktop_relay" == vnc ]] && cursor_reader_guard_ready; then
         pass 'opt-in UU cursor reader guard is active; native VNC needs no relay DLL'
-    elif [[ "$desktop_relay" == rdp && -f "$cursor_guard" &&
-            -n "$relay_pid" && -n "$cursor_server_pid" ]] &&
-         grep -Fq "$cursor_guard" "/proc/$relay_pid/maps" 2>/dev/null &&
-         grep -Fq "$cursor_guard" "/proc/$cursor_server_pid/maps" 2>/dev/null &&
-         grep -q 'UU relay cursor guard active' \
-             "$cursor_guard_log" 2>/dev/null &&
-         grep -q 'UU cursor reader guard active' \
-             "$cursor_reader_guard_log" 2>/dev/null; then
+    elif [[ "$desktop_relay" == rdp ]] && cursor_reader_guard_ready &&
+         cursor_relay_guard_ready; then
         pass 'opt-in relay and UU cursor guards are active'
     else
         fail 'opt-in relay or UU cursor guard is missing or inactive'
