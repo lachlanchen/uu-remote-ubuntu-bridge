@@ -56,11 +56,23 @@ scripts/stage-uu-release.sh \
   --sandbox-install
 ```
 
-The fallback asks for `sudo` before starting a transient system service. That
-service runs Wine as the desktop UID with:
+The fallback first uses Bubblewrap when unprivileged user namespaces are
+available. It hides the real home, unshares the network/PID/IPC namespaces,
+drops all capabilities, mounts the host read-only, and exposes only the
+installer (read-only) plus the private staging directory (writable). If
+Bubblewrap is unavailable, it asks for `sudo` and starts a transient systemd
+service with equivalent boundaries. Choose one explicitly when diagnosing a
+host-specific sandbox problem:
+
+```bash
+scripts/stage-uu-release.sh --installer uuyc_NEW.exe \
+  --sandbox-install --sandbox-backend bubblewrap
+```
+
+Both backends run Wine as the desktop UID with:
 
 - a read-only host filesystem
-- the real home hidden by `ProtectHome=tmpfs`
+- the real home hidden by a private empty mount
 - only the installer mounted read-only and the staging directory writable
 - `PrivateNetwork=yes`, `IPAddressDeny=any`, and no Internet socket families
 - private temporary files and devices

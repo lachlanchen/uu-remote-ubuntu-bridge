@@ -553,7 +553,7 @@ healthd_sha256="$(manifest_field health_monitor.original_sha256)"
 devcon_exe="$uu_bin/drivers/devcon.exe"
 devcon_backup="$devcon_exe.uu-original"
 case "$release_version" in
-    4.33.0.8907|4.34.0.8979)
+    4.33.0.8907|4.34.0.8979|4.39.1.1375)
         devcon_sha256='46731d6ea59dd9b63ad641c79646bb5ff64e1b877a1226536e3fe34d1ab4ee10'
         ;;
     *)

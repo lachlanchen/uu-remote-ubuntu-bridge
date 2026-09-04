@@ -125,8 +125,9 @@ The generated task context requires that snapshot and the detailed project
 notes to be read before editing.
 
 An installer wrapper that cannot be extracted is not executed automatically.
-The existing `--sandbox-install` path requires a deliberate operator action
-because it creates a root-managed transient sandbox. The repair context records
+The existing `--sandbox-install` path requires a deliberate operator action.
+It uses a networkless Bubblewrap namespace when available, with a root-managed
+transient systemd sandbox as the explicit fallback. The repair context records
 that boundary instead of weakening it.
 
 The 2026-07-24 observation of UU `4.34.0.8979` is the concrete fail-closed
@@ -300,7 +301,8 @@ unprivileged-user-namespace restriction.
 Codex thread, and starts a new thread on the next monitor run. It refuses
 non-retryable phases. If an operator has completed the documented networkless
 fallback in the task's `stage-sandbox` directory, retry imports it only after
-the installer, server, and health-monitor hashes match the sandbox record.
+the installer, server, and health-monitor hashes match the sandbox record and
+the record names one of the two supported networkless sandbox backends.
 
 There is deliberately no transfer from `ready-for-review` into the live Wine
 prefix. The task record always marks automated output as ineligible. A

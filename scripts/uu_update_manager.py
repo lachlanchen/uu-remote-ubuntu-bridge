@@ -1612,7 +1612,8 @@ class Manager:
         observed = task.get("details", {}).get("observed_release", {})
         expected_installer = str(observed.get("installer_sha256", ""))
         if (
-            record.get("staging_method") != "systemd-sandbox"
+            record.get("staging_method")
+            not in {"bubblewrap-sandbox", "systemd-sandbox"}
             or not re.fullmatch(r"[0-9a-f]{64}", expected_installer)
             or record.get("installer_sha256") != expected_installer
             or record.get("server_sha256") != sha256_file(server)

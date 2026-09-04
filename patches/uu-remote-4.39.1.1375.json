@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "review_status": "approved",
+  "product": "NetEase UU Remote",
+  "version": "4.39.1.1375",
+  "architecture": "x86_64",
+  "installer": {
+    "filename": "uu-4.39.1.1375.exe",
+    "url": "https://api.nrd.nie.163.com/api/v1/release/dl/1?channel=gwqd",
+    "sha256": "b6df0026dcedc2a900a07b4efde748b8c4d6e940067a9854e00c3be236c260eb"
+  },
+  "server": {
+    "filename": "GameViewerServer.exe",
+    "size": 33162744,
+    "original_sha256": "765690d4b57ff4b7418ec708f8b2f827dc4c1ef61164d826cac48a51b5883ff0",
+    "patched_sha256": "8c0ddc518883933e66bc3de8ecf22dd8fc1bc45e76197721859ffd4b25c0cd2b",
+    "patches": [
+      {
+        "id": "constructor-virtual-input-argument",
+        "description": "Force the constructor virtual-input argument to false",
+        "rationale": "Keep the reconstructed server on its built-in SendInput fallback instead of the unavailable gvinput.sys path.",
+        "file_offset": "0x5a95e6",
+        "original": "0fb68424b00100008883b90100006689abba010000",
+        "replacement": "31c09090909090908883b90100006689abba010000"
+      },
+      {
+        "id": "read-setting-virtual-input-result",
+        "description": "Return false from the virtual-input setting read",
+        "rationale": "Prevent a later settings refresh from switching back to the unavailable kernel path.",
+        "file_offset": "0x596412",
+        "original": "83fb020f94c08807488b4c24784833cc",
+        "replacement": "83fb0231c0908807488b4c24784833cc"
+      },
+      {
+        "id": "runtime-virtual-input-setter",
+        "description": "Store false in the runtime virtual-input setter",
+        "rationale": "Keep runtime control messages from restoring the kernel-driver path.",
+        "file_offset": "0x5964c4",
+        "original": "0fb6f24c8bf133ff897c2430488b5908",
+        "replacement": "31f6904c8bf133ff897c2430488b5908"
+      }
+    ]
+  },
+  "health_monitor": {
+    "filename": "GameViewerHealthd.exe",
+    "original_sha256": "2e2af7a994d3c2c4666fb49dab2cfabec959975580d63ad7030f4e6b9cd8a02c"
+  },
+  "landmarks": [
+    "virtual switch state:",
+    "virtual_mouse_setting result=updated enabled=",
+    "gvinput_open result=failed fallback=send_input",
+    "gvinput_send result=failed fallback=send_input code="
+  ],
+  "imports": [
+    "USER32.dll!SendInput",
+    "wevtapi.dll!EvtOpenPublisherMetadata"
+  ],
+  "review": {
+    "reviewed_by": "lachlanchen",
+    "reviewed_at": "2026-09-04T12:51:12.176796+00:00",
+    "evidence": "docs/releases/4.39.1.1375-static-review.md; 4.34/4.39 source landmarks, PE exception-function boundaries, RIP-relative xrefs, and complete control-flow comparison",
+    "source_audit": "draft-manifest.json",
+    "source_audit_sha256": "ec72318b018238189a894a3d30caec7c8738aadbd369ee79637768bc45065e73"
+  }
+}

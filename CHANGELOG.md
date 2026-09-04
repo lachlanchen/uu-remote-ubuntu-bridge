@@ -21,6 +21,10 @@ locked by the release manifest.
 
 ### Added
 
+- hash-bound static compatibility support for UU `4.39.1.1375`, including a
+  capability-free Bubblewrap staging backend and semantic review of the
+  upstream kernel-input-to-`SendInput` fallback; live promotion remains
+  fail-closed until the complete cold-start/controller acceptance is recorded
 - an authenticated loopback terminal compatibility bridge that keeps UU's
   native terminal transport but replaces Wine's immediately exiting
   PowerShell placeholder with the Ubuntu user's real PTY login shell; the

@@ -7,6 +7,7 @@ repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 installer=''
 output=''
 sandbox_install=false
+sandbox_backend='auto'
 keep_workdir=false
 staging_method='archive-extraction'
 
@@ -19,7 +20,8 @@ scripts/audit-gameviewer.py. Output defaults to build/upstream/SHA256_PREFIX.
 
   --output DIR          select the private staging directory
   --sandbox-install     if archive extraction fails, execute the installer in
-                        a root-managed, networkless systemd/Wine sandbox
+                        a networkless Bubblewrap or systemd/Wine sandbox
+  --sandbox-backend B   choose auto, bubblewrap, or systemd (default: auto)
   --keep-workdir        retain extracted files and the disposable Wine prefix
 EOF
 }
@@ -38,6 +40,10 @@ while (($#)); do
             sandbox_install=true
             shift
             ;;
+        --sandbox-backend)
+            sandbox_backend="${2:?--sandbox-backend requires a value}"
+            shift 2
+            ;;
         --keep-workdir)
             keep_workdir=true
             shift
@@ -53,6 +59,15 @@ while (($#)); do
             ;;
     esac
 done
+
+case "$sandbox_backend" in
+    auto|bubblewrap|systemd)
+        ;;
+    *)
+        printf 'unsupported sandbox backend: %s\n' "$sandbox_backend" >&2
+        exit 2
+        ;;
+esac
 
 if [[ -z "$installer" ]]; then
     usage >&2
@@ -109,7 +124,7 @@ if ((${#server_candidates[@]} != 1 || ${#healthd_candidates[@]} != 1)) && \
 fi
 
 if ((${#server_candidates[@]} != 1 || ${#healthd_candidates[@]} != 1)); then
-    for command in sudo systemd-run timeout /opt/wine-stable/bin/wine \
+    for command in timeout /opt/wine-stable/bin/wine \
         /opt/wine-stable/bin/wineserver; do
         if ! command -v "$command" >/dev/null 2>&1; then
             printf 'missing sandbox command: %s\n' "$command" >&2
@@ -123,38 +138,7 @@ if ((${#server_candidates[@]} != 1 || ${#healthd_candidates[@]} != 1)); then
     mkdir -p "$sandbox_home" "$sandbox_prefix" "$sandbox_runtime"
     chmod 0700 "$sandbox_home" "$sandbox_prefix" "$sandbox_runtime"
 
-    printf 'Archive extraction had no payload. Sudo is needed for a locked-down transient sandbox.\n'
-    sudo -v
-    sudo systemd-run --wait --pipe --collect --quiet \
-        --uid="$UID" \
-        --gid="$(id -g)" \
-        --working-directory=/work \
-        --property=ProtectSystem=strict \
-        --property=ProtectHome=tmpfs \
-        --property=PrivateTmp=yes \
-        --property=PrivateDevices=yes \
-        --property=PrivateNetwork=yes \
-        --property=IPAddressDeny=any \
-        --property='RestrictAddressFamilies=AF_UNIX AF_NETLINK' \
-        --property=NoNewPrivileges=yes \
-        --property=ProtectKernelTunables=yes \
-        --property=ProtectKernelModules=yes \
-        --property=ProtectKernelLogs=yes \
-        --property=ProtectControlGroups=yes \
-        --property=ProtectClock=yes \
-        --property=ProtectHostname=yes \
-        --property=LockPersonality=yes \
-        --property=RemoveIPC=yes \
-        --property=UMask=0077 \
-        --property="BindPaths=$output:/work" \
-        --property="BindReadOnlyPaths=$installer:/input/uu-installer.exe" \
-        --setenv=HOME=/work/sandbox-home \
-        --setenv=WINEPREFIX=/work/wine-prefix \
-        --setenv=WINEDEBUG=-all \
-        --setenv=WINEDLLOVERRIDES='winedbg.exe=d;mscoree,mshtml=' \
-        --setenv=XDG_RUNTIME_DIR=/work/sandbox-runtime \
-        --setenv=DISPLAY= \
-        /bin/bash -c '
+    sandbox_body='
             set -Eeuo pipefail
             cleanup() {
                 /usr/bin/timeout --kill-after=2s 10s \
@@ -167,8 +151,100 @@ if ((${#server_candidates[@]} != 1 || ${#healthd_candidates[@]} != 1)); then
             /usr/bin/timeout --kill-after=10s 180s \
                 /opt/wine-stable/bin/wine /input/uu-installer.exe /S
             sleep 2
-        ' >"$output/sandbox-install.log" 2>&1
-    staging_method='systemd-sandbox'
+        '
+
+    selected_backend="$sandbox_backend"
+    if [[ "$selected_backend" == auto ]]; then
+        if command -v bwrap >/dev/null 2>&1 && \
+           bwrap --die-with-parent --unshare-all --ro-bind / / \
+               --dev /dev --proc /proc /bin/true >/dev/null 2>&1; then
+            selected_backend='bubblewrap'
+        else
+            selected_backend='systemd'
+        fi
+    fi
+
+    case "$selected_backend" in
+        bubblewrap)
+            command -v bwrap >/dev/null 2>&1 || {
+                printf 'missing sandbox command: bwrap\n' >&2
+                exit 1
+            }
+            printf 'Archive extraction had no payload. Using a networkless Bubblewrap sandbox.\n'
+            bwrap \
+                --die-with-parent \
+                --new-session \
+                --unshare-all \
+                --uid "$UID" \
+                --gid "$(id -g)" \
+                --cap-drop ALL \
+                --ro-bind / / \
+                --tmpfs /home \
+                --tmpfs /tmp \
+                --dev /dev \
+                --proc /proc \
+                --dir /input \
+                --dir /work \
+                --bind "$output" /work \
+                --ro-bind "$installer" /input/uu-installer.exe \
+                --clearenv \
+                --setenv HOME /work/sandbox-home \
+                --setenv WINEPREFIX /work/wine-prefix \
+                --setenv WINEDEBUG -all \
+                --setenv WINEDLLOVERRIDES 'winedbg.exe=d;mscoree,mshtml=' \
+                --setenv XDG_RUNTIME_DIR /work/sandbox-runtime \
+                --setenv DISPLAY '' \
+                --setenv PATH /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+                --setenv USER "${USER:-$(id -un)}" \
+                --setenv LOGNAME "${LOGNAME:-$(id -un)}" \
+                --chdir /work \
+                /bin/bash -c "$sandbox_body" \
+                >"$output/sandbox-install.log" 2>&1
+            staging_method='bubblewrap-sandbox'
+            ;;
+        systemd)
+            for command in sudo systemd-run; do
+                command -v "$command" >/dev/null 2>&1 || {
+                    printf 'missing sandbox command: %s\n' "$command" >&2
+                    exit 1
+                }
+            done
+            printf 'Archive extraction had no payload. Sudo is needed for a locked-down transient systemd sandbox.\n'
+            sudo -v
+            sudo systemd-run --wait --pipe --collect --quiet \
+                --uid="$UID" \
+                --gid="$(id -g)" \
+                --working-directory=/work \
+                --property=ProtectSystem=strict \
+                --property=ProtectHome=tmpfs \
+                --property=PrivateTmp=yes \
+                --property=PrivateDevices=yes \
+                --property=PrivateNetwork=yes \
+                --property=IPAddressDeny=any \
+                --property='RestrictAddressFamilies=AF_UNIX AF_NETLINK' \
+                --property=NoNewPrivileges=yes \
+                --property=ProtectKernelTunables=yes \
+                --property=ProtectKernelModules=yes \
+                --property=ProtectKernelLogs=yes \
+                --property=ProtectControlGroups=yes \
+                --property=ProtectClock=yes \
+                --property=ProtectHostname=yes \
+                --property=LockPersonality=yes \
+                --property=RemoveIPC=yes \
+                --property=UMask=0077 \
+                --property="BindPaths=$output:/work" \
+                --property="BindReadOnlyPaths=$installer:/input/uu-installer.exe" \
+                --setenv=HOME=/work/sandbox-home \
+                --setenv=WINEPREFIX=/work/wine-prefix \
+                --setenv=WINEDEBUG=-all \
+                --setenv=WINEDLLOVERRIDES='winedbg.exe=d;mscoree,mshtml=' \
+                --setenv=XDG_RUNTIME_DIR=/work/sandbox-runtime \
+                --setenv=DISPLAY= \
+                /bin/bash -c "$sandbox_body" \
+                >"$output/sandbox-install.log" 2>&1
+            staging_method='systemd-sandbox'
+            ;;
+    esac
 
     mapfile -d '' server_candidates < <(
         find "$sandbox_prefix" -type f -iname 'GameViewerServer.exe' -print0
@@ -208,7 +284,7 @@ fi
 printf 'staged server: %s\n' "$output/GameViewerServer.exe"
 printf 'staged health monitor: %s\n' "$output/GameViewerHealthd.exe"
 printf 'hash record: %s\n' "$output/SHA256"
-if [[ "$staging_method" == systemd-sandbox ]]; then
+if [[ "$staging_method" == *-sandbox ]]; then
     printf 'The installer executed only inside the locked-down transient sandbox.\n'
 else
     printf 'The installer was extracted but never executed.\n'

@@ -629,18 +629,6 @@ class UpdateManagerTests(unittest.TestCase):
             installer_hash = hashlib.sha256(b"installer fixture").hexdigest()
             server_hash = hashlib.sha256(server.read_bytes()).hexdigest()
             healthd_hash = hashlib.sha256(healthd.read_bytes()).hexdigest()
-            (stage / "SHA256").write_text(
-                "\n".join(
-                    (
-                        f"installer_sha256={installer_hash}",
-                        f"server_sha256={server_hash}",
-                        f"healthd_sha256={healthd_hash}",
-                        "staging_method=systemd-sandbox",
-                    )
-                )
-                + "\n",
-                encoding="utf-8",
-            )
             task = {
                 "schema_version": 1,
                 "id": "staged-fixture",
@@ -653,17 +641,36 @@ class UpdateManagerTests(unittest.TestCase):
                     "staging": {"returncode": 1},
                 },
             }
-            (task_dir / "task.json").write_text(json.dumps(task), encoding="utf-8")
-            manager.write_status("blocked", active_task=task["id"])
+            for method in ("bubblewrap-sandbox", "systemd-sandbox"):
+                with self.subTest(method=method):
+                    manager.pending_path.unlink(missing_ok=True)
+                    task["phase"] = "blocked"
+                    task["thread_id"] = "old-thread"
+                    (stage / "SHA256").write_text(
+                        "\n".join(
+                            (
+                                f"installer_sha256={installer_hash}",
+                                f"server_sha256={server_hash}",
+                                f"healthd_sha256={healthd_hash}",
+                                f"staging_method={method}",
+                            )
+                        )
+                        + "\n",
+                        encoding="utf-8",
+                    )
+                    (task_dir / "task.json").write_text(
+                        json.dumps(task), encoding="utf-8"
+                    )
+                    manager.write_status("blocked", active_task=task["id"])
 
-            manager.retry_task()
+                    manager.retry_task()
 
-            queued = json.loads(manager.pending_path.read_text(encoding="utf-8"))
-            staging = queued["details"]["staging"]
-            self.assertTrue(staging["sandbox_executed"])
-            self.assertTrue(staging["operator_authorized"])
-            self.assertEqual(server_hash, staging["server_sha256"])
-            self.assertEqual(healthd_hash, staging["healthd_sha256"])
+                    queued = json.loads(manager.pending_path.read_text(encoding="utf-8"))
+                    staging = queued["details"]["staging"]
+                    self.assertTrue(staging["sandbox_executed"])
+                    self.assertTrue(staging["operator_authorized"])
+                    self.assertEqual(server_hash, staging["server_sha256"])
+                    self.assertEqual(healthd_hash, staging["healthd_sha256"])
 
     def test_ready_for_review_is_never_eligible_for_live_promotion(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

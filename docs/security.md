@@ -153,12 +153,14 @@ result only into the supervised GNOME RDP child. It never overwrites Ubuntu's
 system libei.
 
 `stage-uu-release.sh` first attempts non-executing archive extraction. Its
-explicit `--sandbox-install` fallback uses a root-managed transient systemd
-service that runs as the desktop UID with the real home hidden, the host
-filesystem read-only, a single private staging directory writable, private
-devices/tmp, no-new-privileges, and Internet address families disabled. An
-unknown installer should still be staged in a separate VM when stronger
-isolation is required.
+explicit `--sandbox-install` fallback prefers Bubblewrap with all namespaces
+unshared, no network namespace, no capabilities, the real home hidden, the
+host filesystem read-only, and only one private staging directory writable.
+Where unprivileged user namespaces are unavailable, the explicit systemd
+backend applies equivalent root-managed transient-service controls including
+private networking, private devices/tmp, no-new-privileges, and denied Internet
+address families. An unknown installer should still be staged in a separate VM
+when stronger isolation is required.
 
 ## Residual risk
 
