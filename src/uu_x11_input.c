@@ -17,6 +17,14 @@
 
 #include "x11_input_protocol.h"
 
+#define UURB_SELECTION_QUIET_MS UINT64_C(50)
+#define UURB_SELECTION_READY_TIMEOUT_MS UINT64_C(500)
+#define UURB_SELECTION_REQUEST_TIMEOUT_MS UINT64_C(1500)
+#define UURB_SELECTION_POST_REQUEST_MS UINT64_C(50)
+#define UURB_BACKSPACE_SETTLE_MS UINT64_C(5)
+#define UURB_VK_BACK UINT16_C(0x08)
+#define UURB_SELECTION_STATUS_CAPACITY 512U
+
 /* Keep the helper buildable with runtime X11 libraries only. */
 typedef struct _XDisplay Display;
 typedef int Bool;
@@ -61,11 +69,21 @@ typedef struct x11_api {
     xtest_fake_relative_motion_event_fn fake_relative_motion_event;
 } x11_api;
 
+typedef struct selection_status {
+    char buffer[UURB_SELECTION_STATUS_CAPACITY];
+    size_t length;
+    unsigned long next_request_number;
+} selection_status;
+
 static volatile sig_atomic_t stop_requested;
 static volatile sig_atomic_t listener_fd = -1;
 static volatile sig_atomic_t active_client_fd = -1;
 static volatile sig_atomic_t clipboard_owner_pid = -1;
 static volatile sig_atomic_t primary_owner_pid = -1;
+static volatile sig_atomic_t clipboard_status_fd = -1;
+static volatile sig_atomic_t primary_status_fd = -1;
+static selection_status clipboard_status;
+static selection_status primary_status;
 
 static void handle_signal(int signal_number)
 {
@@ -89,6 +107,14 @@ static void handle_signal(int signal_number)
     primary_owner_pid = -1;
     if (fd > 0)
         kill(fd, SIGTERM);
+    fd = clipboard_status_fd;
+    clipboard_status_fd = -1;
+    if (fd >= 0)
+        close(fd);
+    fd = primary_status_fd;
+    primary_status_fd = -1;
+    if (fd >= 0)
+        close(fd);
 }
 
 static bool read_all(int fd, void *buffer, size_t size)
@@ -171,18 +197,30 @@ static bool write_fd_all(int fd, const void *buffer, size_t size)
     return true;
 }
 
-static void stop_selection_owner(volatile sig_atomic_t *owner_pid)
+static void reset_selection_status(selection_status *status)
+{
+    memset(status, 0, sizeof(*status));
+}
+
+static void stop_selection_owner(volatile sig_atomic_t *owner_pid,
+                                 volatile sig_atomic_t *status_fd,
+                                 selection_status *status)
 {
     pid_t pid = (pid_t)*owner_pid;
-    int status;
+    int fd = (int)*status_fd;
+    int wait_status;
     unsigned int attempt;
 
     *owner_pid = -1;
+    *status_fd = -1;
+    if (fd >= 0)
+        close(fd);
+    reset_selection_status(status);
     if (pid <= 0)
         return;
     kill(pid, SIGTERM);
     for (attempt = 0; attempt < 25; attempt++) {
-        pid_t result = waitpid(pid, &status, WNOHANG);
+        pid_t result = waitpid(pid, &wait_status, WNOHANG);
 
         if (result == pid || (result < 0 && errno == ECHILD))
             return;
@@ -191,23 +229,175 @@ static void stop_selection_owner(volatile sig_atomic_t *owner_pid)
         sleep_milliseconds(2);
     }
     kill(pid, SIGKILL);
-    while (waitpid(pid, &status, 0) < 0 && errno == EINTR)
+    while (waitpid(pid, &wait_status, 0) < 0 && errno == EINTR)
         ;
 }
 
 static void stop_clipboard_owner(void)
 {
-    stop_selection_owner(&clipboard_owner_pid);
-    stop_selection_owner(&primary_owner_pid);
+    stop_selection_owner(&clipboard_owner_pid, &clipboard_status_fd,
+                         &clipboard_status);
+    stop_selection_owner(&primary_owner_pid, &primary_status_fd,
+                         &primary_status);
+}
+
+static void update_selection_status(int fd, selection_status *status)
+{
+    if (fd < 0)
+        return;
+
+    for (;;) {
+        ssize_t received;
+        char *line_start;
+        char *newline;
+
+        if (status->length == sizeof(status->buffer) - 1)
+            status->length = 0;
+        received = read(fd, status->buffer + status->length,
+                        sizeof(status->buffer) - status->length - 1);
+        if (received < 0) {
+            if (errno == EINTR)
+                continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+                break;
+            return;
+        }
+        if (received == 0)
+            break;
+        status->length += (size_t)received;
+        status->buffer[status->length] = '\0';
+        line_start = status->buffer;
+        while ((newline = strchr(line_start, '\n')) != NULL) {
+            static const char marker[] =
+                "Waiting for selection request number ";
+            char *number;
+
+            *newline = '\0';
+            number = strstr(line_start, marker);
+            if (number != NULL) {
+                char *end = NULL;
+                unsigned long parsed;
+
+                number += sizeof(marker) - 1;
+                parsed = strtoul(number, &end, 10);
+                if (end != number && parsed > status->next_request_number)
+                    status->next_request_number = parsed;
+            }
+            line_start = newline + 1;
+        }
+        if (line_start != status->buffer) {
+            size_t remaining = status->length -
+                               (size_t)(line_start - status->buffer);
+
+            memmove(status->buffer, line_start, remaining);
+            status->length = remaining;
+            status->buffer[remaining] = '\0';
+        }
+    }
+}
+
+static unsigned long completed_selection_requests(
+    const selection_status *status)
+{
+    return status->next_request_number > 0 ?
+           status->next_request_number - 1 : 0;
+}
+
+static bool selection_owner_alive(volatile sig_atomic_t *owner_pid)
+{
+    pid_t pid = (pid_t)*owner_pid;
+    int status;
+    pid_t result;
+
+    if (pid <= 0)
+        return false;
+    result = waitpid(pid, &status, WNOHANG);
+    if (result == 0 || (result < 0 && errno == EINTR))
+        return true;
+    if (result == pid || (result < 0 && errno == ECHILD))
+        *owner_pid = -1;
+    return false;
+}
+
+static bool selection_owners_quiet(unsigned long *clipboard_baseline,
+                                   unsigned long *primary_baseline)
+{
+    uint64_t deadline = monotonic_milliseconds() +
+                        UURB_SELECTION_READY_TIMEOUT_MS;
+    uint64_t quiet_since = monotonic_milliseconds();
+    unsigned long prior_clipboard = 0;
+    unsigned long prior_primary = 0;
+
+    while (!stop_requested && monotonic_milliseconds() <= deadline) {
+        unsigned long current_clipboard;
+        unsigned long current_primary;
+
+        update_selection_status((int)clipboard_status_fd,
+                                &clipboard_status);
+        update_selection_status((int)primary_status_fd, &primary_status);
+        current_clipboard = completed_selection_requests(&clipboard_status);
+        current_primary = completed_selection_requests(&primary_status);
+        if (current_clipboard != prior_clipboard ||
+            current_primary != prior_primary) {
+            prior_clipboard = current_clipboard;
+            prior_primary = current_primary;
+            quiet_since = monotonic_milliseconds();
+        }
+        if (clipboard_status.next_request_number > 0 &&
+            primary_status.next_request_number > 0 &&
+            monotonic_milliseconds() - quiet_since >=
+                UURB_SELECTION_QUIET_MS) {
+            *clipboard_baseline = current_clipboard;
+            *primary_baseline = current_primary;
+            return true;
+        }
+        if (!selection_owner_alive(&clipboard_owner_pid) ||
+            !selection_owner_alive(&primary_owner_pid))
+            return false;
+        sleep_milliseconds(5);
+    }
+    return false;
+}
+
+static bool wait_for_selection_request(unsigned long clipboard_baseline,
+                                       unsigned long primary_baseline)
+{
+    uint64_t deadline = monotonic_milliseconds() +
+                        UURB_SELECTION_REQUEST_TIMEOUT_MS;
+
+    while (!stop_requested && monotonic_milliseconds() <= deadline) {
+        update_selection_status((int)clipboard_status_fd,
+                                &clipboard_status);
+        update_selection_status((int)primary_status_fd, &primary_status);
+        if (completed_selection_requests(&clipboard_status) >
+                clipboard_baseline ||
+            completed_selection_requests(&primary_status) >
+                primary_baseline) {
+            sleep_milliseconds(UURB_SELECTION_POST_REQUEST_MS);
+            update_selection_status((int)clipboard_status_fd,
+                                    &clipboard_status);
+            update_selection_status((int)primary_status_fd,
+                                    &primary_status);
+            return true;
+        }
+        if (!selection_owner_alive(&clipboard_owner_pid) ||
+            !selection_owner_alive(&primary_owner_pid))
+            return false;
+        sleep_milliseconds(5);
+    }
+    return false;
 }
 
 static bool start_selection_owner(const x11_api *api, Display *display,
                                   const char *selection_name,
                                   const char *text, size_t size,
-                                  const char *loops,
-                                  volatile sig_atomic_t *owner_pid)
+                                  volatile sig_atomic_t *owner_pid,
+                                  volatile sig_atomic_t *status_fd,
+                                  selection_status *owner_status)
 {
     int input_pipe[2];
+    int status_pipe[2];
+    int status_flags;
     pid_t pid;
     int status;
     int null_fd;
@@ -223,10 +413,17 @@ static bool start_selection_owner(const x11_api *api, Display *display,
     previous_owner = api->get_selection_owner(display, clipboard);
     if (pipe2(input_pipe, O_CLOEXEC) != 0)
         return false;
+    if (pipe2(status_pipe, O_CLOEXEC) != 0) {
+        close(input_pipe[0]);
+        close(input_pipe[1]);
+        return false;
+    }
     pid = fork();
     if (pid < 0) {
         close(input_pipe[0]);
         close(input_pipe[1]);
+        close(status_pipe[0]);
+        close(status_pipe[1]);
         return false;
     }
     if (pid == 0) {
@@ -234,23 +431,36 @@ static bool start_selection_owner(const x11_api *api, Display *display,
             _exit(126);
         close(input_pipe[0]);
         close(input_pipe[1]);
+        close(status_pipe[0]);
+        if (dup2(status_pipe[1], STDERR_FILENO) < 0)
+            _exit(126);
+        close(status_pipe[1]);
         null_fd = open("/dev/null", O_WRONLY | O_CLOEXEC);
         if (null_fd >= 0) {
             dup2(null_fd, STDOUT_FILENO);
-            dup2(null_fd, STDERR_FILENO);
             close(null_fd);
         }
         setenv("LC_ALL", "C.UTF-8", 1);
         execl("/usr/bin/xclip", "xclip", "-selection", selection_name,
-              "-in", "-loops", loops, "-quiet", (char *)NULL);
+              "-in", "-loops", "0", "-verbose", (char *)NULL);
         _exit(127);
     }
 
     close(input_pipe[0]);
+    close(status_pipe[1]);
     *owner_pid = (sig_atomic_t)pid;
+    *status_fd = (sig_atomic_t)status_pipe[0];
+    reset_selection_status(owner_status);
+    status_flags = fcntl(status_pipe[0], F_GETFL);
+    if (status_flags < 0 ||
+        fcntl(status_pipe[0], F_SETFL, status_flags | O_NONBLOCK) < 0) {
+        close(input_pipe[1]);
+        stop_selection_owner(owner_pid, status_fd, owner_status);
+        return false;
+    }
     if (!write_fd_all(input_pipe[1], text, size)) {
         close(input_pipe[1]);
-        stop_selection_owner(owner_pid);
+        stop_selection_owner(owner_pid, status_fd, owner_status);
         return false;
     }
     close(input_pipe[1]);
@@ -275,7 +485,7 @@ static bool start_selection_owner(const x11_api *api, Display *display,
         sleep_milliseconds(5);
     }
     if (current_owner == 0 || current_owner == previous_owner) {
-        stop_selection_owner(owner_pid);
+        stop_selection_owner(owner_pid, status_fd, owner_status);
         return false;
     }
     return true;
@@ -283,58 +493,21 @@ static bool start_selection_owner(const x11_api *api, Display *display,
 
 static bool start_clipboard_owner(const x11_api *api, Display *display,
                                   const char *text, size_t size,
-                                  const char *loops)
+                                  unsigned long *clipboard_baseline,
+                                  unsigned long *primary_baseline)
 {
     stop_clipboard_owner();
     if (!start_selection_owner(api, display, "CLIPBOARD", text, size,
-                               loops,
-                               &clipboard_owner_pid) ||
+                               &clipboard_owner_pid, &clipboard_status_fd,
+                               &clipboard_status) ||
         !start_selection_owner(api, display, "PRIMARY", text, size,
-                               loops,
-                               &primary_owner_pid)) {
+                               &primary_owner_pid, &primary_status_fd,
+                               &primary_status) ||
+        !selection_owners_quiet(clipboard_baseline, primary_baseline)) {
         stop_clipboard_owner();
         return false;
     }
     return true;
-}
-
-static int selection_owner_completion(volatile sig_atomic_t *owner_pid)
-{
-    pid_t pid = (pid_t)*owner_pid;
-    pid_t result;
-    int status;
-
-    if (pid <= 0)
-        return -1;
-    result = waitpid(pid, &status, WNOHANG);
-    if (result == 0 || (result < 0 && errno == EINTR))
-        return 0;
-    *owner_pid = -1;
-    if (result == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0)
-        return 1;
-    return -1;
-}
-
-static bool wait_for_clipboard_request(void)
-{
-    unsigned int attempt;
-
-    for (attempt = 0; attempt < 200; attempt++) {
-        int clipboard = selection_owner_completion(&clipboard_owner_pid);
-        int primary = selection_owner_completion(&primary_owner_pid);
-
-        if (clipboard > 0 || primary > 0) {
-            stop_clipboard_owner();
-            return true;
-        }
-        if (clipboard < 0 || primary < 0) {
-            stop_clipboard_owner();
-            return false;
-        }
-        sleep_milliseconds(5);
-    }
-    stop_clipboard_owner();
-    return false;
 }
 
 static bool append_utf8(char *output, size_t capacity, size_t *length,
@@ -477,6 +650,8 @@ static bool inject_clipboard_text(const x11_api *api, Display *display,
     unsigned int shift_keycode;
     unsigned int insert_keycode;
     bool shift_was_pressed;
+    unsigned long clipboard_baseline;
+    unsigned long primary_baseline;
 
     if (size == 0)
         return true;
@@ -484,7 +659,8 @@ static bool inject_clipboard_text(const x11_api *api, Display *display,
     insert_keycode = api->keysym_to_keycode(display, insert);
     if (shift_keycode == 0 || shift_keycode >= 256 ||
         insert_keycode == 0 || insert_keycode >= 256 ||
-        !start_clipboard_owner(api, display, text, size, "1"))
+        !start_clipboard_owner(api, display, text, size,
+                               &clipboard_baseline, &primary_baseline))
         return false;
 
     shift_was_pressed = pressed_keys[shift_keycode];
@@ -498,14 +674,15 @@ static bool inject_clipboard_text(const x11_api *api, Display *display,
         return false;
     }
     api->sync(display, 0);
-    if (!wait_for_clipboard_request())
-        return false;
 
-    /* The one-shot owner proves that the target consumed this exact commit
-     * before another request may replace it.  Re-publish the same text for a
-     * later manual paste, but do not turn a completed injection into a retry
-     * if this convenience owner cannot be established. */
-    (void)start_clipboard_owner(api, display, text, size, "0");
+    /* xclip announces each completed selection request on its private status
+     * pipe. Initial clipboard-manager reads are allowed to settle before the
+     * paste, then at least one new request must follow the synthetic chord.
+     * Do not grant revision credit merely because ownership changed. */
+    if (!wait_for_selection_request(clipboard_baseline, primary_baseline)) {
+        stop_clipboard_owner();
+        return false;
+    }
     return true;
 }
 
@@ -995,6 +1172,13 @@ static void serve_client(int client, const char *token, x11_api *api,
                 pressed_keys[keycode] = !is_release;
                 if (!is_release)
                     pressed_at[keycode] = monotonic_milliseconds();
+                else if (events[index].virtual_key == UURB_VK_BACK) {
+                    /* A long dictation revision can contain many Backspace
+                     * pairs. Flush each completed pair so full GNOME/VTE
+                     * clients cannot collapse or outrun the edit stream. */
+                    api->sync(display, 0);
+                    sleep_milliseconds(UURB_BACKSPACE_SETTLE_MS);
+                }
             } else if (!inject_mouse_event(api, display, &events[index],
                                            pressed_buttons)) {
                 error = UURB_X11_ERROR_INJECTION;

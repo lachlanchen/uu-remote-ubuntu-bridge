@@ -8,10 +8,17 @@ locked by the release manifest.
 
 ### Fixed
 
-- serialize semantic clipboard consumption before accepting the next phone or
-  dictation commit, preventing rapid multiline Chinese, Japanese, emoji, or
-  smart-punctuation updates from replacing text that the target application
-  has not consumed yet
+- serialize semantic clipboard handoff before accepting the next phone or
+  dictation commit, retain persistent selection ownership, let eager GNOME
+  clipboard-manager reads become quiet, and confirm a new X11 selection
+  request after the paste chord before reporting success; this prevents both
+  missing and overwritten multiline Chinese, Japanese, emoji, or
+  smart-punctuation updates
+- limit composition Backspace to recent text owned by the same broker client,
+  preserving an existing message while still allowing continuous dictation to
+  revise its own provisional text
+- flush and briefly pace only semantic Backspace pairs so a real GNOME target
+  applies every edit in a long dictation revision
 - verify audited UU 4.39.x structured-log releases with a fresh binary-log
   signature and exact local version IPC instead of falsely requiring the
   plaintext startup milestones used by older releases

@@ -16,6 +16,7 @@ editor_pid=""
 helper_pid=""
 broker_pid=""
 stale_primary_pid=""
+clipboard_snooper_pid=""
 
 cleanup() {
     local status=$?
@@ -23,6 +24,7 @@ cleanup() {
 
     trap - EXIT
     for pid in "$broker_pid" "$helper_pid" "$editor_pid" \
+        "$clipboard_snooper_pid" \
         "$stale_primary_pid" \
         "$openbox_pid" "$xvfb_pid"; do
         if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
@@ -43,7 +45,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for command in flock Xvfb openbox zenity xclip xdotool xdpyinfo python3 \
+for command in flock pgrep Xvfb openbox zenity xclip xdotool xdpyinfo python3 \
     x86_64-w64-mingw32-gcc /opt/wine-stable/bin/wine \
     /opt/wine-stable/bin/wineboot /opt/wine-stable/bin/winepath; do
     command -v "$command" >/dev/null 2>&1 || {
@@ -87,7 +89,7 @@ DISPLAY="$display" xdpyinfo >/dev/null
 flock -u 9
 DISPLAY="$display" openbox >"$temporary_dir/openbox.log" 2>&1 &
 openbox_pid=$!
-sleep 0.2
+sleep 0.5
 
 DISPLAY="$display" zenity --text-info --editable \
     --title='UU clipboard text acceptance' --width=500 --height=300 \
@@ -106,7 +108,20 @@ if [[ -z "$editor_window" ]]; then
     printf 'isolated multiline editor did not appear\n' >&2
     exit 1
 fi
-DISPLAY="$display" xdotool windowactivate --sync "$editor_window"
+DISPLAY="$display" xdotool windowmap --sync "$editor_window"
+DISPLAY="$display" xdotool windowfocus --sync "$editor_window"
+for _ in {1..30}; do
+    focused_window="$(DISPLAY="$display" xdotool getwindowfocus 2>/dev/null || true)"
+    [[ "$focused_window" == "$editor_window" ]] && break
+    sleep 0.05
+done
+if [[ "${focused_window:-}" != "$editor_window" ]]; then
+    printf 'isolated multiline editor did not receive focus\n' >&2
+    exit 1
+fi
+sleep 0.1
+DISPLAY="$display" xdotool type --clearmodifiers --delay 12 \
+    'existing message:'
 
 # Shift+Insert is selection-sensitive: VTE terminals read PRIMARY while other
 # applications read CLIPBOARD. Seed a stale PRIMARY value so the acceptance
@@ -150,13 +165,33 @@ DISPLAY="$display" WINEPREFIX="$wine_prefix" WINEDEBUG=-all \
 broker_pid=$!
 sleep 0.5
 
+# GNOME and other desktop clipboard managers may read each new CLIPBOARD value
+# before the focused application handles Shift+Insert. Read each fresh owner
+# pair once, then become quiet. This catches one-shot ownership without
+# fabricating a never-idle desktop that request-completion logic cannot safely
+# distinguish from the target application.
+(
+    previous_pair=''
+    while true; do
+        owner_pair="$(pgrep -P "$helper_pid" -x xclip 2>/dev/null | sort -n | tr '\n' ':' || true)"
+        if [[ "$owner_pair" != "$previous_pair" ]] &&
+            [[ "$(tr -cd ':' <<<"$owner_pair" | wc -c)" -eq 2 ]]; then
+            DISPLAY="$display" timeout 0.2 \
+                xclip -selection clipboard -out >/dev/null 2>&1 || true
+            previous_pair="$owner_pair"
+        fi
+        sleep 0.01
+    done
+) &
+clipboard_snooper_pid=$!
+
 DISPLAY="$display" WINEPREFIX="$wine_prefix" WINEDEBUG=-all \
     WINEDLLOVERRIDES='mscoree,mshtml=' \
     /opt/wine-stable/bin/wine \
     "$temporary_dir/uu-clipboard-text-probe.exe"
 sleep 0.3
 
-expected_primary='🙂'
+expected_primary='修订完成'
 primary_text="$(
     DISPLAY="$display" timeout 1 \
         xclip -selection primary -out 2>/dev/null || true
@@ -168,6 +203,21 @@ if [[ "$primary_text" != "$expected_primary" ]]; then
         printf 'semantic PRIMARY owner exposed an unexpected %s-character value\n' \
             "${#primary_text}" >&2
     fi
+    exit 1
+fi
+
+expected_symbols='中文，符号：‘’“”！？@&?🙂'
+DISPLAY="$display" WINEPREFIX="$wine_prefix" WINEDEBUG=-all \
+    WINEDLLOVERRIDES='mscoree,mshtml=' \
+    /opt/wine-stable/bin/wine \
+    "$temporary_dir/uu-clipboard-text-probe.exe" symbols
+sleep 0.3
+symbol_primary="$(
+    DISPLAY="$display" timeout 1 \
+        xclip -selection primary -out 2>/dev/null || true
+)"
+if [[ "$symbol_primary" != "$expected_symbols" ]]; then
+    printf 'semantic symbol text was not exposed exactly through PRIMARY\n' >&2
     exit 1
 fi
 
@@ -194,10 +244,12 @@ from pathlib import Path
 import sys
 
 observed = Path(sys.argv[1]).read_text(encoding="utf-8").rstrip("\n")
-expected = "你好 line one\nline two🙂" + "你" * 1000
+expected = "existing message:修订完成中文，符号：‘’“”！？@&?🙂" + "你" * 1000
 if observed != expected:
-    raise SystemExit("multiline clipboard text did not arrive exactly")
-print("clipboard-text=unicode+multiline exact")
+    raise SystemExit("prior text or multiline clipboard text changed")
+print("clipboard-text=unicode+multiline revision exact")
+print("prior-message=preserved while owned text was revised")
+print("mobile-symbols=Chinese+smart-punctuation+emoji exact")
 PY
 
 if ! rg -q \
@@ -207,6 +259,12 @@ if ! rg -q \
     exit 1
 fi
 printf 'broker-route=x11-clipboard-text error=0\n'
+if ! rg -q \
+    'category=text .*route=x11-clipboard-text .*clamped-edits=1 .*error=0' \
+    "$broker_log"; then
+    printf 'broker did not clamp composition editing to bridge-owned text\n' >&2
+    exit 1
+fi
 if ! rg -q \
     'category=text .*count=2000 .*route=x11-clipboard-text .*result=2000 error=0' \
     "$broker_log"; then

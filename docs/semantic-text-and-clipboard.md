@@ -23,13 +23,27 @@ normalizes CRLF to one newline, makes `xclip` own both the target desktop's
 `CLIPBOARD` and `PRIMARY` selections, verifies both owners through X11, and only
 then emits one paste chord. Owning both is required because VTE terminals read
 `PRIMARY` for `Shift+Insert`, while other applications may read `CLIPBOARD`.
-Each commit initially uses one-shot owners, and the helper acknowledges it only
-after the target requests one of those selections. It then republishes the
-same value persistently for a later manual paste. This consumption boundary
-prevents a following dictation update from replacing the selection before a
-busy application has read the earlier commit.
-If either new owner is not confirmed within a bounded interval, the helper
-fails closed and does not paste previous desktop text. It never writes the
+Each commit keeps persistent owners and reads `xclip`'s private request counter.
+It first waits for eager clipboard-manager reads to become quiet, emits the
+paste chord, and then requires a new `CLIPBOARD` or `PRIMARY` request before it
+reports success. This matters on a full GNOME desktop: a clipboard manager may
+legitimately request the new `CLIPBOARD` value before the focused application,
+so ownership—or a fixed timer—does not prove that any text reached the target.
+The helper serves semantic requests serially, preventing a following dictation
+update from replacing the selection before the application consumed the
+earlier commit. The acceptance test includes one eager clipboard-manager read
+per fresh owner pair and verifies the later target request independently.
+Composition Backspace is limited to text inserted recently by the same broker
+client. A new client, an idle gap, or unrelated keyboard/mouse input clears
+that allowance, so a fresh dictation commit cannot erase a message that was
+already present in the target field. Continuous revisions can still replace
+their own provisional text during the bounded activity window. Each accepted
+Backspace pair is flushed and briefly paced at the X11 boundary; without that
+small edit-only delay, a full GNOME application may process only the first few
+events from a long revision even though XTEST accepted the whole batch.
+If either new owner is not confirmed, the manager reads never settle, or no
+post-chord selection request arrives within a bounded interval, the helper
+fails closed and does not grant broker revision credit. It never writes the
 payload to logs or disk. A communication failure after an ambiguous injection
 is not replayed.
 

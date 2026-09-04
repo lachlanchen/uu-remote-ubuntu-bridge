@@ -18,6 +18,7 @@
 #define INPUT_BRIDGE_MAX_TEXT_KEY_DELAY_MS 50UL
 #define INPUT_BRIDGE_DEFAULT_PHYSICAL_KEY_DELAY_MS 0UL
 #define INPUT_BRIDGE_MAX_PHYSICAL_KEY_DELAY_MS 50UL
+#define INPUT_BRIDGE_SEMANTIC_EDIT_WINDOW_MS 2000UL
 
 typedef struct input_bridge_request {
     DWORD magic;
@@ -35,6 +36,13 @@ typedef struct input_segment {
     DWORD count;
     BOOL text;
 } input_segment;
+
+typedef struct semantic_edit_state {
+    DWORD removable_characters;
+    ULONGLONG updated_ms;
+    WCHAR pending_high_surrogate;
+    BOOL previous_ended_cr;
+} semantic_edit_state;
 
 typedef enum x11_route_result {
     X11_ROUTE_NOT_USED,
@@ -362,7 +370,7 @@ static BOOL phone_text_uses_clipboard(DWORD count, const INPUT *inputs)
             continue;
         has_press = TRUE;
         character = (WCHAR)input->ki.wScan;
-        /* Backspace stays an editing command inside a semantic batch. */
+        /* Backspace is bounded separately inside a semantic batch. */
         if (character == L'\b')
             continue;
         if (configured_phone_text_mode == PHONE_TEXT_MODE_CLIPBOARD)
@@ -378,25 +386,115 @@ static BOOL phone_text_uses_clipboard(DWORD count, const INPUT *inputs)
            requires_clipboard;
 }
 
+static void reset_semantic_edit_state(semantic_edit_state *state)
+{
+    ZeroMemory(state, sizeof(*state));
+}
+
+static void expire_semantic_edit_state(semantic_edit_state *state,
+                                       ULONGLONG now)
+{
+    if (state->updated_ms == 0 || now < state->updated_ms ||
+        now - state->updated_ms > INPUT_BRIDGE_SEMANTIC_EDIT_WINDOW_MS)
+        reset_semantic_edit_state(state);
+}
+
+static BOOL input_is_backspace(const INPUT *input)
+{
+    if (input->type != INPUT_KEYBOARD)
+        return FALSE;
+    if ((input->ki.dwFlags & KEYEVENTF_UNICODE) != 0)
+        return (WCHAR)input->ki.wScan == L'\b';
+    return input->ki.wVk == VK_BACK ||
+           (((input->ki.dwFlags & KEYEVENTF_SCANCODE) != 0) &&
+            input->ki.wScan == 0x0e);
+}
+
+static void credit_semantic_text(semantic_edit_state *state, DWORD count,
+                                 const INPUT *inputs)
+{
+    DWORD index;
+
+    for (index = 0; index < count; index++) {
+        const INPUT *input = &inputs[index];
+        WCHAR unit;
+
+        if (input->type != INPUT_KEYBOARD ||
+            (input->ki.dwFlags & KEYEVENTF_UNICODE) == 0 ||
+            (input->ki.dwFlags & KEYEVENTF_KEYUP) != 0)
+            continue;
+        unit = (WCHAR)input->ki.wScan;
+        if (unit == L'\b')
+            continue;
+        if (state->pending_high_surrogate != 0) {
+            if (unit >= 0xdc00 && unit <= 0xdfff &&
+                state->removable_characters < MAXDWORD)
+                state->removable_characters++;
+            state->pending_high_surrogate = 0;
+            state->previous_ended_cr = FALSE;
+            continue;
+        }
+        if (unit >= 0xd800 && unit <= 0xdbff) {
+            state->pending_high_surrogate = unit;
+            state->previous_ended_cr = FALSE;
+            continue;
+        }
+        if (unit >= 0xdc00 && unit <= 0xdfff) {
+            state->previous_ended_cr = FALSE;
+            continue;
+        }
+        if (unit == L'\n' && state->previous_ended_cr) {
+            state->previous_ended_cr = FALSE;
+            continue;
+        }
+        state->previous_ended_cr = unit == L'\r';
+        if (state->removable_characters < MAXDWORD)
+            state->removable_characters++;
+    }
+}
+
 static x11_route_result send_x11_clipboard_text(
-    DWORD count, const INPUT *inputs, DWORD *error, BOOL *considered)
+    DWORD count, const INPUT *inputs, DWORD *error, BOOL *considered,
+    semantic_edit_state *edit_state, DWORD *clamped_edits)
 {
     uurb_x11_input_event events[INPUT_BRIDGE_MAX_INPUTS];
     DWORD event_count = 0;
     DWORD index;
     BOOL segment_is_text = FALSE;
     BOOL sent_any = FALSE;
+    BOOL backspace_press_forwarded = FALSE;
+    semantic_edit_state next_state = *edit_state;
+    ULONGLONG now = GetTickCount64();
 
     *considered = FALSE;
+    *clamped_edits = 0;
     if (!x11_input_configured || count == 0 ||
         count > INPUT_BRIDGE_MAX_INPUTS)
         return X11_ROUTE_NOT_USED;
+    expire_semantic_edit_state(&next_state, now);
     for (index = 0; index < count; index++) {
         const INPUT *input = &inputs[index];
         uurb_x11_input_event event;
         BOOL event_is_text;
         x11_route_result result;
 
+        if (input_is_backspace(input)) {
+            BOOL is_release =
+                (input->ki.dwFlags & KEYEVENTF_KEYUP) != 0;
+
+            if (is_release) {
+                if (!backspace_press_forwarded)
+                    continue;
+                backspace_press_forwarded = FALSE;
+            } else {
+                if (next_state.removable_characters == 0) {
+                    (*clamped_edits)++;
+                    continue;
+                }
+                next_state.removable_characters--;
+                backspace_press_forwarded = TRUE;
+            }
+        }
         ZeroMemory(&event, sizeof(event));
         if (input->type == INPUT_KEYBOARD &&
             (input->ki.dwFlags & KEYEVENTF_UNICODE) != 0) {
@@ -425,6 +523,7 @@ static x11_route_result send_x11_clipboard_text(
         if (event_count > 0 && event_is_text != segment_is_text) {
             result = send_x11_events(event_count, events, error);
             if (result != X11_ROUTE_SUCCESS) {
+                reset_semantic_edit_state(edit_state);
                 if (sent_any || result == X11_ROUTE_FAILED) {
                     if (*error == ERROR_SUCCESS)
                         *error = ERROR_CONNECTION_ABORTED;
@@ -445,6 +544,7 @@ static x11_route_result send_x11_clipboard_text(
             send_x11_events(event_count, events, error);
 
         if (result != X11_ROUTE_SUCCESS) {
+            reset_semantic_edit_state(edit_state);
             if (sent_any || result == X11_ROUTE_FAILED) {
                 if (*error == ERROR_SUCCESS)
                     *error = ERROR_CONNECTION_ABORTED;
@@ -453,6 +553,9 @@ static x11_route_result send_x11_clipboard_text(
             return result;
         }
     }
+    credit_semantic_text(&next_state, count, inputs);
+    next_state.updated_ms = GetTickCount64();
+    *edit_state = next_state;
     *error = ERROR_SUCCESS;
     return X11_ROUTE_SUCCESS;
 }
@@ -633,7 +736,9 @@ static DWORD send_relay_inputs(DWORD source_count, const INPUT *source,
                                DWORD *paced_characters,
                                DWORD *paced_physical_segments,
                                BOOL *focus_ready, DWORD *focus_wait_ms,
-                               const char **route)
+                               const char **route,
+                               semantic_edit_state *edit_state,
+                               DWORD *clamped_edits)
 {
     INPUT translated[INPUT_BRIDGE_MAX_TRANSLATED_INPUTS];
     input_segment segments[INPUT_BRIDGE_MAX_SEGMENTS];
@@ -651,6 +756,7 @@ static DWORD send_relay_inputs(DWORD source_count, const INPUT *source,
     *focus_ready = TRUE;
     *focus_wait_ms = 0;
     *route = "rdp";
+    *clamped_edits = 0;
 
     /* Preserve semantic text when a key chord cannot represent it.  Newline,
      * tab, CJK, and other Unicode commits become one authenticated X11
@@ -659,7 +765,8 @@ static DWORD send_relay_inputs(DWORD source_count, const INPUT *source,
     if (phone_text_uses_clipboard(source_count, source)) {
         *normalized_unicode = TRUE;
         x11_result = send_x11_clipboard_text(source_count, source, error,
-                                             &x11_considered);
+                                             &x11_considered, edit_state,
+                                             clamped_edits);
         if (x11_result == X11_ROUTE_SUCCESS) {
             *route = "x11-clipboard-text";
             return source_count;
@@ -705,9 +812,17 @@ static DWORD send_relay_inputs(DWORD source_count, const INPUT *source,
             *route = "x11-mouse";
         else
             *route = "x11";
+        if (*normalized_unicode) {
+            expire_semantic_edit_state(edit_state, GetTickCount64());
+            credit_semantic_text(edit_state, source_count, source);
+            edit_state->updated_ms = GetTickCount64();
+        } else {
+            reset_semantic_edit_state(edit_state);
+        }
         return source_count;
     }
     if (x11_result == X11_ROUTE_FAILED) {
+        reset_semantic_edit_state(edit_state);
         if (x11_has_keyboard && x11_has_mouse)
             *route = "x11-mixed-error";
         else if (*normalized_unicode)
@@ -750,6 +865,13 @@ static DWORD send_relay_inputs(DWORD source_count, const INPUT *source,
     }
 
     *error = ERROR_SUCCESS;
+    if (*normalized_unicode) {
+        expire_semantic_edit_state(edit_state, GetTickCount64());
+        credit_semantic_text(edit_state, source_count, source);
+        edit_state->updated_ms = GetTickCount64();
+    } else {
+        reset_semantic_edit_state(edit_state);
+    }
     return source_count;
 }
 
@@ -850,6 +972,8 @@ static const char *phone_text_mode_name(phone_text_mode mode)
 
 static void serve_client(HANDLE pipe)
 {
+    semantic_edit_state edit_state = {0};
+
     for (;;) {
         input_bridge_request request;
         input_bridge_response response;
@@ -860,6 +984,7 @@ static void serve_client(HANDLE pipe)
         DWORD focus_wait_ms = 0;
         DWORD paced_characters = 0;
         DWORD paced_physical_segments = 0;
+        DWORD clamped_edits = 0;
         LONG call_number;
         LONG category_call_number;
         const char *category;
@@ -891,7 +1016,8 @@ static void serve_client(HANDLE pipe)
                                             &paced_physical_segments,
                                             &focus_ready,
                                             &focus_wait_ms,
-                                            &route);
+                                            &route, &edit_state,
+                                            &clamped_edits);
         inject_ms = (DWORD)(GetTickCount64() - inject_started_ms);
         first_type = inputs[0].type;
         if (first_type == INPUT_MOUSE)
@@ -925,7 +1051,7 @@ static void serve_client(HANDLE pipe)
             response.result != request.count) {
             _snprintf(
                 line, sizeof(line),
-                "call=%ld category=%s category-call=%ld count=%lu type=%lu flags=0x%08lx text=%s route=%s focus=%s focus-wait-ms=%lu paced-text=%lu text-delay-ms=%lu paced-physical=%lu physical-delay-ms=%lu inject-ms=%lu total-ms=%lu result=%lu error=%lu\r\n",
+                "call=%ld category=%s category-call=%ld count=%lu type=%lu flags=0x%08lx text=%s route=%s focus=%s focus-wait-ms=%lu paced-text=%lu text-delay-ms=%lu paced-physical=%lu physical-delay-ms=%lu clamped-edits=%lu inject-ms=%lu total-ms=%lu result=%lu error=%lu\r\n",
                 call_number, category, category_call_number,
                 (unsigned long)request.count,
                 (unsigned long)first_type, (unsigned long)first_flags,
@@ -938,6 +1064,7 @@ static void serve_client(HANDLE pipe)
                 (unsigned long)text_key_delay_ms,
                 (unsigned long)paced_physical_segments,
                 (unsigned long)physical_key_delay_ms,
+                (unsigned long)clamped_edits,
                 (unsigned long)inject_ms,
                 (unsigned long)(GetTickCount64() - started_ms),
                 (unsigned long)response.result,
