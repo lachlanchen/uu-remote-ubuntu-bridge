@@ -29,7 +29,7 @@ healthd_stub="$repo_dir/build/compat/uu-healthd-stub.exe"
 devcon="$wine_prefix/drive_c/Program Files/Netease/GameViewer/bin/drivers/devcon.exe"
 devcon_backup="$devcon.uu-original"
 case "$release_version" in
-    4.33.0.8907|4.34.0.8979|4.39.1.1375)
+    4.33.0.8907|4.34.0.8979|4.39.1.1375|4.39.2.1561)
         devcon_original_sha256='46731d6ea59dd9b63ad641c79646bb5ff64e1b877a1226536e3fe34d1ab4ee10'
         ;;
     *)
