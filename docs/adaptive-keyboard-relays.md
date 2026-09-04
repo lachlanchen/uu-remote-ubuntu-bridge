@@ -21,6 +21,20 @@ recover information a client did not send. The robust rule is therefore:
 3. never run a global `setxkbmap` loop to chase whichever client connected
    most recently.
 
+An XRDP startup file can quietly defeat this rule. In particular, an
+unconditional `setxkbmap ... -layout jp` in `~/.xsessionrc` runs after XRDP
+has selected the layout reported by the connecting client, making every later
+US or other client look Japanese. The adaptive default is to leave
+`~/.xsessionrc` free of physical-layout commands and let XRDP apply its client
+metadata. Keep a Japanese-Mac `setxkbmap` helper as an explicit repair command
+for a client that genuinely misreports its layout; do not run it on every
+login.
+
+This is persistent without a daemon or polling loop. It also leaves IBus and
+semantic text alone, so Chinese/Japanese IME commits, continuous Unicode
+dictation, and the native UU terminal protocol do not depend on the current
+physical XKB map.
+
 For direct X11 targets, semantic text has a second distinction. Ordinary
 representable characters remain key chords; newline, tab, CJK, emoji, and
 other non-representable commits use synchronized target `CLIPBOARD` and
@@ -98,3 +112,12 @@ chain while making VNC semantic input independent of it. If one physical UU
 client still needs a different raw layout, select the appropriate behavior
 track or change that client profile explicitly; do not hard-code the shared
 desktop for every transport.
+
+The direct UU computer-keyboard protocol exposes Windows key events but no
+trustworthy per-connection keyboard-layout identifier. Consequently, direct
+X11 physical keys follow the layout of the selected desktop session. XRDP and
+RFB clients can adapt automatically because those protocols carry layout
+metadata or keysyms; phone keyboards and dictation adapt because they carry
+Unicode. A bridge cannot infer whether `Shift+7` means `&` or `'` after a raw
+UU event has omitted that source-layout fact. Preserve this boundary instead
+of adding a heuristic that silently changes punctuation.

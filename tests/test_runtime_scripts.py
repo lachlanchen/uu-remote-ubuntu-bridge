@@ -637,6 +637,15 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("live X11 desktop matches the UU relay size", verifier)
         self.assertIn("align --resolution to avoid black space or clipping", verifier)
 
+    def test_verifier_handles_audited_structured_log_releases(self):
+        verifier = (REPOSITORY / "scripts" / "verify.sh").read_text()
+
+        self.assertIn("4.39.1.1375|4.39.2.1561", verifier)
+        self.assertIn("534c4f470d0a1a0a", verifier)
+        self.assertIn("server_log_pattern='log_*.slog'", verifier)
+        self.assertIn("structured_release_ipc_ready", verifier)
+        self.assertIn('"$wine_bin" "$uuyc_cli" version', verifier)
+
     def test_verifier_supports_the_application_profile_network_namespace(self):
         verifier = (REPOSITORY / "scripts" / "verify.sh").read_text()
 
@@ -769,6 +778,9 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn('"x11-text"', broker)
         self.assertIn('"x11-clipboard-text"', broker)
         self.assertIn("phone_text_uses_clipboard", broker)
+        self.assertIn("wait_for_clipboard_request", helper)
+        self.assertIn('text, size, "1"', helper)
+        self.assertIn('text, size, "0"', helper)
         self.assertIn("UURB_X11_INPUT_TEXT", broker)
         self.assertIn('L"UURB_PHONE_TEXT_MODE"', broker)
         self.assertIn("inject_clipboard_text", helper)

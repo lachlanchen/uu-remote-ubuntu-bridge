@@ -8,6 +8,17 @@ locked by the release manifest.
 
 ### Fixed
 
+- serialize semantic clipboard consumption before accepting the next phone or
+  dictation commit, preventing rapid multiline Chinese, Japanese, emoji, or
+  smart-punctuation updates from replacing text that the target application
+  has not consumed yet
+- verify audited UU 4.39.x structured-log releases with a fresh binary-log
+  signature and exact local version IPC instead of falsely requiring the
+  plaintext startup milestones used by older releases
+- preserve XRDP's client-reported physical keyboard layout by documenting the
+  removal of unconditional per-login `setxkbmap` overrides; direct UU raw-key
+  input continues to follow the selected desktop layout, while semantic
+  Unicode input remains layout-independent
 - preserve continuous phone dictation as one bounded input transaction instead
   of rejecting every `SendInput` array above the former 64-record limit; the
   bridge, broker, and authenticated X11 helper now accept up to 2,048 records,

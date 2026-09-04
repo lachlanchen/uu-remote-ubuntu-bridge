@@ -204,6 +204,7 @@ static void stop_clipboard_owner(void)
 static bool start_selection_owner(const x11_api *api, Display *display,
                                   const char *selection_name,
                                   const char *text, size_t size,
+                                  const char *loops,
                                   volatile sig_atomic_t *owner_pid)
 {
     int input_pipe[2];
@@ -241,7 +242,7 @@ static bool start_selection_owner(const x11_api *api, Display *display,
         }
         setenv("LC_ALL", "C.UTF-8", 1);
         execl("/usr/bin/xclip", "xclip", "-selection", selection_name,
-              "-in", "-loops", "0", "-quiet", (char *)NULL);
+              "-in", "-loops", loops, "-quiet", (char *)NULL);
         _exit(127);
     }
 
@@ -281,17 +282,59 @@ static bool start_selection_owner(const x11_api *api, Display *display,
 }
 
 static bool start_clipboard_owner(const x11_api *api, Display *display,
-                                  const char *text, size_t size)
+                                  const char *text, size_t size,
+                                  const char *loops)
 {
     stop_clipboard_owner();
     if (!start_selection_owner(api, display, "CLIPBOARD", text, size,
+                               loops,
                                &clipboard_owner_pid) ||
         !start_selection_owner(api, display, "PRIMARY", text, size,
+                               loops,
                                &primary_owner_pid)) {
         stop_clipboard_owner();
         return false;
     }
     return true;
+}
+
+static int selection_owner_completion(volatile sig_atomic_t *owner_pid)
+{
+    pid_t pid = (pid_t)*owner_pid;
+    pid_t result;
+    int status;
+
+    if (pid <= 0)
+        return -1;
+    result = waitpid(pid, &status, WNOHANG);
+    if (result == 0 || (result < 0 && errno == EINTR))
+        return 0;
+    *owner_pid = -1;
+    if (result == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0)
+        return 1;
+    return -1;
+}
+
+static bool wait_for_clipboard_request(void)
+{
+    unsigned int attempt;
+
+    for (attempt = 0; attempt < 200; attempt++) {
+        int clipboard = selection_owner_completion(&clipboard_owner_pid);
+        int primary = selection_owner_completion(&primary_owner_pid);
+
+        if (clipboard > 0 || primary > 0) {
+            stop_clipboard_owner();
+            return true;
+        }
+        if (clipboard < 0 || primary < 0) {
+            stop_clipboard_owner();
+            return false;
+        }
+        sleep_milliseconds(5);
+    }
+    stop_clipboard_owner();
+    return false;
 }
 
 static bool append_utf8(char *output, size_t capacity, size_t *length,
@@ -441,7 +484,7 @@ static bool inject_clipboard_text(const x11_api *api, Display *display,
     insert_keycode = api->keysym_to_keycode(display, insert);
     if (shift_keycode == 0 || shift_keycode >= 256 ||
         insert_keycode == 0 || insert_keycode >= 256 ||
-        !start_clipboard_owner(api, display, text, size))
+        !start_clipboard_owner(api, display, text, size, "1"))
         return false;
 
     shift_was_pressed = pressed_keys[shift_keycode];
@@ -450,9 +493,19 @@ static bool inject_clipboard_text(const x11_api *api, Display *display,
         !api->fake_key_event(display, insert_keycode, 1, 0) ||
         !api->fake_key_event(display, insert_keycode, 0, 0) ||
         (!shift_was_pressed &&
-         !api->fake_key_event(display, shift_keycode, 0, 0)))
+         !api->fake_key_event(display, shift_keycode, 0, 0))) {
+        stop_clipboard_owner();
         return false;
+    }
     api->sync(display, 0);
+    if (!wait_for_clipboard_request())
+        return false;
+
+    /* The one-shot owner proves that the target consumed this exact commit
+     * before another request may replace it.  Re-publish the same text for a
+     * later manual paste, but do not turn a completed injection into a retry
+     * if this convenience owner cannot be established. */
+    (void)start_clipboard_owner(api, display, text, size, "0");
     return true;
 }
 

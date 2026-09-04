@@ -23,6 +23,11 @@ normalizes CRLF to one newline, makes `xclip` own both the target desktop's
 `CLIPBOARD` and `PRIMARY` selections, verifies both owners through X11, and only
 then emits one paste chord. Owning both is required because VTE terminals read
 `PRIMARY` for `Shift+Insert`, while other applications may read `CLIPBOARD`.
+Each commit initially uses one-shot owners, and the helper acknowledges it only
+after the target requests one of those selections. It then republishes the
+same value persistently for a later manual paste. This consumption boundary
+prevents a following dictation update from replacing the selection before a
+busy application has read the earlier commit.
 If either new owner is not confirmed within a bounded interval, the helper
 fails closed and does not paste previous desktop text. It never writes the
 payload to logs or disk. A communication failure after an ambiguous injection
