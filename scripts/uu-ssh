@@ -120,7 +120,11 @@ def add(args):
                     "    IdentityFile ~/.ssh/id_ed25519_uu_bridge\n"
                     "    IdentitiesOnly yes\n"
                     f"    HostKeyAlias uu-{args.peer}\n"
-                    "    StrictHostKeyChecking ask\n    ForwardAgent no\n"
+                    "    StrictHostKeyChecking yes\n"
+                    "    PreferredAuthentications publickey\n"
+                    "    PasswordAuthentication no\n"
+                    "    KbdInteractiveAuthentication no\n"
+                    "    ForwardAgent no\n"
                     "    ServerAliveInterval 30\n    ServerAliveCountMax 3\n"
                     "    ConnectTimeout 10\n\n")
         write_private(target, fragment)

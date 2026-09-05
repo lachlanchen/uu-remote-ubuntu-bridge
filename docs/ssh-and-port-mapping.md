@@ -237,7 +237,8 @@ The helper uses only Python's standard library and OpenSSH. It writes:
 
 The helper serializes alias setup, writes config files atomically with mode
 `0600`, refuses unmanaged fragments and unrelated preexisting aliases, and
-does not disable host-key checking or enable agent forwarding. Repeated
+requires strict host-key checking plus public-key-only authentication. It
+does not enable agent forwarding. Repeated
 setup preserves keys and unrelated configuration. Updating a saved peer's
 port is explicit; `add` does not delete host-key trust when the peer changes.
 
