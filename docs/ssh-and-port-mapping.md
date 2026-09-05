@@ -22,14 +22,20 @@ exit statuses and independent SCP round trips passed. The peer measured 15
 fresh command successes over 68 seconds (472–974 ms); the workstation measured
 six bidirectional rounds over roughly 107 seconds without a failed round.
 
-This is the preferred **candidate direction for a viewer targeting the
-workstation**, not a guarantee of arbitrary multi-controller coexistence.
-The first apparent coexistence confirmation was retracted: a panel on the
-peer saying “this computer is controlled” referred to the incoming mapping,
-not the user's separate viewer on the workstation. Do not confuse a selected
-remote device name with the panel's local/remote semantics. Final acceptance
-requires the user's actual incoming UU desktop and both shells at the same
-time. Taking over the mapping's target peer can still displace the carrier.
+This is now the accepted operating direction for a viewer targeting the
+workstation, not a guarantee of arbitrary multi-controller coexistence. On
+2026-09-05 the user completed the real-use check while the intended UU desktop
+remained usable: `ssh-uu-lachlanserver` from 7090 reached LACHLANSERVER, and
+`ssh uu-7090` inside that shell returned to OptiPlex-7090. Both directions
+therefore coexisted with the actual viewer in this retained session.
+
+The **under control** state shown on 7090 is expected: LACHLANSERVER's mapping
+is the controller carrying `22709 -> 7090:22`. It is not evidence that a hidden
+desktop viewer is watching 7090. Minimize the status window if desired, but do
+not press **Disconnect** while this route is needed. Disconnecting the carrier
+removes both that mapping and the dependent `22022` SSH return path; an already
+open shell may survive briefly until TCP notices, then closes. Taking over the
+mapping's target from another controller can likewise displace the carrier.
 
 Short/new-channel stalls also remain a disclosed limitation. Initial checks
 and an eager nested bulk-stdin test sometimes timed out while the listener and
