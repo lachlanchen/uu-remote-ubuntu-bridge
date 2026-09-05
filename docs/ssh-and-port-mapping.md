@@ -2,12 +2,54 @@
 
 ## What works, and what it is not
 
-**Latest controlled test, 2026-09-05:** direct two-Ubuntu SSH and file transfer
+### Current operating direction (2026-09-05, later test)
+
+The working mapping was subsequently reversed: the workstation originates
+UU Port Mapping **to the peer**, rather than the peer targeting the workstation
+where the user normally attaches a UU viewer. The peer's device card showed
+no other controller, so its existing mapping opened without takeover. The
+operator reused both existing alias ports and the confirmed-dead return pane:
+
+```text
+workstation:127.0.0.1:22709 -- UU mapping --> peer:127.0.0.1:22
+workstation: one SSH -R   --> peer:127.0.0.1:22022 --> workstation:22
+```
+
+There is still only one native UU mapping and one non-retrying return forward.
+Neither host needs a Windows/Mac intermediary, new account, desktop restart,
+keyboard patch, or alias change. Both native SSH identities, UTF-8, requested
+exit statuses and independent SCP round trips passed. The peer measured 15
+fresh command successes over 68 seconds (472–974 ms); the workstation measured
+six bidirectional rounds over roughly 107 seconds without a failed round.
+
+This is the preferred **candidate direction for a viewer targeting the
+workstation**, not a guarantee of arbitrary multi-controller coexistence.
+The first apparent coexistence confirmation was retracted: a panel on the
+peer saying “this computer is controlled” referred to the incoming mapping,
+not the user's separate viewer on the workstation. Do not confuse a selected
+remote device name with the panel's local/remote semantics. Final acceptance
+requires the user's actual incoming UU desktop and both shells at the same
+time. Taking over the mapping's target peer can still displace the carrier.
+
+Short/new-channel stalls also remain a disclosed limitation. Initial checks
+and an eager nested bulk-stdin test sometimes timed out while the listener and
+return process remained alive; later ordinary commands recovered without
+reconnecting UU. A nested 237594-byte binary transfer started after an explicit
+inner-shell readiness marker passed byte-exactly in 1.46 seconds. That comparison
+does not establish the vendor's internal cause or fix every streaming case.
+A temporary, isolated OpenSSH multiplexing experiment passed 10 reused commands
+in 54–160 ms each; no production sharing setting was deployed, and its bounded
+master was stopped without touching the owned return connection.
+
+### Earlier opposite direction and takeover failure
+
+In the earlier controlled test on 2026-09-05, direct two-Ubuntu SSH and file transfer
 worked in both directions, without Windows or Mac. A subsequent user-confirmed
 UU desktop takeover disconnected the same mapping and its return forward.
 RDP/VNC and the logged-in Ubuntu applications stayed intact. Thus direct
 transport is verified; simultaneous independent UU desktop control is **not
-supported by the tested ownership behavior**. See the acceptance record below.
+supported by that tested ownership behavior at the mapping target**. See the
+acceptance record below; do not generalize it to both mapping directions.
 
 UU's **Port mapping / 端口映射** can forward a local TCP port to an SSH
 server on a remote Ubuntu bridge host. In the 2026-09-05 live test, a
