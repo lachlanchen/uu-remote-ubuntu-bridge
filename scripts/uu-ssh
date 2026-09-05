@@ -144,9 +144,17 @@ def check(peer):
         if not banner.startswith(b"SSH-"):
             raise ValueError("mapped port did not return an SSH banner")
     except (OSError, ValueError) as error:
+        recovery_hint = ""
+        if isinstance(error, ConnectionRefusedError) and profile.get("device_id"):
+            recovery_hint = (
+                " If that rule already exists, check controller ownership, then optionally try once: "
+                f"timeout 15 uu-ssh terminal {name(peer)} --list-sessions. "
+                "This may reopen an existing mapping; it does not create one or guarantee recovery. "
+                "Stop on a takeover/ownership error; do not restart the desktop."
+            )
         raise ValueError(f"uu-{peer}: {error}. Open UU -> peer -> Port mapping, "
                          f"enable local {profile['port']} -> 127.0.0.1:22; "
-                         "also check the peer's SSH service.") from error
+                         "also check the peer's SSH service." + recovery_hint) from error
     print(f"uu-{peer}: SSH transport responds; checking key authentication", flush=True)
     return subprocess.run(["ssh", "-o", "BatchMode=yes", f"uu-{peer}",
                            "hostname; id -un; uname -s"]).returncode

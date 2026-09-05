@@ -75,6 +75,17 @@ transport, not a reboot test. No real desktop controller was attached during
 the peer's final input check, so desktop-control coexistence still requires
 that actual client acceptance.
 
+Longer observation caught another mapping loss after those passing rounds:
+the retained SSH pane exited 255 with `Connection to 127.0.0.1 closed by
+remote host.` A subsequent attempt to open one native terminal failed during
+setup with vendor `Streamer error: 9012` (exit 6), before a shell appeared.
+Device inventory still said online. No meaning for that undocumented code
+has been established; do not equate “online” with an available control slot.
+Likewise `uu-agent status` describes outgoing controller connections, not
+proof that no inbound desktop controller is attached. These observations
+supersede any interpretation of the 30-round pass as an all-day reliability
+guarantee.
+
 After a drop, check both listeners, confirm the previous reverse process has
 exited, and restart **only the one owned forward** after the UU mapping works
 again. Do not run a second native mapping on its return port, restart RDP,
@@ -256,6 +267,10 @@ symlink rejection, and clear diagnostics for a missing mapping. They do not
 pretend to emulate vendor NAT traversal or account/control permissions.
 
 Connection refused: inspect the mapping before changing passwords or SSH.
+If a peer device ID is saved, `uu-ssh check` prints the optional one-shot
+terminal-status query above for a refused connection. It **never executes it
+automatically**, starts a service, or accepts takeover. An unrelated non-SSH
+listener does not receive that recovery hint.
 SSH banner but authentication failure: check the destination's authorized
 public key and user. Changed host key: verify the destination identity, never
 automatically erase known-host entries. Do not restart XRDP or change keyboard

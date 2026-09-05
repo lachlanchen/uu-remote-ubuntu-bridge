@@ -103,8 +103,34 @@ class UUSSHTests(unittest.TestCase):
     def test_closed_mapping_reports_action_without_starting_services(self):
         self.add_peer()
         with mock.patch.object(helper.socket, "create_connection", side_effect=ConnectionRefusedError()):
-            with self.assertRaisesRegex(ValueError, "Port mapping"):
+            with mock.patch.object(helper.subprocess, "run") as run, mock.patch.object(helper.os, "execv") as execute:
+                with self.assertRaisesRegex(ValueError, "Port mapping") as raised:
+                    helper.check("lab")
+                message = str(raised.exception)
+                self.assertIn("timeout 15 uu-ssh terminal lab --list-sessions", message)
+                self.assertIn("check controller ownership", message)
+                self.assertIn("does not create one or guarantee recovery", message)
+                run.assert_not_called()
+                execute.assert_not_called()
+
+    def test_closed_mapping_without_device_id_does_not_offer_terminal_query(self):
+        self.args.device_id = None
+        self.add_peer()
+        with mock.patch.object(helper.socket, "create_connection", side_effect=ConnectionRefusedError()):
+            with self.assertRaises(ValueError) as raised:
                 helper.check("lab")
+        self.assertNotIn("--list-sessions", str(raised.exception))
+
+    def test_non_ssh_listener_does_not_offer_mapping_initialization(self):
+        self.add_peer()
+        connection = mock.MagicMock()
+        connection.__enter__.return_value.recv.return_value = b"HTTP/1.1 200 OK\r\n"
+        with mock.patch.object(helper.socket, "create_connection", return_value=connection):
+            with mock.patch.object(helper.subprocess, "run") as run:
+                with self.assertRaisesRegex(ValueError, "SSH banner") as raised:
+                    helper.check("lab")
+                self.assertNotIn("--list-sessions", str(raised.exception))
+                run.assert_not_called()
 
     def test_successful_check_uses_noninteractive_native_ssh(self):
         self.add_peer()
