@@ -45,7 +45,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for command in flock pgrep Xvfb openbox zenity xclip xdotool xdpyinfo python3 \
+for command in flock timeout pgrep Xvfb openbox zenity xclip xdotool xdpyinfo python3 \
     x86_64-w64-mingw32-gcc /opt/wine-stable/bin/wine \
     /opt/wine-stable/bin/wineboot /opt/wine-stable/bin/winepath; do
     command -v "$command" >/dev/null 2>&1 || {
@@ -80,20 +80,21 @@ Xvfb "$display" -screen 0 800x600x24 -ac -nolisten tcp \
     >"$temporary_dir/xvfb.log" 2>&1 &
 xvfb_pid=$!
 for _ in {1..50}; do
-    if DISPLAY="$display" xdpyinfo >/dev/null 2>&1; then
+    if DISPLAY="$display" timeout 0.5 xdpyinfo >/dev/null 2>&1 9>&-; then
         break
     fi
     sleep 0.1
 done
-DISPLAY="$display" xdpyinfo >/dev/null
+DISPLAY="$display" timeout 5 xdpyinfo >/dev/null 9>&-
 flock -u 9
 DISPLAY="$display" openbox >"$temporary_dir/openbox.log" 2>&1 &
 openbox_pid=$!
 sleep 0.5
 
-DISPLAY="$display" zenity --text-info --editable \
+DISPLAY="$display" GDK_BACKEND=x11 NO_AT_BRIDGE=1 \
+    zenity --text-info --editable \
     --title='UU clipboard text acceptance' --width=500 --height=300 \
-    >"$editor_output" 2>"$temporary_dir/editor.log" &
+    </dev/null >"$editor_output" 2>"$temporary_dir/editor.log" &
 editor_pid=$!
 editor_window=""
 for _ in {1..50}; do

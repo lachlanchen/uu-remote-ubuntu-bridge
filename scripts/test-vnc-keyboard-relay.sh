@@ -26,7 +26,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for command in flock Xvfb python3 setxkbmap ss stdbuf x11vnc xdotool xdpyinfo \
+for command in flock timeout Xvfb python3 setxkbmap ss stdbuf x11vnc xdotool xdpyinfo \
     xev; do
     command -v "$command" >/dev/null 2>&1 || {
         printf 'missing VNC keyboard-test command: %s\n' "$command" >&2
@@ -64,12 +64,12 @@ Xvfb "$display" -screen 0 900x600x24 -ac -nolisten tcp \
     >"$temporary_dir/xvfb.log" 2>&1 &
 pids+=("$!")
 for _ in {1..50}; do
-    if DISPLAY="$display" xdpyinfo >/dev/null 2>&1; then
+    if DISPLAY="$display" timeout 0.5 xdpyinfo >/dev/null 2>&1 9>&-; then
         break
     fi
     sleep 0.1
 done
-DISPLAY="$display" xdpyinfo >/dev/null
+DISPLAY="$display" timeout 5 xdpyinfo >/dev/null 9>&-
 flock -u 9
 
 target_layout="${UURB_TEST_TARGET_LAYOUT:-jp}"
@@ -105,7 +105,8 @@ esac
 if [[ -n "${UURB_TEST_MODTWEAK_LOWEST:-}" ]]; then
     export MODTWEAK_LOWEST="$UURB_TEST_MODTWEAK_LOWEST"
 fi
-x11vnc "${x11vnc_options[@]}" >"$temporary_dir/x11vnc.log" 2>&1 &
+env -u WAYLAND_DISPLAY XDG_SESSION_TYPE=x11 DISPLAY="$display" \
+    x11vnc "${x11vnc_options[@]}" >"$temporary_dir/x11vnc.log" 2>&1 &
 x11vnc_pid=$!
 pids+=("$x11vnc_pid")
 for _ in {1..50}; do
