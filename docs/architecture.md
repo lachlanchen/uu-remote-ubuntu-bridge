@@ -240,6 +240,18 @@ The default RDP track uses a split semantic helper: it owns `CLIPBOARD` and
 the private Wine/FreeRDP display, and leaves every routine key and mouse event
 on RDP. Both helper sockets bind only to loopback and use a fresh per-start
 token.
+
+Controller clipboard text has a separate, strictly one-way path for Wine
+builds that do not mirror GameViewer's standard Win32 clipboard into the
+private X11 selection. A Wine companion polls the Win32 clipboard sequence,
+requires the owner process to be exactly `GameViewer.exe`, and accepts only
+bounded valid `CF_UNICODETEXT`. It normalizes Windows line endings and sends
+UTF-8 over a fresh-token loopback connection. The native listener validates
+the payload and owns `CLIPBOARD` plus `PRIMARY` on the selected host X11
+desktop. It has no host-clipboard read operation and performs no key
+injection, so it cannot create an Ubuntu-to-Wine feedback path. Non-text
+formats remain on the existing relay path and are not handled by this helper.
+
 The original request count is returned to UU only after the selected boundary
 accepts the complete request.
 The bridge keeps up to 2,048 input records from one provisional dictation call
