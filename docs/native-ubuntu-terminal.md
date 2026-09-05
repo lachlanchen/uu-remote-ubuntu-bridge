@@ -119,6 +119,35 @@ artifact.
 
 ## Install and use
 
+For a terminal-to-terminal connection, use the short helper on either bridge:
+
+```bash
+# The peer name is one already configured with uu-ssh add.
+uu-shell lab
+
+# Explicitly resume a known vendor session instead of opening a fresh one:
+uu-shell lab --session-id SESSION_ID
+uu-shell --help
+```
+
+It delegates to the existing native Terminal adapter, opens a fresh session
+by default, passes arguments literally, and preserves vendor exit status and
+the terminal's normal I/O/signals. It does not start a daemon, open a desktop,
+activate Port Mapping, retry, or fall back to a cloud host. The helper itself
+does not fix the controller-compatibility failures described above; acceptance
+still requires a real remote shell. Session-list requests are explicit and can
+initialize vendor transport. File transfer remains a separate acceptance test;
+use the verified mapped SSH/scp path when available, not pasted terminal text
+as an unverified file channel.
+
+To update only the shell/SSH entry points without restarting the desktop:
+
+```bash
+install -m 0755 scripts/uu-ssh scripts/uu-shell "$HOME/.local/bin/"
+```
+
+The installer, upgrade backup and uninstaller also include `uu-shell`.
+
 The normal installer builds and deploys both helpers:
 
 ```bash

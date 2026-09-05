@@ -263,6 +263,7 @@ backup_paths=(
     "$HOME/.config/systemd/user/uu-keyring-unlock.service"
     "$HOME/.local/bin/uu-agent"
     "$HOME/.local/bin/uu-ssh"
+    "$HOME/.local/bin/uu-shell"
     "$HOME/.local/bin/uu-link"
     "$HOME/.local/bin/uu-keyring-unlock"
     "$HOME/.local/bin/uu-remote"
