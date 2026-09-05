@@ -148,20 +148,26 @@ def check(peer):
         if not banner.startswith(b"SSH-"):
             raise ValueError("mapped port did not return an SSH banner")
     except (OSError, ValueError) as error:
-        recovery_hint = ""
-        if isinstance(error, ConnectionRefusedError) and profile.get("device_id"):
-            recovery_hint = (
-                " If that rule already exists, check controller ownership, then optionally try once: "
-                f"timeout 15 uu-ssh terminal {name(peer)} --list-sessions. "
-                "This may reopen an existing mapping; it does not create one or guarantee recovery. "
-                "Stop on a takeover/ownership error; do not restart the desktop."
-            )
-        raise ValueError(f"uu-{peer}: {error}. Open UU -> peer -> Port mapping, "
-                         f"enable local {profile['port']} -> 127.0.0.1:22; "
-                         "also check the peer's SSH service." + recovery_hint) from error
+        raise ValueError(
+            f"uu-{peer}: {error}. Inspect the existing UU Port mapping "
+            f"127.0.0.1:{profile['port']} -> peer 127.0.0.1:22 and the peer's SSH service. "
+            "Leave active desktops connected; cancel any takeover prompt. "
+            "This check never opens a UU controller, Terminal, or recovery connection. "
+            "Coordinate mapping activation separately; do not restart the desktop."
+        ) from error
     print(f"uu-{peer}: SSH transport responds; checking key authentication", flush=True)
-    return subprocess.run(["ssh", "-o", "BatchMode=yes", f"uu-{peer}",
-                           "hostname; id -un; uname -s"]).returncode
+    try:
+        return subprocess.run([
+            "ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes",
+            "-o", "PreferredAuthentications=publickey", "-o", "ForwardAgent=no",
+            "-o", "ClearAllForwardings=yes", "-o", "ConnectTimeout=5",
+            f"uu-{peer}", "hostname; id -un; uname -s",
+        ], timeout=15).returncode
+    except subprocess.TimeoutExpired as error:
+        raise ValueError(
+            f"uu-{peer}: SSH authentication/command check timed out after 15 seconds. "
+            "Only this diagnostic process was stopped; no UU recovery or desktop action was taken."
+        ) from error
 
 
 def main():

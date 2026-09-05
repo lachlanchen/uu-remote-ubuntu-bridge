@@ -12,6 +12,26 @@ same unprivileged Ubuntu user as `uu-remote-bridge.service`, starts in that
 user's home directory, loads the normal login-shell configuration, supports
 interactive programs and UTF-8, and follows controller resize events.
 
+### Controller compatibility is a separate acceptance check
+
+The working native shell adapter does not guarantee that every vendor client
+can open it. On 2026-09-05, a Windows CLI running under Wine progressed to
+terminal startup against another bridge but received error1004 / "Client
+version too low", although both installed products were 4.39.2.1561. Static
+inspection of the audited server found separate payload-version and
+`controller_cli_v2_unsupported platform=` rejection paths using that error.
+The exact live rejection branch was not decoded. The opposite one-shot test
+failed earlier with Streamer9012, also before the native shell broker opened
+a session. Neither test establishes working desktop/terminal coexistence.
+
+Do not change keyboard patches, restart RDP, bypass a takeover prompt, or
+automatically upgrade the healthy host based solely on that generic error.
+Coordinate one bounded compatibility test and check for actual native shell
+output. A session-list query can itself initialize UU transport; it is not an
+ownership-neutral health check. Remote command and file-transfer adapters must
+also preserve exit status and byte-exact data rather than scrape a terminal
+screen or inject commands into the user's existing desktop terminal.
+
 ## Why the terminal previously closed with exit code 0
 
 UU's host received and accepted the remote request. Its log recorded a new

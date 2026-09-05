@@ -45,7 +45,23 @@ do not establish what initially removed the listener.
   private database or fabricate a vendor CLI flag.
 - UU desktop connectivity and SSH-mapping availability are distinct checks.
 
-### Recover an existing mapping without restarting the desktop
+SSH itself does not acquire UU desktop-control ownership. A single native UU
+mapping plus one SSH return forward avoids a **second UU control connection**,
+but does not guarantee that the first mapping can coexist with an active
+inbound UU viewer. Keep `ssh`, `uu-ssh check`, `uu-ssh reverse`, and `uu-link`
+as consumers of an already-open mapping: none may silently run a vendor
+Terminal command, take over, or reconnect a desktop. They should fail/queue
+when the mapping closes. Activating the underlying UU connection is a separate
+coordinated action. Network bandwidth is still shared; this separation is
+about session ownership, not a claim of zero resource contention.
+
+### Historical one-shot recovery, not a default reconnect recipe
+
+The current `uu-ssh check` deliberately does **not** suggest this warm-up.
+Even listing native terminal sessions can initialize a vendor connection;
+that is not a read-only transport probe and its ownership effects are not
+guaranteed. Only use a bounded test below in a coordinated troubleshooting
+window, never as an automatic health check or while another agent owns recovery.
 
 On the tested 4.39.2 pair, a native terminal session-list query initialized the
 vendor connection and reopened the controller's already-saved SSH mapping:
@@ -325,10 +341,14 @@ symlink rejection, and clear diagnostics for a missing mapping. They do not
 pretend to emulate vendor NAT traversal or account/control permissions.
 
 Connection refused: inspect the mapping before changing passwords or SSH.
-If a peer device ID is saved, `uu-ssh check` prints the optional one-shot
-terminal-status query above for a refused connection. It **never executes it
-automatically**, starts a service, or accepts takeover. An unrelated non-SSH
-listener does not receive that recovery hint.
+`uu-ssh check` never starts a vendor connection, regardless of whether the
+peer has a saved device ID. It reports the mapping and says to preserve active
+desktops/cancel takeover; the earlier suggestion to query Terminal sessions
+was removed because it can initialize UU transport. Each socket stage has a
+five-second timeout and the key-only SSH command has a separate 15-second
+timeout, strict host checking, no agent forwarding, and no configured forwards.
+Only that diagnostic process is terminated on its timeout. No retries, bridge
+restart, or cloud fallback are performed.
 SSH banner but authentication failure: check the destination's authorized
 public key and user. Changed host key: verify the destination identity, never
 automatically erase known-host entries. Do not restart XRDP or change keyboard

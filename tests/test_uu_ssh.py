@@ -111,9 +111,9 @@ class UUSSHTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "Port mapping") as raised:
                     helper.check("lab")
                 message = str(raised.exception)
-                self.assertIn("timeout 15 uu-ssh terminal lab --list-sessions", message)
-                self.assertIn("check controller ownership", message)
-                self.assertIn("does not create one or guarantee recovery", message)
+                self.assertNotIn("--list-sessions", message)
+                self.assertIn("cancel any takeover prompt", message)
+                self.assertIn("never opens a UU controller", message)
                 run.assert_not_called()
                 execute.assert_not_called()
 
@@ -144,7 +144,26 @@ class UUSSHTests(unittest.TestCase):
             with mock.patch.object(helper.subprocess, "run", return_value=argparse.Namespace(returncode=0)) as run:
                 with contextlib.redirect_stdout(io.StringIO()):
                     self.assertEqual(helper.check("lab"), 0)
-                self.assertEqual(run.call_args.args[0][:4], ["ssh", "-o", "BatchMode=yes", "uu-lab"])
+                command = run.call_args.args[0]
+                self.assertEqual(command[:3], ["ssh", "-o", "BatchMode=yes"])
+                self.assertIn("StrictHostKeyChecking=yes", command)
+                self.assertIn("PreferredAuthentications=publickey", command)
+                self.assertIn("ForwardAgent=no", command)
+                self.assertIn("ClearAllForwardings=yes", command)
+                self.assertEqual(command[-2:], ["uu-lab", "hostname; id -un; uname -s"])
+                self.assertEqual(run.call_args.kwargs["timeout"], 15)
+
+    def test_ssh_timeout_reports_failure_without_uu_recovery(self):
+        self.add_peer()
+        connection = mock.MagicMock()
+        connection.__enter__.return_value.recv.return_value = b"SSH-2.0-OpenSSH\r\n"
+        with mock.patch.object(helper.socket, "create_connection", return_value=connection):
+            with mock.patch.object(helper.subprocess, "run", side_effect=subprocess.TimeoutExpired("ssh", 15)) as run:
+                with mock.patch.object(helper.os, "execv") as execute:
+                    with contextlib.redirect_stdout(io.StringIO()), self.assertRaisesRegex(ValueError, "timed out after 15 seconds"):
+                        helper.check("lab")
+                    self.assertEqual(run.call_count, 1)
+                    execute.assert_not_called()
 
 
 if __name__ == "__main__":
