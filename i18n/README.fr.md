@@ -48,6 +48,8 @@ n'a pas été relue et testée sur une copie jetable.
 - [Dossier d'ingénierie inverse](../docs/reverse-engineering.md)
 - [Sécurité](../docs/security.md)
 - [Dépannage](../docs/troubleshooting.md)
+- [Terminal Ubuntu natif](../docs/native-ubuntu-terminal.md)
+- [Alias SSH et redirection de ports entre deux ordinateurs](../docs/ssh-and-port-mapping.md)
 
 Aucun mot de passe, jeton, identifiant d'appareil, exécutable UU ou journal
 privé n'est versionné. Ce projet fait partie de

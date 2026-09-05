@@ -1,0 +1,215 @@
+#!/usr/bin/env python3
+"""Native SSH aliases for loopback ports supplied by UU Remote."""
+
+import argparse
+import fcntl
+import getpass
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+
+
+INCLUDE = "Include ~/.ssh/uu-bridge/*.conf"
+INCLUDE_BLOCK = INCLUDE + "\nHost *\n\n"
+MARKER = "# Managed by uu-ssh; the tunnel is supplied by UU Remote.\n"
+
+
+def name(value):
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,47}", value):
+        raise argparse.ArgumentTypeError("use a lowercase name, digits and hyphens")
+    return value
+
+
+def port(value):
+    result = int(value)
+    if not 1024 <= result <= 65535:
+        raise argparse.ArgumentTypeError("local port must be 1024..65535")
+    return result
+
+
+def write_private(path, content):
+    if path.is_symlink():
+        raise ValueError(f"refusing to replace a symlink: {path}")
+    if path.exists() and path.read_text() == content:
+        path.chmod(0o600)
+        return
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(prefix=".uu-ssh-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w") as stream:
+            stream.write(content)
+        os.replace(temp_name, path)
+    finally:
+        if os.path.exists(temp_name):
+            os.unlink(temp_name)
+
+
+def key_path():
+    return Path.home() / ".ssh/id_ed25519_uu_bridge"
+
+
+def ensure_key():
+    key = key_path()
+    key.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if key.is_symlink() or key.with_suffix(".pub").is_symlink():
+        raise ValueError("dedicated SSH key must not be a symlink")
+    if not key.exists():
+        if key.with_suffix(".pub").exists():
+            raise ValueError("public key exists without private key; inspect it first")
+        subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-f", str(key),
+                        "-N", "", "-C", f"uu-bridge-{socket.gethostname()}"], check=True)
+    if not key.with_suffix(".pub").exists():
+        raise ValueError("private key exists without its public key; inspect it first")
+    return key
+
+
+def profile_path(peer):
+    return Path.home() / ".config/uu-ssh/peers" / f"{name(peer)}.json"
+
+
+def load(peer):
+    path = profile_path(peer)
+    if not path.exists():
+        raise ValueError(f"unknown peer {peer}; run uu-ssh add {peer} --port PORT")
+    return json.loads(path.read_text())
+
+
+def add(args):
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.-]{0,63}", args.user):
+        raise ValueError("invalid SSH user")
+    if args.device_id and not re.fullmatch(r"[A-Za-z0-9-]{1,80}", args.device_id):
+        raise ValueError("invalid UU device ID")
+    ssh_dir = Path.home() / ".ssh"
+    ssh_dir.mkdir(mode=0o700, exist_ok=True)
+    with (ssh_dir / ".uu-ssh.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        key = ensure_key()
+        config = ssh_dir / "config"
+        original = config.read_text() if config.exists() else ""
+        target = ssh_dir / "uu-bridge" / f"{args.peer}.conf"
+        if target.exists() and not target.read_text().startswith(MARKER):
+            raise ValueError(f"unmanaged SSH fragment: {target}")
+        if not target.exists():
+            effective = subprocess.run(["ssh", "-G", f"uu-{args.peer}"],
+                                       capture_output=True, text=True, check=True).stdout
+            host = next(line.split(None, 1)[1] for line in effective.splitlines()
+                        if line.startswith("hostname "))
+            if host != f"uu-{args.peer}":
+                raise ValueError(f"SSH alias uu-{args.peer} already has an unrelated configuration")
+        if not original.startswith(INCLUDE_BLOCK):
+            if config.exists():
+                backup = ssh_dir / f"config.before-uu-ssh.{time.time_ns()}"
+                shutil.copy2(config, backup)
+                backup.chmod(0o600)
+            # The included fragments contain Host blocks. Reset to Host * so
+            # original top-level options still apply to every original host.
+            # Only remove our exact Include line; preserve all other content.
+            remainder = "".join(line for line in original.splitlines(keepends=True)
+                                if line.rstrip("\r\n") != INCLUDE)
+            write_private(config, INCLUDE_BLOCK + remainder)
+        fragment = (MARKER + f"Host uu-{args.peer}\n"
+                    "    HostName 127.0.0.1\n"
+                    f"    Port {args.port}\n    User {args.user}\n"
+                    "    IdentityFile ~/.ssh/id_ed25519_uu_bridge\n"
+                    "    IdentitiesOnly yes\n"
+                    f"    HostKeyAlias uu-{args.peer}\n"
+                    "    StrictHostKeyChecking ask\n    ForwardAgent no\n"
+                    "    ServerAliveInterval 30\n    ServerAliveCountMax 3\n"
+                    "    ConnectTimeout 10\n\n")
+        write_private(target, fragment)
+        previous = load(args.peer) if profile_path(args.peer).exists() else {}
+        write_private(profile_path(args.peer), json.dumps({
+            "name": args.peer, "port": args.port, "user": args.user,
+            "device_id": args.device_id or previous.get("device_id", ""),
+        }, indent=2) + "\n")
+    print(f"Ready: ssh uu-{args.peer}")
+    print(f"UU mapping on this controller: 127.0.0.1:{args.port} -> peer 127.0.0.1:22")
+    print("Create/enable that rule in the UU port-mapping panel; add does not create a tunnel.")
+    print(f"Public key to authorize on the peer: {key}.pub")
+
+
+def check(peer):
+    profile = load(peer)
+    try:
+        with socket.create_connection(("127.0.0.1", profile["port"]), timeout=5) as conn:
+            conn.settimeout(5)
+            banner = conn.recv(256)
+        if not banner.startswith(b"SSH-"):
+            raise ValueError("mapped port did not return an SSH banner")
+    except (OSError, ValueError) as error:
+        raise ValueError(f"uu-{peer}: {error}. Open UU -> peer -> Port mapping, "
+                         f"enable local {profile['port']} -> 127.0.0.1:22; "
+                         "also check the peer's SSH service.") from error
+    print(f"uu-{peer}: SSH transport responds; checking key authentication", flush=True)
+    return subprocess.run(["ssh", "-o", "BatchMode=yes", f"uu-{peer}",
+                           "hostname; id -un; uname -s"]).returncode
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, epilog=(
+        "Use uu-ssh PEER [SSH arguments...] to connect. Standard ssh/scp/rsync "
+        "also work with uu-PEER. This helper does not change desktop services."))
+    sub = parser.add_subparsers(dest="command")
+    p = sub.add_parser("add", help="create a persistent SSH alias; no UU rule is created")
+    p.add_argument("peer", type=name)
+    p.add_argument("--port", type=port, required=True)
+    p.add_argument("--user", default=getpass.getuser())
+    p.add_argument("--device-id")
+    sub.add_parser("key", help="create/reuse the dedicated key and print its public key")
+    sub.add_parser("list", help="list configured peers")
+    p = sub.add_parser("check", help="check mapped SSH and key authentication")
+    p.add_argument("peer", type=name)
+    p = sub.add_parser("terminal", help="UU native Terminal (requires terminal patch on peer)")
+    p.add_argument("peer", type=name)
+    p.add_argument("options", nargs=argparse.REMAINDER)
+    p = sub.add_parser("reverse", help="keep a reverse SSH mapping open in this terminal")
+    p.add_argument("peer", type=name)
+    p.add_argument("--listen-port", type=port, default=22999)
+    argv = sys.argv[1:]
+    if argv and argv[0] not in {*sub.choices, "-h", "--help"}:
+        peer = name(argv[0])
+        load(peer)
+        os.execvp("ssh", ["ssh", f"uu-{peer}", *argv[1:]])
+    args = parser.parse_args(argv)
+    if args.command == "add":
+        add(args)
+    elif args.command == "key":
+        print(ensure_key().with_suffix(".pub").read_text(), end="")
+    elif args.command == "list":
+        for path in sorted((Path.home() / ".config/uu-ssh/peers").glob("*.json")):
+            peer = json.loads(path.read_text())
+            print(f"uu-{peer['name']}  {peer['user']}@127.0.0.1:{peer['port']}")
+    elif args.command == "check":
+        return check(args.peer)
+    elif args.command == "terminal":
+        peer = load(args.peer)
+        if not peer["device_id"]:
+            raise ValueError("peer has no device ID; repeat add with --device-id")
+        agent = shutil.which("uu-agent") or str(Path(__file__).resolve().with_name("uu-agent"))
+        os.execv(agent, [agent, "term", "--device-id", peer["device_id"], *args.options])
+    elif args.command == "reverse":
+        load(args.peer)
+        print(f"Keeping peer 127.0.0.1:{args.listen_port} -> this computer 127.0.0.1:22; "
+              "Ctrl+C closes only this tunnel.", flush=True)
+        os.execvp("ssh", ["ssh", "-NT", "-o", "BatchMode=yes", "-o",
+                          "ExitOnForwardFailure=yes", "-R",
+                          f"127.0.0.1:{args.listen_port}:127.0.0.1:22", f"uu-{args.peer}"])
+    else:
+        parser.print_help()
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (OSError, ValueError, argparse.ArgumentTypeError,
+            subprocess.CalledProcessError) as error:
+        print(f"uu-ssh: {error}", file=sys.stderr)
+        sys.exit(1)

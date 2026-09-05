@@ -46,6 +46,8 @@ trên một bản sao dùng một lần.
 - [Hồ sơ dịch ngược](../docs/reverse-engineering.md)
 - [Bảo mật](../docs/security.md)
 - [Khắc phục sự cố](../docs/troubleshooting.md)
+- [Terminal Ubuntu gốc](../docs/native-ubuntu-terminal.md)
+- [Bí danh SSH và ánh xạ cổng giữa hai máy tính](../docs/ssh-and-port-mapping.md)
 
 Kho mã không chứa mật khẩu, token, mã thiết bị, tệp thực thi UU hoặc log riêng
 tư. Dự án thuộc [The Art of Lazying](https://lazying.art).

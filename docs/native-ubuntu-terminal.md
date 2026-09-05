@@ -52,6 +52,10 @@ so commands execute in Ubuntu rather than in Wine.
 
 ## Why this does not use SSH
 
+For normal `ssh`, `scp`, `rsync`, or a two-computer return path, use the separate
+[SSH and port-mapping workflow](ssh-and-port-mapping.md). It reuses UU's native
+TCP forwarding and does not replace or modify this terminal implementation.
+
 SSH would add a second long-lived authentication path, a private key to
 manage, and an avoidable network listener. UU has already authenticated the
 controller and delivered the terminal stream to the local host. The bridge

@@ -46,6 +46,8 @@ UU コントローラー -> Wine 上の UU -> 入力ブローカー -> SDL FreeR
 - [リバースエンジニアリング記録](../docs/reverse-engineering.md)
 - [セキュリティ](../docs/security.md)
 - [トラブルシューティング](../docs/troubleshooting.md)
+- [Ubuntu ネイティブ端末](../docs/native-ubuntu-terminal.md)
+- [SSH エイリアスと2台間のポート転送](../docs/ssh-and-port-mapping.md)
 
 パスワード、トークン、デバイス ID、UU 実行ファイル、個人ログはコミット
 しません。このプロジェクトは [The Art of Lazying](https://lazying.art)

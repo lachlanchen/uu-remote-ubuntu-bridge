@@ -56,6 +56,8 @@ UU controller -> UU in Wine -> input broker -> SDL FreeRDP
 - [سجل الهندسة العكسية](../docs/reverse-engineering.md)
 - [الأمان](../docs/security.md)
 - [استكشاف الأخطاء](../docs/troubleshooting.md)
+- [طرفية Ubuntu الأصلية](../docs/native-ubuntu-terminal.md)
+- [أسماء SSH المختصرة وتعيين المنافذ بين جهازين](../docs/ssh-and-port-mapping.md)
 
 لا يحتوي المستودع على كلمات مرور أو رموز حساب أو معرفات أجهزة أو ملفات UU
 التنفيذية أو سجلات خاصة. المشروع جزء من

@@ -45,6 +45,8 @@ UU 컨트롤러 -> Wine의 UU -> 입력 브로커 -> SDL FreeRDP
 - [리버스 엔지니어링 기록](../docs/reverse-engineering.md)
 - [보안](../docs/security.md)
 - [문제 해결](../docs/troubleshooting.md)
+- [Ubuntu 네이티브 터미널](../docs/native-ubuntu-terminal.md)
+- [SSH 별칭과 두 컴퓨터 간 포트 매핑](../docs/ssh-and-port-mapping.md)
 
 비밀번호, 토큰, 장치 ID, UU 실행 파일 또는 개인 로그는 저장소에 커밋하지
 않습니다. 이 프로젝트는 [The Art of Lazying](https://lazying.art)의 일부입니다.

@@ -49,6 +49,8 @@ geprüft und eine Wegwerfkopie getestet wurde.
 - [Reverse-Engineering-Protokoll](../docs/reverse-engineering.md)
 - [Sicherheit](../docs/security.md)
 - [Fehlerbehebung](../docs/troubleshooting.md)
+- [Natives Ubuntu-Terminal](../docs/native-ubuntu-terminal.md)
+- [SSH-Aliase und Portweiterleitung zwischen zwei Rechnern](../docs/ssh-and-port-mapping.md)
 
 Passwörter, Token, Gerätekennungen, UU-Programme und private Protokolle werden
 nicht eingecheckt. Das Projekt gehört zu

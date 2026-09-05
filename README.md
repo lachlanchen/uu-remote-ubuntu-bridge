@@ -587,6 +587,8 @@ ID, raw production log, screenshot, or private desktop content is committed.
 - [Reusable login-preserving upgrade](docs/reusable-upgrade.md)
 - [Automated repair agent handoff](docs/automated-repair-agent-handoff.md)
 - [UU controller CLI and remote agent](docs/controller-agent.md)
+- [Native Ubuntu terminal](docs/native-ubuntu-terminal.md)
+- [SSH aliases and two-host port mapping](docs/ssh-and-port-mapping.md)
 - [Mobile-keyboard parity handoff](docs/mobile-keyboard-parity-handoff.md)
 - [Adaptive keyboard relays across UU, RDP, and VNC](docs/adaptive-keyboard-relays.md)
 - [macOS current-desktop access](docs/macos-current-desktop.md)

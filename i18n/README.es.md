@@ -47,6 +47,8 @@ probar una copia desechable.
 - [Registro exacto de ingeniería inversa](../docs/reverse-engineering.md)
 - [Seguridad](../docs/security.md)
 - [Solución de problemas](../docs/troubleshooting.md)
+- [Terminal nativo de Ubuntu](../docs/native-ubuntu-terminal.md)
+- [Alias SSH y mapeo de puertos entre dos equipos](../docs/ssh-and-port-mapping.md)
 
 El repositorio no incluye contraseñas, tokens, identificadores de dispositivo,
 ejecutables de UU ni registros privados. Forma parte de

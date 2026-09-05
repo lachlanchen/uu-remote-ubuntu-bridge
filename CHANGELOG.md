@@ -39,6 +39,12 @@ locked by the release manifest.
 
 ### Added
 
+- a dependency-light `uu-ssh` helper for dedicated keys, persistent OpenSSH
+  aliases, mapped-port diagnostics, native UU terminal shortcuts, and opt-in
+  reverse SSH forwarding; real Ubuntu-to-Ubuntu key login was verified through
+  UU's existing TCP mapping without changing desktop/input code, and the
+  takeover/availability limitation is explicitly documented
+
 - hash-bound static compatibility support for UU `4.39.1.1375` and
   `4.39.2.1561`, including a
   capability-free Bubblewrap staging backend and semantic review of the

@@ -45,6 +45,8 @@ UU 控制端 -> Wine 中的 UU -> 输入代理 -> SDL FreeRDP
 - [精确逆向工程记录](../docs/reverse-engineering.md)
 - [安全边界](../docs/security.md)
 - [故障排查](../docs/troubleshooting.md)
+- [原生 Ubuntu 终端](../docs/native-ubuntu-terminal.md)
+- [SSH 别名与双机端口映射](../docs/ssh-and-port-mapping.md)
 
 仓库不包含密码、令牌、设备标识、网易可执行文件或私人日志。本项目属于
 [The Art of Lazying](https://lazying.art)。

@@ -45,6 +45,8 @@ PE 對應、語意地標、候選簽章和定點反組譯，但在逐項審閱�
 - [精確逆向工程記錄](../docs/reverse-engineering.md)
 - [安全邊界](../docs/security.md)
 - [疑難排解](../docs/troubleshooting.md)
+- [原生 Ubuntu 終端機](../docs/native-ubuntu-terminal.md)
+- [SSH 別名與雙機連接埠對應](../docs/ssh-and-port-mapping.md)
 
 儲存庫不包含密碼、權杖、裝置識別碼、網易執行檔或私人日誌。本專案屬於
 [The Art of Lazying](https://lazying.art)。
