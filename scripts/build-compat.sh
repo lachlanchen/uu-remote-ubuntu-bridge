@@ -37,6 +37,10 @@ mkdir -p "$output_dir"
 "$cc" "${common[@]}" "${pe_link[@]}" -municode \
     -o "$output_dir/uu-service-control.exe" \
     "$repo_dir/src/uu_service_control.c" -ladvapi32
+"$cc" "${common[@]}" "${pe_link[@]}" -municode \
+    -I "$repo_dir/src" \
+    -o "$output_dir/uu-wine-clipboard-bridge.exe" \
+    "$repo_dir/src/uu_wine_clipboard_bridge.c" -lws2_32
 "$cc" "${common[@]}" "${pe_link[@]}" -I "$repo_dir/src" \
     -o "$output_dir/uu-terminal-proxy.exe" \
     "$repo_dir/src/uu_terminal_proxy.c" -lws2_32
@@ -53,6 +57,9 @@ mkdir -p "$output_dir"
     -o "$output_dir/uu-x11-input" \
     "$repo_dir/src/uu_x11_input.c" -ldl
 "$host_cc" "${common[@]}" -I "$repo_dir/src" \
+    -o "$output_dir/uu-x11-clipboard" \
+    "$repo_dir/src/uu_x11_clipboard.c"
+"$host_cc" "${common[@]}" -I "$repo_dir/src" \
     -o "$output_dir/uu-terminal-bridge" \
     "$repo_dir/src/uu_terminal_bridge.c" -lutil
 
@@ -62,12 +69,14 @@ mkdir -p "$output_dir"
     "$output_dir/uu-input-broker.exe" \
     "$output_dir/uu-injector.exe" \
     "$output_dir/uu-service-control.exe" \
+    "$output_dir/uu-wine-clipboard-bridge.exe" \
     "$output_dir/uu-terminal-proxy.exe" \
     "$output_dir/uu-healthd-stub.exe" \
     "$output_dir/winpr-sspi-shim.dll"
 "$host_strip" \
     "$output_dir/uu-network-filter.so" \
     "$output_dir/uu-x11-input" \
+    "$output_dir/uu-x11-clipboard" \
     "$output_dir/uu-terminal-bridge"
 
 rm -f "$output_dir/winlogon.exe" "$output_dir/winlogon.exe.so"

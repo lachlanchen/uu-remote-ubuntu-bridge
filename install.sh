@@ -682,12 +682,15 @@ install -m 0755 \
     "$compat_build/uu-input-broker.exe" \
     "$compat_build/uu-injector.exe" \
     "$compat_build/uu-service-control.exe" \
+    "$compat_build/uu-wine-clipboard-bridge.exe" \
     "$compat_build/uu-terminal-proxy.exe" \
     "$wine_prefix/compat/"
 install -m 0755 "$compat_build/uu-network-filter.so" \
     "$wine_prefix/compat/uu-network-filter.so"
 install -m 0755 "$compat_build/uu-x11-input" \
     "$wine_prefix/compat/uu-x11-input"
+install -m 0755 "$compat_build/uu-x11-clipboard" \
+    "$wine_prefix/compat/uu-x11-clipboard"
 install -m 0755 "$compat_build/uu-terminal-bridge" \
     "$wine_prefix/compat/uu-terminal-bridge"
 install -m 0755 "$compat_build/uu-terminal-proxy.exe" \
