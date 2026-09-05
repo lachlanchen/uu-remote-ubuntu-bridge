@@ -271,6 +271,16 @@ desktop to Ubuntu while blocking the reverse target-to-private direction.
 `SendPrimary=0` avoids stale selected text, and the receive-only server plus
 `ServerCutText=0` prevent semantic target text from feeding back into the VNC
 viewer and being pasted again.
+
+Some UU controllers publish received desktop text only to GameViewer's Win32
+clipboard under Wine, without creating an X11 selection on the private
+display. For that case, a separate one-way companion accepts only
+`CF_UNICODETEXT` whose clipboard owner is `GameViewer.exe`, then sends the
+bounded UTF-8 value over an authenticated loopback socket to a native helper.
+The helper owns `CLIPBOARD` and `PRIMARY` on the selected physical X11 desktop;
+it never reads the host clipboard or emits a paste key. Images, rich text, and
+files are deliberately ignored. This preserves `ServerCutText=0` and the
+receive-only VNC boundary while allowing controller-to-Ubuntu text paste.
 See [semantic phone text and clipboard relay](docs/semantic-text-and-clipboard.md).
 
 On the validated XRDP workstation, the first live direct-UU run produced 256
@@ -288,6 +298,7 @@ touching the live desktop:
 ./scripts/test-rdp-semantic-text.sh
 ./scripts/test-x11-phone-text.sh
 ./scripts/test-x11-clipboard-text.sh
+./scripts/test-controller-clipboard.sh
 ```
 
 The companion mouse acceptance sends absolute movement and a complete click

@@ -704,7 +704,26 @@ class RuntimeScriptTests(unittest.TestCase):
         launcher = (REPOSITORY / "scripts" / "uu-remote-bridge").read_text()
 
         self.assertIn("+clipboard", launcher)
-        self.assertNotIn("-clipboard", launcher)
+        self.assertNotIn("\n        -clipboard \\\n", launcher)
+
+    def test_controller_clipboard_bridge_is_one_way_and_owner_scoped(self):
+        launcher = (REPOSITORY / "scripts" / "uu-remote-bridge").read_text()
+        companion = (
+            REPOSITORY / "src" / "uu_wine_clipboard_bridge.c"
+        ).read_text()
+        listener = (REPOSITORY / "src" / "uu_x11_clipboard.c").read_text()
+
+        self.assertIn('L"GameViewer.exe"', companion)
+        self.assertIn("GetClipboardOwner()", companion)
+        self.assertIn("GetClipboardData(CF_UNICODETEXT)", companion)
+        self.assertIn("INADDR_LOOPBACK", companion)
+        self.assertIn("INADDR_LOOPBACK", listener)
+        self.assertIn('start_owner("CLIPBOARD"', listener)
+        self.assertIn('start_owner("PRIMARY"', listener)
+        self.assertNotIn("SetClipboardData", listener)
+        self.assertNotIn("SendInput", companion + listener)
+        self.assertIn("-seldir recv", launcher)
+        self.assertIn("-ServerCutText=0", launcher)
 
     def test_opt_in_cursor_guard_uses_absolute_ungrabbed_mouse(self):
         launcher = (REPOSITORY / "scripts" / "uu-remote-bridge").read_text()

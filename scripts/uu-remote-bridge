@@ -145,6 +145,8 @@ cursor_reader_guard_log="$WINEPREFIX/drive_c/users/$bridge_user/AppData/Local/Te
 input_bridge_dll="$compat_dir/uu-input-bridge.dll"
 input_broker_exe="$compat_dir/uu-input-broker.exe"
 x11_input_helper="$compat_dir/uu-x11-input"
+x11_clipboard_helper="$compat_dir/uu-x11-clipboard"
+wine_clipboard_bridge_exe="$compat_dir/uu-wine-clipboard-bridge.exe"
 network_filter="$compat_dir/uu-network-filter.so"
 input_injector_exe="$compat_dir/uu-injector.exe"
 service_control_exe="$compat_dir/uu-service-control.exe"
@@ -155,6 +157,7 @@ terminal_proxy_exe="$uu_app_dir/bin/powershell.exe"
 terminal_config_file="$uu_app_dir/bin/uu-terminal-bridge.runtime"
 xauth_file="$runtime_dir/Xauthority"
 x11_input_ready_file="$runtime_dir/x11-input.port"
+x11_clipboard_ready_file="$runtime_dir/x11-clipboard.port"
 terminal_ready_file="$runtime_dir/terminal.port"
 private_display_file="$runtime_dir/private-display"
 console_focus_file="$runtime_dir/console-focus"
@@ -175,6 +178,8 @@ vncviewer_pid=""
 winlogon_pid=""
 input_broker_pid=""
 x11_input_pid=""
+x11_clipboard_pid=""
+wine_clipboard_bridge_pid=""
 terminal_bridge_pid=""
 server_supervisor_pid=""
 grd_user_service_was_active=false
@@ -193,6 +198,8 @@ desktop_vnc_port=""
 cursor_size=""
 x11_input_port=""
 x11_input_token=""
+x11_clipboard_port=""
+x11_clipboard_token=""
 terminal_bridge_port=""
 terminal_bridge_token=""
 
@@ -395,6 +402,8 @@ cleanup() {
         "$server_supervisor_pid" \
         "$input_broker_pid" \
         "$x11_input_pid" \
+        "$wine_clipboard_bridge_pid" \
+        "$x11_clipboard_pid" \
         "$terminal_bridge_pid" \
         "$winlogon_pid" \
         "$vncviewer_pid" \
@@ -414,6 +423,8 @@ cleanup() {
             "$server_supervisor_pid" \
             "$input_broker_pid" \
             "$x11_input_pid" \
+            "$wine_clipboard_bridge_pid" \
+            "$x11_clipboard_pid" \
             "$terminal_bridge_pid" \
             "$winlogon_pid" \
             "$vncviewer_pid" \
@@ -435,6 +446,8 @@ cleanup() {
         "$server_supervisor_pid" \
         "$input_broker_pid" \
         "$x11_input_pid" \
+        "$wine_clipboard_bridge_pid" \
+        "$x11_clipboard_pid" \
         "$terminal_bridge_pid" \
         "$winlogon_pid" \
         "$vncviewer_pid" \
@@ -471,6 +484,7 @@ cleanup() {
     rm -f \
         "$xauth_file" \
         "$x11_input_ready_file" \
+        "$x11_clipboard_ready_file" \
         "$terminal_ready_file" \
         "$private_display_file" \
         "$console_focus_file"
@@ -919,6 +933,82 @@ start_x11_input_helper() {
     rm -f "$x11_input_ready_file"
 }
 
+start_x11_clipboard_helper() {
+    local selected_xauthority
+
+    if [[ ! -x "$x11_clipboard_helper" ]]; then
+        log 'The optional one-way X11 clipboard helper is missing; retaining the existing clipboard behavior.'
+        return 0
+    fi
+    if [[ "$desktop_session_type" != x11 || -z "$desktop_display" ]]; then
+        log "One-way Mac clipboard forwarding requires the selected physical X11 desktop; selected ${desktop_session_type:-unknown}."
+        return 0
+    fi
+    selected_xauthority="$desktop_xauthority"
+    if [[ -z "$selected_xauthority" && -f "$HOME/.Xauthority" ]]; then
+        selected_xauthority="$HOME/.Xauthority"
+    fi
+    if ! /usr/bin/env DISPLAY="$desktop_display" \
+        XAUTHORITY="$selected_xauthority" \
+        /usr/bin/xdpyinfo >/dev/null 2>&1; then
+        log 'The target desktop clipboard authorization could not be verified; retaining the existing clipboard behavior.'
+        return 0
+    fi
+
+    rm -f "$x11_clipboard_ready_file"
+    x11_clipboard_token="$(/usr/bin/openssl rand -hex 32)"
+    /usr/bin/env \
+        DISPLAY="$desktop_display" \
+        XAUTHORITY="$selected_xauthority" \
+        UURB_X11_CLIPBOARD_TOKEN="$x11_clipboard_token" \
+        "$x11_clipboard_helper" --ready-file "$x11_clipboard_ready_file" \
+        >>"$state_dir/x11-clipboard.log" 2>&1 &
+    x11_clipboard_pid=$!
+
+    for _ in {1..50}; do
+        if [[ -s "$x11_clipboard_ready_file" ]] && \
+           kill -0 "$x11_clipboard_pid" >/dev/null 2>&1; then
+            read -r x11_clipboard_port <"$x11_clipboard_ready_file"
+            if [[ "$x11_clipboard_port" =~ ^[1-9][0-9]{0,4}$ ]] && \
+               ((x11_clipboard_port <= 65535)); then
+                log "One-way Wine-to-$desktop_display text clipboard helper is ready."
+                return 0
+            fi
+        fi
+        if ! kill -0 "$x11_clipboard_pid" >/dev/null 2>&1; then
+            break
+        fi
+        sleep 0.1
+    done
+
+    log 'The optional one-way X11 clipboard helper did not become ready; retaining the existing clipboard behavior.'
+    kill "$x11_clipboard_pid" >/dev/null 2>&1 || true
+    x11_clipboard_pid=""
+    x11_clipboard_port=""
+    x11_clipboard_token=""
+    rm -f "$x11_clipboard_ready_file"
+}
+
+start_wine_clipboard_bridge() {
+    if [[ -z "$x11_clipboard_port" ||
+          ! -f "$wine_clipboard_bridge_exe" ]]; then
+        return 0
+    fi
+    /usr/bin/env \
+        "UURB_X11_CLIPBOARD_PORT=$x11_clipboard_port" \
+        "UURB_X11_CLIPBOARD_TOKEN=$x11_clipboard_token" \
+        /opt/wine-stable/bin/wine "$wine_clipboard_bridge_exe" \
+        >>"$state_dir/wine-clipboard-bridge.log" 2>&1 &
+    wine_clipboard_bridge_pid=$!
+    sleep 0.2
+    if ! kill -0 "$wine_clipboard_bridge_pid" >/dev/null 2>&1; then
+        log 'The optional Wine clipboard companion exited during startup; retaining the existing clipboard behavior.'
+        wine_clipboard_bridge_pid=""
+        return 0
+    fi
+    log 'Mac/UU clipboard forwarding is active: GameViewer CF_UNICODETEXT -> physical X11 only.'
+}
+
 start_terminal_bridge() {
     local config_temporary
 
@@ -1041,6 +1131,7 @@ mv "$private_display_tmp" "$private_display_file"
 /usr/bin/openbox >>"$state_dir/openbox.log" 2>&1 &
 openbox_pid=$!
 start_x11_input_helper
+start_x11_clipboard_helper
 
 if [[ "$desktop_relay" == rdp && ! -f "$freerdp_exe" ]]; then
     log 'The Windows FreeRDP client is missing from the Wine prefix.'
@@ -1053,6 +1144,7 @@ fi
 
 if [[ ! -f "$input_bridge_dll" || ! -f "$input_broker_exe" ||
       ! -f "$input_injector_exe" || ! -f "$service_control_exe" ||
+      ! -f "$wine_clipboard_bridge_exe" || ! -x "$x11_clipboard_helper" ||
       ! -x "$terminal_bridge_helper" ||
       ! -f "$terminal_proxy_compat" ||
       ! -f "$terminal_proxy_exe" ]] ||
@@ -1160,6 +1252,7 @@ if ! /opt/wine-stable/bin/wine "$input_injector_exe" \
     log 'Could not inject the UU input compatibility bridge.'
     exit 1
 fi
+start_wine_clipboard_bridge
 if [[ "$cursor_guard_setting" == on ]]; then
     cursor_guard_windows_path="$(
         /opt/wine-stable/bin/winepath -w "$cursor_guard_dll"
@@ -1503,7 +1596,7 @@ supervise_server() {
 supervise_server "$server_pid" &
 server_supervisor_pid=$!
 
-log "UU Remote and the $desktop_relay desktop relay share DISPLAY=$DISPLAY; physical keyboard route=$active_keyboard_route; semantic phone text helper=$([[ -n "$x11_input_port" ]] && printf active || printf unavailable)."
+log "UU Remote and the $desktop_relay desktop relay share DISPLAY=$DISPLAY; physical keyboard route=$active_keyboard_route; semantic phone text helper=$([[ -n "$x11_input_port" ]] && printf active || printf unavailable); one-way Mac clipboard=$([[ -n "$wine_clipboard_bridge_pid" ]] && printf active || printf unavailable)."
 
 set +e
 critical_pids=(
