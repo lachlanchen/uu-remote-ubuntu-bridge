@@ -90,6 +90,22 @@ proof that no inbound desktop controller is attached. These observations
 supersede any interpretation of the 30-round pass as an all-day reliability
 guarantee.
 
+The user subsequently reported that some UU connections may have been closed
+manually. Those drops therefore do not prove a spontaneous vendor timeout or
+bridge defect. The actual saved Port Mapping panel was inspected: the rule
+was still enabled, its header said connection failed, and one Retry Connection
+click explicitly required taking over an already-controlled device. Cancel
+preserved that controller. This establishes the current ownership conflict,
+not the trigger of every historical drop. A minimized window still existing
+is not proof that its mapping connection remains active.
+
+Prefer a real mapping-panel connection over relying on a terminal-status query
+as an undocumented warm-up. If the selected destination is already controlled,
+coordinate with its owner; a direct-only alternative is to reverse the native
+mapping direction and create one SSH return forward. Test that topology rather
+than assuming it bypasses ownership policy. Never silently replace the user's
+preferred direct transport with a cloud relay.
+
 After a drop, check both listeners, confirm the previous reverse process has
 exited, and restart **only the one owned forward** after the UU mapping works
 again. Do not run a second native mapping on its return port, restart RDP,
