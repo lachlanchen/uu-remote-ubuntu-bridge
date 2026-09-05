@@ -2,6 +2,13 @@
 
 ## What works, and what it is not
 
+**Latest controlled test, 2026-09-05:** direct two-Ubuntu SSH and file transfer
+worked in both directions, without Windows or Mac. A subsequent user-confirmed
+UU desktop takeover disconnected the same mapping and its return forward.
+RDP/VNC and the logged-in Ubuntu applications stayed intact. Thus direct
+transport is verified; simultaneous independent UU desktop control is **not
+supported by the tested ownership behavior**. See the acceptance record below.
+
 UU's **Port mapping / 端口映射** can forward a local TCP port to an SSH
 server on a remote Ubuntu bridge host. In the 2026-09-05 live test, a
 UU 4.39.2.1561 controller under Wine mapped local `127.0.0.1:22709` to
@@ -113,6 +120,55 @@ connection while retaining RDP/VNC and the logged-in Linux desktop, then test
 direct mapping with the control slot free. That is not a simultaneous-control
 fix: a later UU takeover can still invalidate the carrier. Never log out,
 terminate applications or force takeover merely to obtain a passing SSH test.
+
+#### Slot-free direct test and real desktop takeover
+
+The user subsequently switched to another desktop transport and explicitly
+allowed a coordinated test. The peer opened the actual Ubuntu endpoint's
+Port Mapping panel. With the old viewer released, there was no takeover prompt;
+an existing saved loopback rule connected successfully. Reusing it avoided
+creating a duplicate scratch rule:
+
+```text
+Ubuntu B:127.0.0.1:22022 -- UU Port Mapping --> Ubuntu A:127.0.0.1:22
+Ubuntu B: one SSH -R    --> Ubuntu A:127.0.0.1:22709 --> Ubuntu B:22
+```
+
+Both sides verified the pinned native SSH identities and their own key-only
+authentication. Five fresh shells preserved UTF-8 and requested exit statuses
+`0, 7, 0, 17, 0`. The workstation independently checked a byte-exact
+237610-byte binary/Unicode round trip, an actual SCP upload/download, and a
+nested return command through the peer's `uu-shell` alias. The mapping panel
+remained open behind the restored desktop relay; one owned reverse forward
+replaced the previously dead Windows-assisted forward. No new Wine/network
+patch, account, duplicate service, or desktop restart was necessary.
+
+The user then actually took control of Ubuntu A through direct UU. By19:59:46
+local time, the workstation observed its return listener absent. The peer
+independently saw its carrier listener absent, the retained reverse SSH exit
+after a remote close, and the Ubuntu device page reporting another controller.
+The user confirmed the takeover. This controlled event demonstrates the
+coexistence failure in this setup, without attributing every historical drop
+to the same cause. Neither bridge nor either Linux desktop was restarted.
+
+Keep these outcomes separate:
+
+- **Direct two-host transport:** verified; the Windows intermediary is removed.
+- **Both shell directions:** verified while the one mapping remains connected.
+- **RDP/VNC desktop plus mapping:** remained usable during the test.
+- **Independent direct-UU viewer plus mapping to the same device:** failed
+  the actual takeover test. General/Security settings exposed no concurrent
+  ownership switch in the inspected client.
+- **Unattended/reboot reconnection:** not established by this test.
+
+When a viewer takes over, preserve it. Do not reclaim control from a health
+check, restart XRDP/GNOME, or mask the loss with another forwarding loop.
+After the user explicitly releases that viewer, one coordinated mapping-panel
+reconnect followed by replacement of the confirmed-dead owned return forward
+can restore the verified route. Restoration is not a simultaneous-control fix.
+An independent network or a genuinely isolated second UU device would require
+a separate design and authorization; copying login/device state into another
+prefix is not an established or safe concurrency solution.
 
 Removing the Windows neighbor is a separate requirement from surviving UU
 desktop takeovers. A direct Ubuntu-to-Ubuntu UU mapping can remove that third
