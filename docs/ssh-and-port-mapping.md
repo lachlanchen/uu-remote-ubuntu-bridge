@@ -113,6 +113,43 @@ weaken SSH authentication, or add an unbounded reconnect/takeover loop.
 
 ## Set up the SSH alias
 
+### Inspect the existing mapping panel without fighting relay focus
+
+The bridge deliberately restores its desktop relay focus once per second.
+Use the existing console focus lease for a brief management operation, not a
+service stop or a loop that fights the supervisor:
+
+```bash
+uu-remote-console focus-client
+# Inspect the existing UU Port Mapping window on the private display.
+# If it requests takeover of another controller, cancel.
+uu-remote-console release-client
+```
+
+Always release the lease, including after errors. For automation use an EXIT
+trap around the inspection, and capture the original active window ID for an
+additional restore fallback. The helper discovers the bridge display; do not
+guess a display number or type into the user's project terminal. These commands
+do not create a noVNC server or another desktop. Keep the actual mapping window
+open behind the restored relay while testing its lifetime; do not equate Close
+with Minimize or assume either preserves the connection without a live test.
+
+The updated helper filters out transient UU toasts and restores either the
+SDL/FreeRDP `Ubuntu-Desktop-Relay` or the existing loopback RealVNC relay.
+Older versions searched only for the SDL title, so `release-client` could
+return nonzero on the native VNC profile even though it removed the lease.
+Three isolated mocked-X-command tests cover both relays and lease cleanup
+when the relay is missing; they never activate the real desktop.
+
+An existing installation can update only this helper without restarting UU:
+
+```bash
+# From the reviewed repo checkout; retain a private copy of the old helper first.
+install -m 0755 scripts/uu-remote-console "$HOME/.local/bin/uu-remote-console"
+```
+
+### Configure the native SSH alias
+
 The normal bridge installer now installs `uu-ssh`. To add only this helper to
 an already healthy bridge, without rebuilding/restarting its runtime:
 

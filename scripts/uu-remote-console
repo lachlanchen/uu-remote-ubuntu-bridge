@@ -148,7 +148,11 @@ find_client_window() {
                 XAUTHORITY="$bridge_xauthority" \
                 /usr/bin/xdotool getwindowname "$window" 2>/dev/null || true
         )"
-        if [[ "$name" == '网易UU远程' || "$name" == *UU* ]]; then
+        # Transient UU toasts share the title but are not managed windows.
+        if [[ "$name" == '网易UU远程' || "$name" == *UU* ]] &&
+           /usr/bin/env DISPLAY="$bridge_display" XAUTHORITY="$bridge_xauthority" \
+               /usr/bin/xprop -id "$window" WM_STATE 2>/dev/null | \
+               /usr/bin/grep -q 'WM_STATE(WM_STATE)'; then
             printf '%s\n' "$window"
         fi
     done < <(
@@ -160,12 +164,25 @@ find_client_window() {
 }
 
 find_relay_window() {
+    local relay=""
     discover_bridge || return 1
-    /usr/bin/env DISPLAY="$bridge_display" \
-        XAUTHORITY="$bridge_xauthority" \
-        /usr/bin/xdotool search --onlyvisible \
-            --name '^Ubuntu-Desktop-Relay$' 2>/dev/null |
-        /usr/bin/tail -n 1
+    relay="$(
+        /usr/bin/env DISPLAY="$bridge_display" XAUTHORITY="$bridge_xauthority" \
+            /usr/bin/xdotool search --onlyvisible \
+                --name '^Ubuntu-Desktop-Relay$' 2>/dev/null | \
+            /usr/bin/tail -n 1 || true
+    )"
+    if [[ -z "$relay" ]]; then
+        relay="$(
+            /usr/bin/env DISPLAY="$bridge_display" XAUTHORITY="$bridge_xauthority" \
+                /usr/bin/xdotool search --onlyvisible --all \
+                    --class 'realvnc-vncviewer' \
+                    --name '^127\.0\.0\.1:.* - RealVNC Viewer$' 2>/dev/null | \
+                /usr/bin/tail -n 1 || true
+        )"
+    fi
+    [[ -n "$relay" ]] || return 1
+    printf '%s\n' "$relay"
 }
 
 focus_client() {
@@ -197,13 +214,7 @@ release_client() {
             /usr/bin/xdotool windowminimize "$client_window" \
                 >/dev/null 2>&1 || true
     fi
-    relay_window="$(
-        /usr/bin/env DISPLAY="$bridge_display" \
-            XAUTHORITY="$bridge_xauthority" \
-            /usr/bin/xdotool search --onlyvisible \
-                --name '^Ubuntu-Desktop-Relay$' 2>/dev/null | \
-            /usr/bin/tail -n 1
-    )"
+    relay_window="$(find_relay_window || true)"
     if [[ -n "$relay_window" ]]; then
         /usr/bin/env DISPLAY="$bridge_display" \
             XAUTHORITY="$bridge_xauthority" \
@@ -767,7 +778,7 @@ case "${1:-open}" in
         release_client
         ;;
     *)
-        printf 'usage: uu-remote-console [window|open|serve|relay|relay-port|status|stop|url]\n' \
+        printf 'usage: uu-remote-console [window|open|serve|relay|relay-port|status|stop|url|focus-client|release-client]\n' \
             >&2
         exit 2
         ;;
