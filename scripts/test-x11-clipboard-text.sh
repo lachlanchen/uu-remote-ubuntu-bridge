@@ -242,6 +242,11 @@ DISPLAY="$display" WINEPREFIX="$wine_prefix" WINEDEBUG=-all \
 
 DISPLAY="$display" WINEPREFIX="$wine_prefix" WINEDEBUG=-all \
     WINEDLLOVERRIDES='mscoree,mshtml=' \
+    /opt/wine-stable/bin/wine \
+    "$temporary_dir/uu-clipboard-text-probe.exe" language-revisions
+
+DISPLAY="$display" WINEPREFIX="$wine_prefix" WINEDEBUG=-all \
+    WINEDLLOVERRIDES='mscoree,mshtml=' \
     UU_INPUT_BRIDGE_LOG="$bridge_log_windows" \
     /opt/wine-stable/bin/wine "$temporary_dir/uu-long-text-probe.exe" \
     "$bridge_dll_windows" unicode
@@ -275,12 +280,13 @@ from pathlib import Path
 import sys
 
 observed = Path(sys.argv[1]).read_text(encoding="utf-8").rstrip("\n")
-expected = "existing message:修订完成中文，符号：‘’“”！？@&?🙂长句完成" + "你" * 1000
+expected = "existing message:修订完成中文，符号：‘’“”！？@&?🙂长句完成跨语完成" + "你" * 1000
 if observed != expected:
     raise SystemExit("prior text or multiline clipboard text changed")
 print("clipboard-text=unicode+multiline revision exact")
 print("prior-message=preserved while owned text was revised")
 print("mobile-symbols=Chinese+smart-punctuation+emoji exact")
+print("language-revisions=ASCII+CJK+interleaved edits preserve earlier text")
 PY
 
 if ! rg -q \

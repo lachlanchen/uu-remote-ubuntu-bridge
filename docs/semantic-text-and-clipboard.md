@@ -15,6 +15,11 @@ CJK text to the current XKB layout rejects characters that have no key chord.
   clipboard text plus a synthesized `Shift+Insert` paste;
 - Backspace remains an editing key and is never converted to clipboard data.
 
+In `auto` mode, a Unicode composition batch containing Backspace uses the
+bounded semantic editing path even if its replacement is entirely ASCII.
+Plain ASCII insertion keeps its fast route, and a physical Backspace without
+Unicode text remains an ordinary key.
+
 The clipboard path is available when the selected desktop exposes an
 authorized X11 or Xwayland display and the native helper is active. This also
 works with the default RDP relay. In that split mode, the helper owns the
@@ -152,6 +157,40 @@ Retain the established regression tests as separate boundaries:
 The first proves the fast representable-text route, including one 2,000-record
 call delivered in exact order. The second proves physical symbols and CJK
 keysyms through the nested VNC keyboard path.
+
+## Mixed-language revision regression
+
+A follow-up regression test on 5 September reproduced another way to lose
+earlier text, even with the clipboard handoff and socket-deadline fixes below.
+Every broker request returned its full count with error0, but the final editor
+contents were wrong: the preceding four-character Chinese phrase disappeared.
+
+The causes were in composition accounting, not the physical keyboard layout:
+
+1. An ASCII-only replacement after Backspaces took the fast key route. That
+   path neither bounded the deletions against recent composition text nor
+   subtracted them from the allowance. Switching the replacement language to
+   Chinese changed deletion behavior unexpectedly.
+2. Within one semantic request, inserted characters were credited only after
+   all events were processed. A text/Backspace/text sequence could therefore
+   drop a legitimate edit, then grant too much allowance to a later revision.
+
+The repair keeps all Unicode editing batches on the same bounded semantic
+path, irrespective of replacement language. Prospective insert credit follows
+event order and is committed only when the request's segments succeed. Plain
+ASCII typing, physical keys, mouse routing, the two-second activity window,
+and the explicit legacy `keys` mode are unchanged.
+
+`test-x11-clipboard-text.sh` includes `language-revisions`: Chinese → ASCII →
+Chinese, excess stale Backspaces, and interleaved insert/delete operations.
+It checks the complete editor contents, including text written by earlier
+clients. Checking only transport success would miss this regression.
+
+These are bounded GUI edits, not an atomic editor transaction. The bridge
+cannot infer every application's selection, cursor movement from another
+client, grapheme deletion rules, or phone IME composition boundaries. It never
+replays ambiguous input. A real controller/app dictation test is still needed
+after deployment; a passing fixture is not a claim that every phone is fixed.
 
 ## Live diagnosis
 

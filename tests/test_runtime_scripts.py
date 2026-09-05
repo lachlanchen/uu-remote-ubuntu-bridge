@@ -869,6 +869,19 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("selection_gap_guard.py", fixture)
         self.assertIn("long-revision", fixture)
 
+    def test_semantic_revision_accounting_does_not_depend_on_language(self):
+        broker = (REPOSITORY / "src/uu_input_broker.c").read_text()
+        route = broker[broker.index("static BOOL phone_text_uses_clipboard("):
+                       broker.index("static void reset_semantic_edit_state(")]
+        self.assertIn("input_is_backspace(input)", route)
+        self.assertIn("if (!has_press)", route)
+        commit = broker[broker.index("static x11_route_result send_x11_clipboard_text("):
+                        broker.index("static BOOL append_key_event(")]
+        self.assertIn("credit_semantic_text(&next_state, 1, input)", commit)
+        self.assertNotIn("credit_semantic_text(&next_state, count, inputs)", commit)
+        fixture = (REPOSITORY / "scripts/test-x11-clipboard-text.sh").read_text()
+        self.assertIn("language-revisions", fixture)
+
     def test_direct_x11_input_route_is_opt_in_and_fail_safe(self):
         builder = (REPOSITORY / "scripts" / "build-compat.sh").read_text()
         installer = (REPOSITORY / "install.sh").read_text()

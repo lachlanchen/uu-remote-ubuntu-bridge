@@ -388,6 +388,8 @@ static x11_route_result send_x11_inputs(DWORD count, const INPUT *inputs,
     return send_x11_events(count, events, error);
 }
 
+static BOOL input_is_backspace(const INPUT *input);
+
 static BOOL phone_text_uses_clipboard(DWORD count, const INPUT *inputs)
 {
     DWORD index;
@@ -401,6 +403,12 @@ static BOOL phone_text_uses_clipboard(DWORD count, const INPUT *inputs)
         const INPUT *input = &inputs[index];
         WCHAR character;
 
+        /* An IME revision is an edit regardless of its replacement language.
+         * ASCII replacements must not bypass the same deletion allowance as
+         * CJK. A purely physical Backspace still has no Unicode press and
+         * stays on the ordinary keyboard route. */
+        if (input_is_backspace(input))
+            requires_clipboard = TRUE;
         if (input->type != INPUT_KEYBOARD ||
             (input->ki.dwFlags & KEYEVENTF_UNICODE) == 0)
             continue;
@@ -551,6 +559,11 @@ static x11_route_result send_x11_clipboard_text(
                 event.type = UURB_X11_INPUT_TEXT;
                 event.data = input->ki.wScan;
                 event_is_text = TRUE;
+                /* Credit follows input order. In text/backspace/text batches
+                 * the Backspace can remove this newly inserted character,
+                 * rather than being dropped and over-crediting the next edit.
+                 * This is only a prospective state until all segments pass. */
+                credit_semantic_text(&next_state, 1, input);
             }
         } else {
             if (!input_to_x11_event(input, &event))
@@ -591,7 +604,6 @@ static x11_route_result send_x11_clipboard_text(
             return result;
         }
     }
-    credit_semantic_text(&next_state, count, inputs);
     next_state.updated_ms = GetTickCount64();
     *edit_state = next_state;
     *error = ERROR_SUCCESS;

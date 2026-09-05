@@ -102,6 +102,26 @@ static BOOL send_unicode_text(HANDLE pipe, const WCHAR *text, DWORD length)
     return send_inputs(pipe, inputs, length * 2U);
 }
 
+static BOOL send_revision(HANDLE pipe, DWORD backspaces,
+                          const WCHAR *text, DWORD length)
+{
+    INPUT inputs[2048];
+    DWORD index;
+
+    if (backspaces + length > ARRAYSIZE(inputs) / 2U)
+        return FALSE;
+    ZeroMemory(inputs, sizeof(inputs));
+    for (index = 0; index < backspaces; index++) {
+        inputs[index * 2U].type = INPUT_KEYBOARD;
+        inputs[index * 2U].ki.wVk = VK_BACK;
+        inputs[index * 2U + 1U] = inputs[index * 2U];
+        inputs[index * 2U + 1U].ki.dwFlags = KEYEVENTF_KEYUP;
+    }
+    for (index = 0; index < length; index++)
+        unicode_input_pair(&inputs[(backspaces + index) * 2U], text[index]);
+    return send_inputs(pipe, inputs, (backspaces + length) * 2U);
+}
+
 int main(int argc, char **argv)
 {
     static const WCHAR text[] = {
@@ -123,8 +143,9 @@ int main(int argc, char **argv)
     DWORD index;
 
     if (argc > 2 || (argc == 2 && strcmp(argv[1], "symbols") != 0 &&
+                    strcmp(argv[1], "language-revisions") != 0 &&
                     strcmp(argv[1], "long-revision") != 0)) {
-        fprintf(stderr, "usage: uu-clipboard-text-probe.exe [symbols|long-revision]\n");
+        fprintf(stderr, "usage: uu-clipboard-text-probe.exe [symbols|long-revision|language-revisions]\n");
         return 2;
     }
 
@@ -157,6 +178,30 @@ int main(int argc, char **argv)
         fprintf(stderr, "could not open input broker pipe: %lu\n",
                 (unsigned long)GetLastError());
         return 1;
+    }
+
+    if (argc == 2 && strcmp(argv[1], "language-revisions") == 0) {
+        const WCHAR draft[] = {0x4e2d, 0x6587};
+        const WCHAR english[] = {L'o', L'k'};
+        const WCHAR interleaved[] = {0x4e2d, L'\b', 0x6587};
+        const WCHAR final[] = {0x8de8, 0x8bed, 0x5b8c, 0x6210};
+        BOOL success = send_unicode_text(pipe, draft, ARRAYSIZE(draft));
+
+        /* Stale IME revisions must not erase the unrelated prefix just
+         * because the replacement switched from CJK to ASCII. */
+        if (success)
+            success = send_revision(pipe, 4, english, ARRAYSIZE(english));
+        if (success)
+            success = send_revision(pipe, 4, revised, ARRAYSIZE(revised));
+        /* A single SendInput can insert then delete its own new character.
+         * Credit must follow event order, not be added after all deletions. */
+        if (success)
+            success = send_revision(pipe, 4, interleaved,
+                                    ARRAYSIZE(interleaved));
+        if (success)
+            success = send_revision(pipe, 4, final, ARRAYSIZE(final));
+        CloseHandle(pipe);
+        return success ? 0 : 1;
     }
 
     if (argc == 2 && strcmp(argv[1], "long-revision") == 0) {
