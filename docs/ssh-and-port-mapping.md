@@ -22,6 +22,10 @@ works normally over that TCP stream, including `scp`, `rsync`, and additional
 SSH forwards. Native UU Terminal is a separate feature; see
 [the Ubuntu terminal guide](native-ubuntu-terminal.md).
 
+For durable agent-to-agent handoffs over these SSH aliases, use
+[`uu-link`: private inbox, outbox, and delivery receipts](agent-link.md).
+It requires no extra daemon and never executes message contents.
+
 ### Important: control ownership and availability
 
 The live mapping later became unavailable. Reopening the panel displayed a

@@ -798,6 +798,7 @@ install -m 0755 "$repo_dir/scripts/uu-remote-console" \
     "$HOME/.local/bin/uu-remote-console"
 install -m 0755 "$repo_dir/scripts/uu-agent" "$HOME/.local/bin/uu-agent"
 install -m 0755 "$repo_dir/scripts/uu-ssh" "$HOME/.local/bin/uu-ssh"
+install -m 0755 "$repo_dir/scripts/uu-link" "$HOME/.local/bin/uu-link"
 install -m 0755 "$repo_dir/scripts/upgrade-uu-remote.sh" \
     "$HOME/.local/bin/uu-remote-upgrade"
 install -m 0755 "$repo_dir/scripts/stop-wine-prefix" \

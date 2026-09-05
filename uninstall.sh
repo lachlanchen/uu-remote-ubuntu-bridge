@@ -148,6 +148,7 @@ rm -f \
     "$HOME/.local/bin/uu-remote-upgrade" \
     "$HOME/.local/bin/uu-agent" \
     "$HOME/.local/bin/uu-ssh" \
+    "$HOME/.local/bin/uu-link" \
     "$HOME/.local/libexec/uu-clean-wine-device-registry" \
     "$HOME/.local/libexec/uu-connection-status" \
     "$HOME/.local/libexec/uu-inspect-wine-device-registry.py" \

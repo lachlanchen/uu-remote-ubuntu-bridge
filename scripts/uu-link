@@ -1,0 +1,236 @@
+#!/usr/bin/env python3
+"""Private, receipt-confirmed agent messages over existing uu-ssh aliases.
+
+No daemon, command execution, desktop takeover, or automatic transport recovery.
+"""
+
+import argparse
+from datetime import datetime, timezone
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import socket
+import stat
+import subprocess
+import sys
+import tempfile
+import uuid
+
+
+MAX_TEXT = 65536
+MAX_WIRE = 524288
+REMOTE_RECEIVER = 'exec "$HOME/.local/bin/uu-link" receive'
+
+
+def identifier(value):
+    if not isinstance(value, str) or str(uuid.UUID(value)) != value:
+        raise ValueError("message ID must be a canonical UUID")
+    return value
+
+
+def peer_name(value):
+    if not isinstance(value, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,47}", value):
+        raise ValueError("peer must be an existing uu-ssh peer name")
+    return value
+
+
+def encode(value):
+    return (json.dumps(value, ensure_ascii=True, sort_keys=True) + "\n").encode("ascii")
+
+
+def digest(value):
+    return hashlib.sha256(encode(value)).hexdigest()
+
+
+def validate(message):
+    keys = {"version", "id", "sender", "created", "reply_to", "text"}
+    if not isinstance(message, dict) or set(message) != keys:
+        raise ValueError("invalid message fields")
+    if type(message["version"]) is not int or message["version"] != 1:
+        raise ValueError("unsupported message version")
+    identifier(message["id"])
+    if message["reply_to"] is not None:
+        identifier(message["reply_to"])
+    for key in ("sender", "created", "text"):
+        if not isinstance(message[key], str):
+            raise ValueError(f"{key} must be text")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", message["sender"]):
+        raise ValueError("invalid sender label")
+    if len(message["created"]) > 40 or not message["created"].endswith("+00:00"):
+        raise ValueError("created must be a UTC ISO timestamp")
+    datetime.fromisoformat(message["created"])
+    if not message["text"] or len(message["text"].encode("utf-8")) > MAX_TEXT:
+        raise ValueError("message text must contain 1..65536 UTF-8 bytes")
+    return message
+
+
+def directory(kind):
+    root = Path.home() / ".local/state/uu-link"
+    # Refuse symbolic links through the private store, including its parents.
+    for parent in reversed((root / kind).parents):
+        if parent.is_symlink():
+            raise ValueError(f"symlink in message store path: {parent}")
+    for path in (root, root / kind):
+        if path.is_symlink():
+            raise ValueError(f"symlink in message store: {path}")
+        path.mkdir(mode=0o700, parents=True, exist_ok=True)
+        info = path.stat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+            raise ValueError(f"message directory not owned by this user: {path}")
+        path.chmod(0o700)
+    return root / kind
+
+
+def load(path):
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+            raise ValueError("message must be a regular file owned by this user")
+        if info.st_mode & 0o077:
+            raise ValueError("message file must be private (chmod 600)")
+        data = stream.read(MAX_WIRE + 1)
+    if len(data) > MAX_WIRE:
+        raise ValueError("message envelope too large")
+    return json.loads(data)
+
+
+def store(kind, message_id, value):
+    target = directory(kind) / f"{identifier(message_id)}.json"
+    fd, temporary = tempfile.mkstemp(prefix=".pending-", dir=target.parent)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(encode(value))
+            stream.flush()
+            os.fsync(stream.fileno())
+        try:
+            # Atomic create, never overwrite: concurrent retries deduplicate.
+            os.link(temporary, target)
+        except FileExistsError:
+            if load(target) != value:
+                raise ValueError("message ID already exists with different content")
+        folder_fd = os.open(target.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(folder_fd)
+        finally:
+            os.close(folder_fd)
+    finally:
+        os.unlink(temporary)  # Only our exact mkstemp file; not message history.
+    return target
+
+
+def receive(stream):
+    data = stream.read(MAX_WIRE + 1)
+    if len(data) > MAX_WIRE:
+        raise ValueError("message envelope too large")
+    message = validate(json.loads(data))
+    store("inbox", message["id"], message)
+    return {"id": message["id"], "sha256": digest(message), "stored": True}
+
+
+def prepare(peer, text, reply_to=None):
+    peer = peer_name(peer)
+    profile = Path.home() / ".config/uu-ssh/peers" / f"{peer}.json"
+    if not profile.is_file():
+        raise ValueError(f"configure peer first: uu-ssh add {peer} --port PORT")
+    message = validate({"version": 1, "id": str(uuid.uuid4()),
+                        "sender": socket.gethostname(),
+                        "created": datetime.now(timezone.utc).isoformat(),
+                        "reply_to": reply_to, "text": text})
+    store("outbox", message["id"], {"peer": peer, "message": message})
+    return message["id"]
+
+
+def deliver(message_id):
+    message_id = identifier(message_id)
+    entry = load(directory("outbox") / f"{message_id}.json")
+    peer = peer_name(entry["peer"])
+    message = validate(entry["message"])
+    if message["id"] != message_id:
+        raise ValueError("outbox ID mismatch")
+    expected = {"id": message_id, "sha256": digest(message), "stored": True}
+    receipt = directory("receipts") / f"{message_id}.json"
+    if receipt.exists():
+        if load(receipt) != expected:
+            raise ValueError("receipt mismatch")
+        return expected
+    # Fixed remote command; neither the peer nor message text becomes shell code.
+    command = ["ssh", "-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes",
+               "-o", "PreferredAuthentications=publickey", "-o", "ForwardAgent=no",
+               "-o", "ClearAllForwardings=yes", "-o", "ConnectTimeout=8",
+               f"uu-{peer}", REMOTE_RECEIVER]
+    result = subprocess.run(command, input=encode(message), capture_output=True, timeout=20)
+    if result.returncode:
+        detail = result.stderr.decode("utf-8", errors="replace")[:1000]
+        raise ValueError(f"SSH delivery failed ({result.returncode}): {detail!r}")
+    if json.loads(result.stdout) != expected:
+        raise ValueError("receiver did not confirm this message's ID and digest")
+    store("receipts", message_id, expected)
+    return expected
+
+
+def list_entries(kind, limit):
+    paths = sorted(directory(kind).glob("*.json"),
+                   key=lambda path: path.stat(follow_symlinks=False).st_mtime_ns, reverse=True)
+    result = []
+    for path in paths[:limit]:
+        value = load(path)
+        message = validate(value["message"] if kind == "outbox" else value)
+        row = {key: message[key] for key in ("id", "sender", "created", "reply_to")}
+        row["bytes"] = len(message["text"].encode("utf-8"))
+        if kind == "outbox":
+            row["peer"] = value["peer"]
+            row["receipt_present"] = (directory("receipts") / path.name).is_file()
+        result.append(row)
+    return result
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest="command", required=True)
+    send = sub.add_parser("send", help="read UTF-8 text, save locally, then try SSH once")
+    send.add_argument("peer")
+    send.add_argument("--file", default="-", help="UTF-8 text file; default stdin")
+    send.add_argument("--reply-to")
+    send.add_argument("--queue-only", action="store_true")
+    sub.add_parser("receive", help="SSH receiver: store one JSON envelope, never execute it")
+    retry = sub.add_parser("retry", help="retry exactly one saved message, with deduplication")
+    retry.add_argument("id")
+    for kind in ("inbox", "outbox"):
+        listing = sub.add_parser(kind, help="list private messages (newest first)")
+        listing.add_argument("--limit", type=int, default=20)
+    read = sub.add_parser("read", help="print one inbox envelope as terminal-safe JSON")
+    read.add_argument("id")
+    args = parser.parse_args()
+    if args.command == "send":
+        if args.file == "-":
+            text = sys.stdin.buffer.read(MAX_TEXT + 1)
+        else:
+            with open(args.file, "rb") as stream:
+                text = stream.read(MAX_TEXT + 1)
+        message_id = prepare(args.peer, text.decode("utf-8"), args.reply_to)
+        print(f"Saved {message_id}; retry with: uu-link retry {message_id}", file=sys.stderr)
+        result = {"id": message_id, "queued": True} if args.queue_only else deliver(message_id)
+    elif args.command == "receive":
+        result = receive(sys.stdin.buffer)
+    elif args.command == "retry":
+        result = deliver(args.id)
+    elif args.command in ("inbox", "outbox"):
+        if not 1 <= args.limit <= 1000:
+            raise ValueError("limit must be 1..1000")
+        result = list_entries(args.command, args.limit)
+    else:
+        result = validate(load(directory("inbox") / f"{identifier(args.id)}.json"))
+    # JSON escapes control characters, including terminal escapes in peer text.
+    print(json.dumps(result, ensure_ascii=True, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as error:
+        print(f"uu-link: {error}", file=sys.stderr)
+        sys.exit(1)

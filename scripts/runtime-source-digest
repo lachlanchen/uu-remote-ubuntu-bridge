@@ -23,6 +23,7 @@ runtime_files=(
     scripts/uu-keyring-unlock.py
     scripts/uu-agent
     scripts/uu-ssh
+    scripts/uu-link
     scripts/uu-remote
     scripts/uu-remote-bridge
     scripts/uu-remote-console
