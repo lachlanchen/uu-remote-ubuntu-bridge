@@ -250,7 +250,10 @@ Physical keys, layout-representable phone text, and mouse movement/buttons/
 wheel go through an authenticated loopback helper and XTEST into the selected
 X11 desktop. With the default `UURB_PHONE_TEXT_MODE=auto`, representable text
 stays on that fast key route, while newline, tab, CJK, emoji, and other
-non-representable Unicode become a real clipboard paste. The helper confirms
+non-representable Unicode become a real clipboard paste. On the default RDP
+track, routine keys and mouse input stay on RDP; only semantic text uses a
+split helper that owns the physical Xwayland clipboard and sends the paste
+chord through UU's private FreeRDP window. The helper confirms
 that new `xclip` processes own both `CLIPBOARD` and `PRIMARY` before emitting
 the paste, so VTE and non-terminal applications consume the same text; a
 timeout fails closed without pasting stale clipboard data. This preserves
@@ -282,6 +285,7 @@ arrived as all 52 ordered X11 press/release transitions. Run it without
 touching the live desktop:
 
 ```bash
+./scripts/test-rdp-semantic-text.sh
 ./scripts/test-x11-phone-text.sh
 ./scripts/test-x11-clipboard-text.sh
 ```

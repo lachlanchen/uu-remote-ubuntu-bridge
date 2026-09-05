@@ -560,6 +560,10 @@ active_keyboard_route="$(
     /usr/bin/sed -n 's/.* keyboard-route=\([^[:space:]]*\).*/\1/p' \
         <<<"$broker_configuration"
 )"
+semantic_clipboard_route="$(
+    /usr/bin/sed -n 's/.* semantic-clipboard=\([^[:space:]]*\).*/\1/p' \
+        <<<"$broker_configuration"
+)"
 if [[ "$keyboard_route" != rdp && "$keyboard_route" != x11 &&
       "$keyboard_route" != auto ]]; then
     fail "saved keyboard route is invalid: $keyboard_route"
@@ -585,10 +589,24 @@ fi
 if [[ "$active_keyboard_route" == x11 && "$phone_text_mode" != keys ]]; then
     if [[ -x /usr/bin/xclip ]] &&
        tail -n 20 "$state_dir/x11-input.log" 2>/dev/null | \
-           grep -q 'clipboard-text=available'; then
+           grep -q 'clipboard-text=available' &&
+       [[ "$semantic_clipboard_route" == direct ]]; then
         pass 'semantic Unicode and multiline clipboard text is available'
     else
         fail 'X11 phone-text clipboard support is unavailable'
+    fi
+elif [[ "$active_keyboard_route" == rdp &&
+        "$desktop_relay" == rdp &&
+        "$phone_text_mode" != keys ]]; then
+    if [[ -x /usr/bin/xclip && -x "$x11_input_helper" ]] &&
+       pgrep -u "$UID" -f "$x11_input_helper" >/dev/null &&
+       [[ -s "$x11_input_ready_file" ]] &&
+       [[ "$semantic_clipboard_route" == relay ]] &&
+       tail -n 20 "$state_dir/x11-input.log" 2>/dev/null | \
+           grep -q 'clipboard-text=available injection-display='; then
+        pass 'RDP semantic Unicode clipboard relay is active'
+    else
+        fail 'RDP semantic Unicode clipboard relay is unavailable'
     fi
 fi
 

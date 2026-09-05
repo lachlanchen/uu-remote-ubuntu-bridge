@@ -804,6 +804,8 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn('L"UURB_TEXT_KEY_DELAY_MS"', broker)
         self.assertIn('"x11-text"', broker)
         self.assertIn('"x11-clipboard-text"', broker)
+        self.assertIn('"rdp-clipboard-text"', broker)
+        self.assertIn('L"UURB_X11_INPUT_SEMANTIC_ONLY"', broker)
         self.assertIn("phone_text_uses_clipboard", broker)
         self.assertIn("UURB_SELECTION_REQUEST_TIMEOUT_MS", helper)
         self.assertIn("UURB_BACKSPACE_SETTLE_MS", helper)
@@ -812,6 +814,8 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("UURB_X11_INPUT_TEXT", broker)
         self.assertIn('L"UURB_PHONE_TEXT_MODE"', broker)
         self.assertIn("inject_clipboard_text", helper)
+        self.assertIn("--inject-display", helper)
+        self.assertIn("UURB_RELAY_PASTE_KEY_DELAY_MS", helper)
         self.assertIn('execl("/usr/bin/xclip"', helper)
         self.assertIn('"XGetSelectionOwner"', helper)
         self.assertIn("current_owner != previous_owner", helper)
@@ -858,7 +862,10 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn('active_keyboard_route="rdp"', launcher)
         self.assertIn("UURB_X11_INPUT_PORT", launcher)
         self.assertIn("UURB_X11_INPUT_TOKEN", launcher)
+        self.assertIn("UURB_X11_INPUT_SEMANTIC_ONLY=1", launcher)
+        self.assertIn('helper_kind=semantic-relay', launcher)
         self.assertIn("direct X11 physical-key helper is active", verifier)
+        self.assertIn("RDP semantic Unicode clipboard relay is active", verifier)
         self.assertIn("send_x11_inputs", broker)
         self.assertIn('route = "x11-error"', broker)
         self.assertIn("ERROR_CONNECTION_ABORTED", broker)
@@ -878,6 +885,9 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn('route = "x11-mouse"', broker)
         self.assertTrue(
             (REPOSITORY / "scripts" / "test-x11-mouse.sh").exists()
+        )
+        self.assertTrue(
+            (REPOSITORY / "scripts" / "test-rdp-semantic-text.sh").exists()
         )
 
         with tempfile.TemporaryDirectory() as temporary:

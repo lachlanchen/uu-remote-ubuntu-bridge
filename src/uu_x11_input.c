@@ -22,6 +22,7 @@
 #define UURB_SELECTION_REQUEST_TIMEOUT_MS UINT64_C(1500)
 #define UURB_SELECTION_POST_REQUEST_MS UINT64_C(50)
 #define UURB_BACKSPACE_SETTLE_MS UINT64_C(5)
+#define UURB_RELAY_PASTE_KEY_DELAY_MS UINT64_C(20)
 #define UURB_VK_BACK UINT16_C(0x08)
 #define UURB_SELECTION_STATUS_CAPACITY 512U
 
@@ -641,7 +642,9 @@ static bool text_events_to_utf8(const uurb_x11_input_event *events,
     return true;
 }
 
-static bool inject_clipboard_text(const x11_api *api, Display *display,
+static bool inject_clipboard_text(const x11_api *api,
+                                  Display *clipboard_display,
+                                  Display *injection_display,
                                   const char *text, size_t size,
                                   bool pressed_keys[256])
 {
@@ -650,30 +653,48 @@ static bool inject_clipboard_text(const x11_api *api, Display *display,
     unsigned int shift_keycode;
     unsigned int insert_keycode;
     bool shift_was_pressed;
+    bool shift_pressed_here = false;
+    bool insert_pressed = false;
+    uint64_t key_delay_ms;
     unsigned long clipboard_baseline;
     unsigned long primary_baseline;
 
     if (size == 0)
         return true;
-    shift_keycode = api->keysym_to_keycode(display, shift_left);
-    insert_keycode = api->keysym_to_keycode(display, insert);
+    shift_keycode = api->keysym_to_keycode(injection_display, shift_left);
+    insert_keycode = api->keysym_to_keycode(injection_display, insert);
     if (shift_keycode == 0 || shift_keycode >= 256 ||
         insert_keycode == 0 || insert_keycode >= 256 ||
-        !start_clipboard_owner(api, display, text, size,
+        !start_clipboard_owner(api, clipboard_display, text, size,
                                &clipboard_baseline, &primary_baseline))
         return false;
 
     shift_was_pressed = pressed_keys[shift_keycode];
-    if ((!shift_was_pressed &&
-         !api->fake_key_event(display, shift_keycode, 1, 0)) ||
-        !api->fake_key_event(display, insert_keycode, 1, 0) ||
-        !api->fake_key_event(display, insert_keycode, 0, 0) ||
-        (!shift_was_pressed &&
-         !api->fake_key_event(display, shift_keycode, 0, 0))) {
-        stop_clipboard_owner();
-        return false;
+    key_delay_ms = injection_display == clipboard_display ? 0 :
+                   UURB_RELAY_PASTE_KEY_DELAY_MS;
+    if (!shift_was_pressed) {
+        if (!api->fake_key_event(injection_display, shift_keycode, 1, 0))
+            goto injection_failed;
+        shift_pressed_here = true;
+        api->sync(injection_display, 0);
+        sleep_milliseconds(key_delay_ms);
     }
-    api->sync(display, 0);
+    if (!api->fake_key_event(injection_display, insert_keycode, 1, 0))
+        goto injection_failed;
+    insert_pressed = true;
+    api->sync(injection_display, 0);
+    sleep_milliseconds(key_delay_ms);
+    if (!api->fake_key_event(injection_display, insert_keycode, 0, 0))
+        goto injection_failed;
+    insert_pressed = false;
+    api->sync(injection_display, 0);
+    sleep_milliseconds(key_delay_ms);
+    if (shift_pressed_here) {
+        if (!api->fake_key_event(injection_display, shift_keycode, 0, 0))
+            goto injection_failed;
+        shift_pressed_here = false;
+    }
+    api->sync(injection_display, 0);
 
     /* xclip announces each completed selection request on its private status
      * pipe. Initial clipboard-manager reads are allowed to settle before the
@@ -684,6 +705,15 @@ static bool inject_clipboard_text(const x11_api *api, Display *display,
         return false;
     }
     return true;
+
+injection_failed:
+    if (insert_pressed)
+        api->fake_key_event(injection_display, insert_keycode, 0, 0);
+    if (shift_pressed_here)
+        api->fake_key_event(injection_display, shift_keycode, 0, 0);
+    api->sync(injection_display, 0);
+    stop_clipboard_owner();
+    return false;
 }
 
 static KeySym extended_scan_to_keysym(unsigned int scan)
@@ -1062,7 +1092,9 @@ static bool send_response(int client, uint32_t sequence, uint32_t result,
 }
 
 static void serve_client(int client, const char *token, x11_api *api,
-                         Display *display, unsigned int minimum_hold_ms)
+                         Display *clipboard_display,
+                         Display *injection_display,
+                         unsigned int minimum_hold_ms)
 {
     bool pressed_keys[256] = {false};
     bool pressed_buttons[10] = {false};
@@ -1115,7 +1147,8 @@ static void serve_client(int client, const char *token, x11_api *api,
                     break;
                 continue;
             }
-            if (!inject_clipboard_text(api, display, text, text_length,
+            if (!inject_clipboard_text(api, clipboard_display,
+                                       injection_display, text, text_length,
                                        pressed_keys)) {
                 if (!send_response(client, request.sequence, 0,
                                    UURB_X11_ERROR_INJECTION))
@@ -1131,7 +1164,7 @@ static void serve_client(int client, const char *token, x11_api *api,
         for (index = 0; index < request.count; index++) {
             keycodes[index] = 0;
             if (events[index].type == UURB_X11_INPUT_KEYBOARD)
-                keycodes[index] = event_to_x_keycode(api, display,
+                keycodes[index] = event_to_x_keycode(api, injection_display,
                                                      &events[index]);
             else if (events[index].type != UURB_X11_INPUT_MOUSE ||
                      !valid_mouse_event(&events[index])) {
@@ -1164,7 +1197,7 @@ static void serve_client(int client, const char *token, x11_api *api,
                     if (elapsed < minimum_hold_ms)
                         sleep_milliseconds(minimum_hold_ms - elapsed);
                 }
-                if (!api->fake_key_event(display, keycode,
+                if (!api->fake_key_event(injection_display, keycode,
                                          is_release ? 0 : 1, 0)) {
                     error = UURB_X11_ERROR_INJECTION;
                     break;
@@ -1176,40 +1209,77 @@ static void serve_client(int client, const char *token, x11_api *api,
                     /* A long dictation revision can contain many Backspace
                      * pairs. Flush each completed pair so full GNOME/VTE
                      * clients cannot collapse or outrun the edit stream. */
-                    api->sync(display, 0);
+                    api->sync(injection_display, 0);
                     sleep_milliseconds(UURB_BACKSPACE_SETTLE_MS);
                 }
-            } else if (!inject_mouse_event(api, display, &events[index],
+            } else if (!inject_mouse_event(api, injection_display,
+                                           &events[index],
                                            pressed_buttons)) {
                 error = UURB_X11_ERROR_INJECTION;
                 break;
             }
             injected++;
         }
-        api->sync(display, 0);
+        api->sync(injection_display, 0);
         if (!send_response(client, request.sequence,
                            error == 0 ? request.count : injected, error))
             break;
     }
-    release_pressed_inputs(api, display, pressed_keys, pressed_buttons);
+    release_pressed_inputs(api, injection_display, pressed_keys,
+                           pressed_buttons);
 }
 
 static void usage(const char *program)
 {
     fprintf(stderr,
             "usage: UURB_X11_INPUT_TOKEN=HEX64 %s --ready-file PATH "
-            "[--min-hold-ms 0..50]\n",
+            "[--min-hold-ms 0..50] "
+            "[--inject-display DISPLAY --inject-xauthority PATH]\n",
             program);
+}
+
+static Display *open_display_with_xauthority(const x11_api *api,
+                                             const char *display_name,
+                                             const char *xauthority)
+{
+    const char *current_xauthority = getenv("XAUTHORITY");
+    char *saved_xauthority = NULL;
+    Display *display;
+    bool restored;
+
+    if (current_xauthority) {
+        saved_xauthority = strdup(current_xauthority);
+        if (!saved_xauthority)
+            return NULL;
+    }
+    if (setenv("XAUTHORITY", xauthority, 1) != 0) {
+        free(saved_xauthority);
+        return NULL;
+    }
+    display = api->open_display(display_name);
+    if (saved_xauthority)
+        restored = setenv("XAUTHORITY", saved_xauthority, 1) == 0;
+    else
+        restored = unsetenv("XAUTHORITY") == 0;
+    free(saved_xauthority);
+    if (!restored && display) {
+        api->close_display(display);
+        display = NULL;
+    }
+    return display;
 }
 
 int main(int argc, char **argv)
 {
     const char *ready_file = NULL;
     const char *token = getenv("UURB_X11_INPUT_TOKEN");
+    const char *injection_display_name = NULL;
+    const char *injection_xauthority = NULL;
     unsigned int minimum_hold_ms = 0;
     struct sigaction action;
     x11_api api;
     Display *display;
+    Display *injection_display;
     int index;
     int status = EXIT_FAILURE;
 
@@ -1226,12 +1296,24 @@ int main(int argc, char **argv)
                 return EXIT_FAILURE;
             }
             minimum_hold_ms = (unsigned int)parsed;
+        } else if (strcmp(argv[index], "--inject-display") == 0 &&
+                   index + 1 < argc) {
+            injection_display_name = argv[++index];
+        } else if (strcmp(argv[index], "--inject-xauthority") == 0 &&
+                   index + 1 < argc) {
+            injection_xauthority = argv[++index];
         } else {
             usage(argv[0]);
             return EXIT_FAILURE;
         }
     }
-    if (!ready_file || !valid_token(token)) {
+    if (!ready_file || !valid_token(token) ||
+        ((injection_display_name == NULL) !=
+         (injection_xauthority == NULL)) ||
+        (injection_display_name && injection_display_name[0] == '\0') ||
+        (injection_xauthority &&
+         (injection_xauthority[0] != '/' ||
+          access(injection_xauthority, R_OK) != 0))) {
         usage(argv[0]);
         return EXIT_FAILURE;
     }
@@ -1244,6 +1326,17 @@ int main(int argc, char **argv)
         fprintf(stderr, "Cannot open the selected X11 desktop.\n");
         unload_x11_api(&api);
         return EXIT_FAILURE;
+    }
+    injection_display = display;
+    if (injection_display_name) {
+        injection_display = open_display_with_xauthority(
+            &api, injection_display_name, injection_xauthority);
+        if (!injection_display) {
+            fprintf(stderr, "Cannot open the selected injection display.\n");
+            api.close_display(display);
+            unload_x11_api(&api);
+            return EXIT_FAILURE;
+        }
     }
 
     memset(&action, 0, sizeof(action));
@@ -1259,9 +1352,11 @@ int main(int argc, char **argv)
         goto cleanup;
     }
     fprintf(stderr,
-            "X11 input helper ready; minimum-hold-ms=%u clipboard-text=%s.\n",
+            "X11 input helper ready; minimum-hold-ms=%u clipboard-text=%s "
+            "injection-display=%s.\n",
             minimum_hold_ms,
-            access("/usr/bin/xclip", X_OK) == 0 ? "available" : "unavailable");
+            access("/usr/bin/xclip", X_OK) == 0 ? "available" : "unavailable",
+            injection_display_name ? injection_display_name : "same");
 
     while (!stop_requested) {
         int client = accept(listener_fd, NULL, NULL);
@@ -1275,7 +1370,8 @@ int main(int argc, char **argv)
             break;
         }
         active_client_fd = client;
-        serve_client(client, token, &api, display, minimum_hold_ms);
+        serve_client(client, token, &api, display, injection_display,
+                     minimum_hold_ms);
         active_client_fd = -1;
         close(client);
     }
@@ -1286,6 +1382,8 @@ cleanup:
     if (listener_fd >= 0)
         close(listener_fd);
     unlink(ready_file);
+    if (injection_display != display)
+        api.close_display(injection_display);
     api.close_display(display);
     unload_x11_api(&api);
     return status;

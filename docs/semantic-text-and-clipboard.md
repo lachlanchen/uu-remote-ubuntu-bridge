@@ -9,15 +9,23 @@ CJK text to the current XKB layout rejects characters that have no key chord.
 
 `UURB_PHONE_TEXT_MODE=auto` is the default:
 
-- ordinary layout-representable text keeps the established low-latency XTEST
-  key route;
+- ordinary layout-representable text keeps the selected low-latency keyboard
+  route (`rdp` by default, or XTEST on the opt-in direct X11 track);
 - newline, tab, CJK, emoji, and other non-representable Unicode use semantic
   clipboard text plus a synthesized `Shift+Insert` paste;
 - Backspace remains an editing key and is never converted to clipboard data.
 
-The clipboard path is available only when the selected target is X11 and the
-direct helper is active. The Wine broker sends a bounded UTF-16 request over
-the existing token-authenticated loopback connection. The native helper
+The clipboard path is available when the selected desktop exposes an
+authorized X11 or Xwayland display and the native helper is active. This also
+works with the default RDP relay. In that split mode, the helper owns the
+physical desktop clipboard but emits the paste chord into UU's private Wine/
+FreeRDP display; the existing RDP session carries that chord to the focused
+physical application. Routine keyboard and mouse events remain on RDP. This
+avoids both Wine's broken Unicode-to-FreeRDP conversion and a second remote
+desktop session.
+
+The Wine broker sends a bounded UTF-16 request over the existing
+token-authenticated loopback connection. The native helper
 validates it, joins split UTF-16 surrogate commits, converts it to UTF-8,
 normalizes CRLF to one newline, makes `xclip` own both the target desktop's
 `CLIPBOARD` and `PRIMARY` selections, verifies both owners through X11, and only
@@ -110,11 +118,17 @@ The test creates a temporary X display and Wine prefix. It does not type into
 the logged-in desktop or inspect the user's clipboard:
 
 ```bash
+./scripts/test-rdp-semantic-text.sh
 ./scripts/test-x11-clipboard-text.sh
 ./scripts/test-vnc-clipboard-relay.sh
 ```
 
-The first pass proves that Chinese, an emoji split across two commits, two
+The first pass creates separate clipboard and Wine relay displays. It proves
+that `UU broker 中文 123` crosses the default RDP semantic path exactly, the
+paste chord reaches only the private relay window, and a separate ASCII batch
+still reports `route=rdp`.
+
+The second pass proves that Chinese, an emoji split across two commits, two
 lines, and a 2,000-record Unicode composition survive exactly, the target app
 receives one real paste for the long composition, and broker metadata reports:
 
@@ -122,7 +136,7 @@ receives one real paste for the long composition, and broker metadata reports:
 route=x11-clipboard-text error=0
 ```
 
-The second pass proves that a client cut-text packet reaches the isolated VNC
+The third pass proves that a client cut-text packet reaches the isolated VNC
 server, reverse clipboard feedback is disabled, and a target-side Unicode
 paste remains exact without a loop.
 
@@ -147,11 +161,13 @@ tail -n 100 \
   | rg 'category=text|phone-text-mode'
 ```
 
-Expected routes are `x11-text` for representable text and
-`x11-clipboard-text` for semantic clipboard text. `error=1113` means the old
-key-only path could not translate a Unicode character; after this feature is
-deployed, CJK/newline requests should no longer reach that failure on an X11
-target.
+Expected direct-X11 routes are `x11-text` for representable text and
+`x11-clipboard-text` for semantic clipboard text. With the default RDP route,
+ordinary text remains `rdp` and CJK, newline, emoji, or dictation text reports
+`rdp-clipboard-text`. `error=1113` means the old key-only RDP path could not
+translate a Unicode character; after this feature is deployed, CJK/newline
+requests should no longer reach that failure when the selected physical
+clipboard display is authorized.
 On an older deployment, a bridge record with `count` above 64 followed by
 `result=0 error=5` identifies the former continuous-dictation size limit. A
 successful current deployment reports the full original count from both the

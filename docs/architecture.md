@@ -235,6 +235,11 @@ SDL/RDP event loop can consume each chord before UU sends the next one. On
 XTEST helper, bypassing both nested RDP keyboard conversions. Adaptive text
 that has no safe key chord—or that contains a line break—is placed on the
 target clipboard and pasted, preserving its Unicode and multiline semantics.
+The default RDP track uses a split semantic helper: it owns `CLIPBOARD` and
+`PRIMARY` on the physical Xwayland display, injects only the paste chord into
+the private Wine/FreeRDP display, and leaves every routine key and mouse event
+on RDP. Both helper sockets bind only to loopback and use a fresh per-start
+token.
 The original request count is returned to UU only after the selected boundary
 accepts the complete request.
 The bridge keeps up to 2,048 input records from one provisional dictation call

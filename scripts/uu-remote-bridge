@@ -188,6 +188,7 @@ desktop_session_service=""
 desktop_session_seat=""
 active_network_interface=""
 active_keyboard_route="rdp"
+x11_input_semantic_only=false
 desktop_vnc_port=""
 cursor_size=""
 x11_input_port=""
@@ -823,41 +824,61 @@ start_desktop_relay() {
 }
 
 start_x11_input_helper() {
+    local helper_display
+    local helper_kind
+    local -a injection_options=()
     local selected_xauthority
 
     active_keyboard_route="rdp"
-    if [[ "$keyboard_route" == rdp ]]; then
-        return 0
-    fi
-    if [[ "$desktop_session_type" != x11 || -z "$desktop_display" ]]; then
-        log "Direct X11 keyboard input is unavailable for the selected ${desktop_session_type:-unknown} desktop; retaining the RDP input route."
-        return 0
-    fi
+    x11_input_semantic_only=false
     if [[ ! -x "$x11_input_helper" ]]; then
         log 'The optional direct X11 keyboard helper is missing; retaining the RDP input route.'
         return 0
     fi
 
+    helper_display="$desktop_display"
     selected_xauthority="$desktop_xauthority"
     if [[ -z "$selected_xauthority" && -f "$HOME/.Xauthority" ]]; then
         selected_xauthority="$HOME/.Xauthority"
     fi
-    if ! /usr/bin/env DISPLAY="$desktop_display" \
+    if [[ "$keyboard_route" != rdp &&
+          "$desktop_session_type" == x11 &&
+          -n "$helper_display" ]]; then
+        helper_kind=direct
+    elif [[ "$desktop_relay" == rdp &&
+            "$phone_text_mode" != keys &&
+            -n "$helper_display" &&
+            -r "$xauth_file" ]]; then
+        helper_kind=semantic-relay
+        x11_input_semantic_only=true
+        injection_options=(
+            --inject-display "$DISPLAY"
+            --inject-xauthority "$xauth_file"
+        )
+    else
+        if [[ "$keyboard_route" != rdp ]]; then
+            log "Direct X11 keyboard input is unavailable for the selected ${desktop_session_type:-unknown} desktop; retaining the RDP input route."
+        fi
+        return 0
+    fi
+    if ! /usr/bin/env DISPLAY="$helper_display" \
         XAUTHORITY="$selected_xauthority" \
         /usr/bin/xdpyinfo >/dev/null 2>&1; then
-        log 'The target X11 desktop authorization could not be verified; retaining the RDP input route.'
+        log 'The target desktop clipboard authorization could not be verified; retaining the RDP input route.'
+        x11_input_semantic_only=false
         return 0
     fi
 
     rm -f "$x11_input_ready_file"
     x11_input_token="$(/usr/bin/openssl rand -hex 32)"
     /usr/bin/env \
-        DISPLAY="$desktop_display" \
+        DISPLAY="$helper_display" \
         XAUTHORITY="$selected_xauthority" \
         UURB_X11_INPUT_TOKEN="$x11_input_token" \
         "$x11_input_helper" \
         --ready-file "$x11_input_ready_file" \
         --min-hold-ms "$physical_key_delay_ms" \
+        "${injection_options[@]}" \
         >>"$state_dir/x11-input.log" 2>&1 &
     x11_input_pid=$!
 
@@ -867,8 +888,12 @@ start_x11_input_helper() {
             read -r x11_input_port <"$x11_input_ready_file"
             if [[ "$x11_input_port" =~ ^[1-9][0-9]{0,4}$ ]] && \
                ((x11_input_port <= 65535)); then
-                active_keyboard_route="x11"
-                log "Physical keyboard input uses direct X11 injection on $desktop_display (minimum hold ${physical_key_delay_ms} ms)."
+                if [[ "$helper_kind" == direct ]]; then
+                    active_keyboard_route="x11"
+                    log "Physical keyboard input uses direct X11 injection on $helper_display (minimum hold ${physical_key_delay_ms} ms)."
+                else
+                    log "Semantic phone text owns the physical clipboard on $helper_display and pastes through the private RDP relay."
+                fi
                 return 0
             fi
         fi
@@ -890,6 +915,7 @@ start_x11_input_helper() {
     x11_input_pid=""
     x11_input_port=""
     x11_input_token=""
+    x11_input_semantic_only=false
     rm -f "$x11_input_ready_file"
 }
 
@@ -1106,11 +1132,14 @@ if [[ "$uu_ready" != true ]]; then
 fi
 
 broker_environment=(/usr/bin/env)
-if [[ "$active_keyboard_route" == x11 ]]; then
+if [[ -n "$x11_input_port" ]]; then
     broker_environment+=(
         "UURB_X11_INPUT_PORT=$x11_input_port"
         "UURB_X11_INPUT_TOKEN=$x11_input_token"
     )
+    if [[ "$x11_input_semantic_only" == true ]]; then
+        broker_environment+=("UURB_X11_INPUT_SEMANTIC_ONLY=1")
+    fi
 fi
 "${broker_environment[@]}" /opt/wine-stable/bin/wine "$input_broker_exe" \
     >>"$state_dir/input-broker.log" 2>&1 &
@@ -1474,7 +1503,7 @@ supervise_server() {
 supervise_server "$server_pid" &
 server_supervisor_pid=$!
 
-log "UU Remote and the $desktop_relay desktop relay share DISPLAY=$DISPLAY; physical keyboard route=$active_keyboard_route."
+log "UU Remote and the $desktop_relay desktop relay share DISPLAY=$DISPLAY; physical keyboard route=$active_keyboard_route; semantic phone text helper=$([[ -n "$x11_input_port" ]] && printf active || printf unavailable)."
 
 set +e
 critical_pids=(

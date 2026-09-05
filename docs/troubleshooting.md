@@ -242,6 +242,22 @@ broker does not report normalization, reinstall or update the bridge and
 restart the service. A Windows UU host followed by RDP appears to fix the issue
 because native Windows converts the Unicode input before RDP handles it.
 
+On the default RDP route, current builds keep routine keys and mouse events on
+the proven RDP path but route non-representable phone text through the physical
+desktop clipboard. Verify both halves without reading clipboard content:
+
+```bash
+uu-remote verify --quick
+tail -80 "$log" | rg 'semantic-clipboard|rdp-clipboard-text'
+```
+
+The startup line should report `keyboard-route=rdp` and
+`semantic-clipboard=relay`; a successful Chinese or multiline commit reports
+`route=rdp-clipboard-text` with the full requested count and `error=0`. Run
+`./scripts/test-rdp-semantic-text.sh` before a live deployment when either
+marker is missing. The test uses two disposable X displays and a disposable
+Wine prefix, so it does not type into the operator's desktop.
+
 If the checkout contains the fix but the verifier says the installed runtime
 differs, pulling was not followed by installation:
 

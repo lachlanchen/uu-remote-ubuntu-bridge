@@ -12,7 +12,9 @@
 #define INPUT_BRIDGE_MAX_INPUTS 2048UL
 #define INPUT_BRIDGE_MAX_TRANSLATED_INPUTS (INPUT_BRIDGE_MAX_INPUTS * 8UL)
 #define INPUT_BRIDGE_MAX_SEGMENTS (INPUT_BRIDGE_MAX_INPUTS + 1UL)
+#ifndef INPUT_BRIDGE_PIPE
 #define INPUT_BRIDGE_PIPE L"\\\\.\\pipe\\uurb-input-v1"
+#endif
 #define INPUT_BRIDGE_FOCUS_TIMEOUT_MS 300UL
 #define INPUT_BRIDGE_DEFAULT_TEXT_KEY_DELAY_MS 8UL
 #define INPUT_BRIDGE_MAX_TEXT_KEY_DELAY_MS 50UL
@@ -67,6 +69,7 @@ static DWORD physical_key_delay_ms =
     INPUT_BRIDGE_DEFAULT_PHYSICAL_KEY_DELAY_MS;
 static phone_text_mode configured_phone_text_mode = PHONE_TEXT_MODE_AUTO;
 static BOOL x11_input_configured;
+static BOOL x11_input_semantic_only;
 static BOOL winsock_initialized;
 static SOCKET x11_input_socket = INVALID_SOCKET;
 static unsigned short x11_input_port;
@@ -194,6 +197,16 @@ static BOOL configure_x11_input(void)
     x11_input_token[UURB_X11_INPUT_TOKEN_SIZE] = '\0';
     x11_input_port = (unsigned short)parsed_port;
     return TRUE;
+}
+
+static BOOL configure_x11_semantic_only(void)
+{
+    wchar_t value[2];
+    DWORD length;
+
+    length = GetEnvironmentVariableW(L"UURB_X11_INPUT_SEMANTIC_ONLY", value,
+                                     ARRAYSIZE(value));
+    return length == 1 && value[0] == L'1';
 }
 
 static BOOL connect_x11_input(void)
@@ -339,7 +352,7 @@ static x11_route_result send_x11_inputs(DWORD count, const INPUT *inputs,
     DWORD index;
 
     *considered = FALSE;
-    if (!x11_input_configured || count == 0 ||
+    if (!x11_input_configured || x11_input_semantic_only || count == 0 ||
         count > INPUT_BRIDGE_MAX_INPUTS)
         return X11_ROUTE_NOT_USED;
     *considered = TRUE;
@@ -764,15 +777,26 @@ static DWORD send_relay_inputs(DWORD source_count, const INPUT *source,
      * text keeps the faster established key-event path. */
     if (phone_text_uses_clipboard(source_count, source)) {
         *normalized_unicode = TRUE;
+        if (x11_input_semantic_only) {
+            *focus_ready = request_relay_focus(focus_wait_ms);
+            if (!*focus_ready) {
+                *route = "rdp-clipboard-focus-error";
+                *error = GetLastError();
+                return 0;
+            }
+        }
         x11_result = send_x11_clipboard_text(source_count, source, error,
                                              &x11_considered, edit_state,
                                              clamped_edits);
         if (x11_result == X11_ROUTE_SUCCESS) {
-            *route = "x11-clipboard-text";
+            *route = x11_input_semantic_only ? "rdp-clipboard-text" :
+                                               "x11-clipboard-text";
             return source_count;
         }
         if (x11_result == X11_ROUTE_FAILED) {
-            *route = "x11-clipboard-text-error";
+            *route = x11_input_semantic_only ?
+                         "rdp-clipboard-text-error" :
+                         "x11-clipboard-text-error";
             return 0;
         }
     }
@@ -1107,16 +1131,22 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous,
     physical_key_delay_ms = configured_physical_key_delay();
     configured_phone_text_mode = read_phone_text_mode();
     x11_input_configured = configure_x11_input();
+    x11_input_semantic_only = x11_input_configured &&
+                              configure_x11_semantic_only();
     {
         char line[256];
 
         _snprintf(line, sizeof(line),
-                  "UU input broker active text-delay-ms=%lu physical-delay-ms=%lu focus-timeout-ms=%lu keyboard-route=%s phone-text-mode=%s\r\n",
+                  "UU input broker active text-delay-ms=%lu physical-delay-ms=%lu focus-timeout-ms=%lu keyboard-route=%s phone-text-mode=%s semantic-clipboard=%s\r\n",
                   (unsigned long)text_key_delay_ms,
                   (unsigned long)physical_key_delay_ms,
                   (unsigned long)INPUT_BRIDGE_FOCUS_TIMEOUT_MS,
-                  x11_input_configured ? "x11" : "rdp",
-                  phone_text_mode_name(configured_phone_text_mode));
+                  x11_input_configured && !x11_input_semantic_only ?
+                      "x11" : "rdp",
+                  phone_text_mode_name(configured_phone_text_mode),
+                  x11_input_configured ?
+                      (x11_input_semantic_only ? "relay" : "direct") :
+                      "unavailable");
         line[sizeof(line) - 1] = '\0';
         write_log(line);
         flush_log();
