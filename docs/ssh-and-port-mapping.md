@@ -88,6 +88,46 @@ or unattended-reconnect claim.
 
 ### Important: control ownership and availability
 
+**A passing SSH test is not proof of takeover-safe availability.** A later
+real-use report on 2026-09-05 found the Windows-assisted route closed while
+the user was taking control of the Windows neighbor. The peer's retained
+reverse-SSH pane exited255 at19:19:18 local time, and both its carrier listener
+and the workstation's return listener were gone. Native Windows SSH still
+worked; its UU GUI/server processes retained their earlier start times.
+This locates the failure at the session-dependent carrier rather than proving
+a Windows reboot, broken SSH keys, or lost LAN. The exact vendor disconnect
+reason was not decoded, so the takeover is a strong correlation, not a
+decoded causal result for every historical drop.
+
+The subsequent direct-Ubuntu test did establish an ownership gate in the tested
+client/server state. The peer selected the Ubuntu UU endpoint itself, whose
+page reported another controller, then clicked **Port Mapping** (not Desktop
+or a Terminal warmup). UU explicitly required **Take over device**, explaining
+that port mapping was available after takeover. The operator canceled; no
+scratch rule editor or listener opened, no profile changed, and relay focus
+was restored. This is a concrete compatibility result for this state, not a
+claim about every UU version, account tier or platform.
+
+An operator can separately coordinate releasing only the direct UU desktop
+connection while retaining RDP/VNC and the logged-in Linux desktop, then test
+direct mapping with the control slot free. That is not a simultaneous-control
+fix: a later UU takeover can still invalidate the carrier. Never log out,
+terminate applications or force takeover merely to obtain a passing SSH test.
+
+Removing the Windows neighbor is a separate requirement from surviving UU
+desktop takeovers. A direct Ubuntu-to-Ubuntu UU mapping can remove that third
+machine yet still depend on UU control ownership and vendor session lifetime.
+Do not relabel it an always-on private network after a few successful shells.
+Test an actual mapping with strict host identity, file and exit-code checks,
+then separately confirm user-observed desktop coexistence. Cancel takeover
+prompts instead of forcing the test to pass.
+
+For takeover-independent SSH, use a separately approved native network path
+between the Ubuntu hosts. No such existing path was found in this incident:
+private-LAN probes timed out and neither host had global IPv6 or an installed
+private overlay. A new overlay, router forward or cloud relay is a user choice,
+not an automatic fallback inside `ssh`, `uu-shell`, or a reconnect loop.
+
 The live mapping later became unavailable. Reopening the panel displayed a
 takeover prompt because the peer was already being controlled. We canceled
 instead of displacing that controller. The observations establish that this
