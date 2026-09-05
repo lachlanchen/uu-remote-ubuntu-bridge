@@ -32,6 +32,8 @@ normalizes CRLF to one newline, makes `xclip` own both the target desktop's
 then emits one paste chord. Owning both is required because VTE terminals read
 `PRIMARY` for `Shift+Insert`, while other applications may read `CLIPBOARD`.
 Each commit keeps persistent owners and reads `xclip`'s private request counter.
+The new pair takes ownership **before** the old pair is retired. Replacing a
+selection must not introduce an owner=None gap; see the GNOME race below.
 It first waits for eager clipboard-manager reads to become quiet, emits the
 paste chord, and then requires a new `CLIPBOARD` or `PRIMARY` request before it
 reports success. This matters on a full GNOME desktop: a clipboard manager may
@@ -172,3 +174,77 @@ On an older deployment, a bridge record with `count` above 64 followed by
 `result=0 error=5` identifies the former continuous-dictation size limit. A
 successful current deployment reports the full original count from both the
 bridge and broker.
+
+## September 2026 regression: GNOME ownership handoff and long revisions
+
+Two independently reproduced defects explained the renewed missing Chinese
+characters and dictation flushing. Neither needed a keyboard-layout change,
+clipboard-manager disabling, or a network workaround.
+
+### Clipboard restoration raced the replacement
+
+On the affected shared GNOME/XRDP desktop, a temporary, explicitly focused
+editor and a separate diagnostic helper reproduced 8/10, then 6/10 and 6/10
+successful six-character CJK/punctuation commits. Failed commits returned
+native error8195, mapped to broker error31, in about27–55ms. Content-free
+diagnostics showed the CLIPBOARD xclip exiting normally before paste. XRes
+client-PID lookup identified the new owner as `gnome-shell`.
+
+The old helper killed its previous xclip owners before creating replacements.
+That briefly made CLIPBOARD owner=None. GNOME's cached-selection restoration
+could then arrive after the replacement had started and take its ownership.
+The helper correctly refused a possibly stale paste, but the intended text
+was lost. An isolated XFixes fixture modeling delayed restoration after the
+None gap reproduced error31 with the old installed helper.
+
+The fix is an ownership handoff: retain the old owned processes until the new
+CLIPBOARD/PRIMARY pair is established and quiet, then reap the old processes.
+The first same-desktop A/B retest passed10/10 exactly. The regression fixture
+now verifies there is no ownership gap across ordinary commits, a split emoji,
+dictation revisions, and a long Unicode composition. No retry, global daemon,
+keymap change, or clipboard contents logging was added.
+
+### The socket deadline was shorter than legitimate editing
+
+A300-character provisional Chinese dictation commit succeeded, but its
+608-record revision failed with result0/error1236. The helper deliberately
+paces each Backspace pair by5ms:300 deletions require about1500ms. The broker's
+fixed1000ms socket receive timeout therefore disconnected after deleting part
+of the draft, before sending its replacement. This was independently
+reproduced even after fixing the clipboard handoff.
+
+The receive budget now covers the requested work: ordinary input retains
+1000ms; a semantic selection request gets3000ms; each paced Backspace release
+adds the shared5ms constant. Counts remain capped at2048 records, so the budget
+is finite. This is a deadline, not an added sleep. Ambiguous input is never
+replayed. The300-character revision now returns608/608/error0 and leaves the
+unrelated editor prefix intact.
+
+Run the expanded regressions serially:
+
+```bash
+python3 -m unittest discover -s tests -v
+bash scripts/test-x11-clipboard-text.sh
+bash scripts/test-x11-phone-text.sh
+bash scripts/test-rdp-semantic-text.sh
+bash scripts/test-vnc-clipboard-relay.sh
+bash scripts/test-vnc-keyboard-relay.sh
+```
+
+All use disposable displays/prefixes, not the user's typing field. The gap
+guard reads ownership events only, never clipboard data. Failed-test artifacts
+are reported for inspection; successful fixtures clean their owned processes.
+
+Both input binaries must be rebuilt (`uu-x11-input`, `uu-input-broker.exe`).
+Use the normal guarded runtime deployment to retain the host's saved behavior
+track. If an operator deploys only these two binaries, record that partial
+deployment and their hashes privately; do not falsely stamp the entire pulled
+runtime as installed. A bridge-only restart loads them and preserves the
+underlying GNOME/XRDP desktop and applications. A pull alone does not update
+the running input helpers, and reconnect/phone-client acceptance still matters.
+
+Bounded diagnostics report failure stage and child exit metadata, never text.
+They are evidence for a failure boundary, not proof of every upstream client
+or every application's behavior. New focus changes or external clipboard
+replacement during an already-started edit can still interrupt it; do not
+promise arbitrary GUI edits are atomic or retry an ambiguous composition.

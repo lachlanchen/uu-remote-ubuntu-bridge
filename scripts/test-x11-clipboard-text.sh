@@ -17,13 +17,14 @@ helper_pid=""
 broker_pid=""
 stale_primary_pid=""
 clipboard_snooper_pid=""
+selection_guard_pid=""
 
 cleanup() {
     local status=$?
     local pid
 
     trap - EXIT
-    for pid in "$broker_pid" "$helper_pid" "$editor_pid" \
+    for pid in "$selection_guard_pid" "$broker_pid" "$helper_pid" "$editor_pid" \
         "$clipboard_snooper_pid" \
         "$stale_primary_pid" \
         "$openbox_pid" "$xvfb_pid"; do
@@ -134,8 +135,18 @@ printf '%s' 'stale-primary-must-never-be-pasted' | \
 stale_primary_pid=$!
 sleep 0.2
 
+DISPLAY="$display" UURB_DISPOSABLE_SELECTION_TEST=1 \
+    python3 "$repo_dir/tests/probes/selection_gap_guard.py" \
+    >"$temporary_dir/selection-gap.log" 2>&1 &
+selection_guard_pid=$!
+for _ in {1..50}; do
+    grep -q '^ready$' "$temporary_dir/selection-gap.log" && break
+    sleep 0.02
+done
+grep -q '^ready$' "$temporary_dir/selection-gap.log"
+
 DISPLAY="$display" UURB_X11_INPUT_TOKEN="$token" \
-    "$temporary_dir/compat/uu-x11-input" --ready-file "$ready_file" \
+    "${UURB_TEST_NATIVE_HELPER:-$temporary_dir/compat/uu-x11-input}" --ready-file "$ready_file" \
     --min-hold-ms 0 >"$temporary_dir/x11-input.log" 2>&1 &
 helper_pid=$!
 for _ in {1..50}; do
@@ -222,12 +233,31 @@ if [[ "$symbol_primary" != "$expected_symbols" ]]; then
     exit 1
 fi
 
+# More than one second of intentionally paced Backspace events must finish
+# before the replacement arrives; the broker must not time out mid-revision.
+DISPLAY="$display" WINEPREFIX="$wine_prefix" WINEDEBUG=-all \
+    WINEDLLOVERRIDES='mscoree,mshtml=' \
+    /opt/wine-stable/bin/wine \
+    "$temporary_dir/uu-clipboard-text-probe.exe" long-revision
+
 DISPLAY="$display" WINEPREFIX="$wine_prefix" WINEDEBUG=-all \
     WINEDLLOVERRIDES='mscoree,mshtml=' \
     UU_INPUT_BRIDGE_LOG="$bridge_log_windows" \
     /opt/wine-stable/bin/wine "$temporary_dir/uu-long-text-probe.exe" \
     "$bridge_dll_windows" unicode
 sleep 0.5
+
+# A normal clipboard replacement must not create the owner=None gap that
+# makes GNOME restore its cached selection over the next semantic commit.
+kill -0 "$selection_guard_pid"
+kill "$selection_guard_pid"
+wait "$selection_guard_pid" || true
+selection_guard_pid=""
+if grep -q '^gap$' "$temporary_dir/selection-gap.log"; then
+    printf 'semantic commits exposed a clipboard ownership gap\n' >&2
+    exit 1
+fi
+printf 'clipboard-owner-handoff=no gaps\n'
 
 DISPLAY="$display" xdotool key --clearmodifiers alt+o
 for _ in {1..30}; do
@@ -245,7 +275,7 @@ from pathlib import Path
 import sys
 
 observed = Path(sys.argv[1]).read_text(encoding="utf-8").rstrip("\n")
-expected = "existing message:修订完成中文，符号：‘’“”！？@&?🙂" + "你" * 1000
+expected = "existing message:修订完成中文，符号：‘’“”！？@&?🙂长句完成" + "你" * 1000
 if observed != expected:
     raise SystemExit("prior text or multiline clipboard text changed")
 print("clipboard-text=unicode+multiline revision exact")

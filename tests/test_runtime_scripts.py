@@ -847,6 +847,28 @@ class RuntimeScriptTests(unittest.TestCase):
             broker.index("response.result = send_relay_inputs", serve_client),
         )
 
+    def test_semantic_owner_handoff_and_revision_deadlines(self):
+        helper = (REPOSITORY / "src/uu_x11_input.c").read_text()
+        broker = (REPOSITORY / "src/uu_input_broker.c").read_text()
+        start = helper.index("static bool start_clipboard_owner(")
+        end = helper.index("static bool append_utf8(", start)
+        handoff = helper[start:end]
+        self.assertIn("old_clipboard_pid = clipboard_owner_pid", handoff)
+        self.assertLess(handoff.index("start_selection_owner(api"),
+                        handoff.index("stop_selection_owner(&old_clipboard_pid"))
+        self.assertLess(handoff.index("selection_owners_quiet("),
+                        handoff.index("stop_selection_owner(&old_primary_pid"))
+        self.assertNotIn("stop_clipboard_owner();", handoff.split("failed:")[0])
+        send = broker[broker.index("static x11_route_result send_x11_events("):
+                      broker.index("static x11_route_result send_x11_inputs(")]
+        self.assertIn("response_timeout_ms = 1000", send)
+        self.assertIn("response_timeout_ms = 3000", send)
+        self.assertIn("edit_budget_ms += UURB_BACKSPACE_SETTLE_MS", send)
+        self.assertLess(send.index("SO_RCVTIMEO"), send.index("socket_write_all("))
+        fixture = (REPOSITORY / "scripts/test-x11-clipboard-text.sh").read_text()
+        self.assertIn("selection_gap_guard.py", fixture)
+        self.assertIn("long-revision", fixture)
+
     def test_direct_x11_input_route_is_opt_in_and_fail_safe(self):
         builder = (REPOSITORY / "scripts" / "build-compat.sh").read_text()
         installer = (REPOSITORY / "install.sh").read_text()

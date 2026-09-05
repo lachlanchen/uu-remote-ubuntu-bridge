@@ -4,7 +4,9 @@
 #include <string.h>
 
 #define INPUT_BRIDGE_MAGIC 0x42525555UL
+#ifndef INPUT_BRIDGE_PIPE
 #define INPUT_BRIDGE_PIPE L"\\\\.\\pipe\\uurb-input-v1"
+#endif
 
 typedef struct input_bridge_request {
     DWORD magic;
@@ -81,7 +83,7 @@ static void unicode_input_pair(INPUT inputs[2], WCHAR unit)
 
 static BOOL send_unicode_text(HANDLE pipe, const WCHAR *text, DWORD length)
 {
-    INPUT inputs[128];
+    INPUT inputs[2048];
     DWORD index;
 
     if (length == 0 || length * 2U > ARRAYSIZE(inputs))
@@ -120,8 +122,9 @@ int main(int argc, char **argv)
     HANDLE pipe;
     DWORD index;
 
-    if (argc > 2 || (argc == 2 && strcmp(argv[1], "symbols") != 0)) {
-        fprintf(stderr, "usage: uu-clipboard-text-probe.exe [symbols]\n");
+    if (argc > 2 || (argc == 2 && strcmp(argv[1], "symbols") != 0 &&
+                    strcmp(argv[1], "long-revision") != 0)) {
+        fprintf(stderr, "usage: uu-clipboard-text-probe.exe [symbols|long-revision]\n");
         return 2;
     }
 
@@ -154,6 +157,31 @@ int main(int argc, char **argv)
         fprintf(stderr, "could not open input broker pipe: %lu\n",
                 (unsigned long)GetLastError());
         return 1;
+    }
+
+    if (argc == 2 && strcmp(argv[1], "long-revision") == 0) {
+        WCHAR provisional[300];
+        const WCHAR final[] = {0x957f, 0x53e5, 0x5b8c, 0x6210};
+        INPUT edits[(ARRAYSIZE(provisional) + ARRAYSIZE(final)) * 2U];
+        BOOL success;
+
+        for (index = 0; index < ARRAYSIZE(provisional); index++)
+            provisional[index] = 0x4f60;
+        success = send_unicode_text(pipe, provisional, ARRAYSIZE(provisional));
+        ZeroMemory(edits, sizeof(edits));
+        for (index = 0; index < ARRAYSIZE(provisional); index++) {
+            edits[index * 2U].type = INPUT_KEYBOARD;
+            edits[index * 2U].ki.wVk = VK_BACK;
+            edits[index * 2U + 1U] = edits[index * 2U];
+            edits[index * 2U + 1U].ki.dwFlags = KEYEVENTF_KEYUP;
+        }
+        for (index = 0; index < ARRAYSIZE(final); index++)
+            unicode_input_pair(&edits[(ARRAYSIZE(provisional) + index) * 2U],
+                               final[index]);
+        if (success)
+            success = send_inputs(pipe, edits, ARRAYSIZE(edits));
+        CloseHandle(pipe);
+        return success ? 0 : 1;
     }
 
     if (argc == 2) {

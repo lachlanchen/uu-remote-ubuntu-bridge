@@ -21,7 +21,6 @@
 #define UURB_SELECTION_READY_TIMEOUT_MS UINT64_C(500)
 #define UURB_SELECTION_REQUEST_TIMEOUT_MS UINT64_C(1500)
 #define UURB_SELECTION_POST_REQUEST_MS UINT64_C(50)
-#define UURB_BACKSPACE_SETTLE_MS UINT64_C(5)
 #define UURB_RELAY_PASTE_KEY_DELAY_MS UINT64_C(20)
 #define UURB_VK_BACK UINT16_C(0x08)
 #define UURB_SELECTION_STATUS_CAPACITY 512U
@@ -74,6 +73,8 @@ typedef struct selection_status {
     char buffer[UURB_SELECTION_STATUS_CAPACITY];
     size_t length;
     unsigned long next_request_number;
+    bool ownership_lost;
+    bool x_error;
 } selection_status;
 
 static volatile sig_atomic_t stop_requested;
@@ -85,6 +86,18 @@ static volatile sig_atomic_t clipboard_status_fd = -1;
 static volatile sig_atomic_t primary_status_fd = -1;
 static selection_status clipboard_status;
 static selection_status primary_status;
+static unsigned int selection_error_reports;
+
+static void report_selection_error(const char *stage)
+{
+    /* Bounded, content-free diagnostics. Never dump selection data, window
+     * titles, keycodes or xclip's stderr (which may contain other app names). */
+    if (selection_error_reports++ < 64U) {
+        fprintf(stderr, "semantic-selection-failure stage=%s time-ms=%llu\n",
+                stage, (unsigned long long)time(NULL) * 1000ULL);
+        fflush(stderr);
+    }
+}
 
 static void handle_signal(int signal_number)
 {
@@ -274,6 +287,10 @@ static void update_selection_status(int fd, selection_status *status)
             char *number;
 
             *newline = '\0';
+            if (strstr(line_start, "Lost selection ownership") != NULL)
+                status->ownership_lost = true;
+            if (strstr(line_start, "X Error") != NULL)
+                status->x_error = true;
             number = strstr(line_start, marker);
             if (number != NULL) {
                 char *end = NULL;
@@ -315,6 +332,16 @@ static bool selection_owner_alive(volatile sig_atomic_t *owner_pid)
     result = waitpid(pid, &status, WNOHANG);
     if (result == 0 || (result < 0 && errno == EINTR))
         return true;
+    if (result == pid && selection_error_reports < 64U) {
+        selection_status *details = owner_pid == &clipboard_owner_pid ?
+                                    &clipboard_status : &primary_status;
+        fprintf(stderr,
+                "semantic-owner-exit selection=%s exit=%d signal=%d lost=%d x-error=%d\n",
+                owner_pid == &clipboard_owner_pid ? "clipboard" : "primary",
+                WIFEXITED(status) ? WEXITSTATUS(status) : -1,
+                WIFSIGNALED(status) ? WTERMSIG(status) : 0,
+                details->ownership_lost, details->x_error);
+    }
     if (result == pid || (result < 0 && errno == ECHILD))
         *owner_pid = -1;
     return false;
@@ -353,8 +380,10 @@ static bool selection_owners_quiet(unsigned long *clipboard_baseline,
             return true;
         }
         if (!selection_owner_alive(&clipboard_owner_pid) ||
-            !selection_owner_alive(&primary_owner_pid))
+            !selection_owner_alive(&primary_owner_pid)) {
+            report_selection_error("owner-exited-before-paste");
             return false;
+        }
         sleep_milliseconds(5);
     }
     return false;
@@ -497,18 +526,45 @@ static bool start_clipboard_owner(const x11_api *api, Display *display,
                                   unsigned long *clipboard_baseline,
                                   unsigned long *primary_baseline)
 {
-    stop_clipboard_owner();
+    volatile sig_atomic_t old_clipboard_pid = clipboard_owner_pid;
+    volatile sig_atomic_t old_primary_pid = primary_owner_pid;
+    volatile sig_atomic_t old_clipboard_fd = clipboard_status_fd;
+    volatile sig_atomic_t old_primary_fd = primary_status_fd;
+    selection_status old_clipboard_status = clipboard_status;
+    selection_status old_primary_status = primary_status;
+    bool ready = false;
+
+    /* Keep the previous owners alive until XSetSelectionOwner replaces them.
+     * Killing them first creates a None-owner gap. GNOME can restore its
+     * cached selection during that gap, racing and displacing the NEW xclip
+     * before paste. An ownership handoff must not look like a clipboard loss. */
+    clipboard_owner_pid = primary_owner_pid = -1;
+    clipboard_status_fd = primary_status_fd = -1;
     if (!start_selection_owner(api, display, "CLIPBOARD", text, size,
                                &clipboard_owner_pid, &clipboard_status_fd,
-                               &clipboard_status) ||
-        !start_selection_owner(api, display, "PRIMARY", text, size,
-                               &primary_owner_pid, &primary_status_fd,
-                               &primary_status) ||
-        !selection_owners_quiet(clipboard_baseline, primary_baseline)) {
-        stop_clipboard_owner();
-        return false;
+                               &clipboard_status)) {
+        report_selection_error("clipboard-start");
+        goto failed;
     }
-    return true;
+    if (!start_selection_owner(api, display, "PRIMARY", text, size,
+                               &primary_owner_pid, &primary_status_fd,
+                               &primary_status)) {
+        report_selection_error("primary-start");
+        goto failed;
+    }
+    if (!selection_owners_quiet(clipboard_baseline, primary_baseline)) {
+        report_selection_error("owner-readiness");
+        goto failed;
+    }
+    ready = true;
+failed:
+    stop_selection_owner(&old_clipboard_pid, &old_clipboard_fd,
+                         &old_clipboard_status);
+    stop_selection_owner(&old_primary_pid, &old_primary_fd,
+                         &old_primary_status);
+    if (!ready)
+        stop_clipboard_owner();
+    return ready;
 }
 
 static bool append_utf8(char *output, size_t capacity, size_t *length,
@@ -701,6 +757,7 @@ static bool inject_clipboard_text(const x11_api *api,
      * paste, then at least one new request must follow the synthetic chord.
      * Do not grant revision credit merely because ownership changed. */
     if (!wait_for_selection_request(clipboard_baseline, primary_baseline)) {
+        report_selection_error("post-paste-request");
         stop_clipboard_owner();
         return false;
     }

@@ -309,12 +309,37 @@ static x11_route_result send_x11_events(
 {
     uurb_x11_request request;
     uurb_x11_response response;
+    DWORD response_timeout_ms = 1000;
+    DWORD edit_budget_ms = 0;
+    DWORD index;
 
     if (!x11_input_configured || count == 0 ||
         count > UURB_X11_INPUT_MAX_EVENTS)
         return X11_ROUTE_NOT_USED;
     if (!connect_x11_input())
         return X11_ROUTE_NOT_USED;
+
+    /* The native helper intentionally paces revision Backspaces and waits
+     * for a real paste request. A fixed one-second socket deadline aborted
+     * valid long revisions AFTER their deletions, before replacement text.
+     * Give only this bounded batch its processing budget; never replay it.
+     * Ordinary keys/mouse retain the original one-second failure bound. */
+    for (index = 0; index < count; index++) {
+        if (events[index].type == UURB_X11_INPUT_TEXT)
+            response_timeout_ms = 3000;
+        if (events[index].type == UURB_X11_INPUT_KEYBOARD &&
+            events[index].virtual_key == VK_BACK &&
+            (events[index].flags & UURB_KEYEVENTF_KEYUP) != 0)
+            edit_budget_ms += UURB_BACKSPACE_SETTLE_MS;
+    }
+    response_timeout_ms += edit_budget_ms;
+    if (setsockopt(x11_input_socket, SOL_SOCKET, SO_RCVTIMEO,
+                   (const char *)&response_timeout_ms,
+                   sizeof(response_timeout_ms)) == SOCKET_ERROR) {
+        *error = (DWORD)WSAGetLastError();
+        close_x11_input_socket();
+        return X11_ROUTE_FAILED;
+    }
 
     request.magic = UURB_X11_INPUT_MAGIC;
     request.sequence = (uint32_t)InterlockedIncrement(&x11_sequence);
