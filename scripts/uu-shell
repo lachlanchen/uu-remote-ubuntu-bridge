@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
-# Open a peer's native Ubuntu shell through the existing UU Terminal adapter.
-# No desktop connection, port-mapping recovery, transport fallback or retry.
+# Open a peer shell through its explicitly configured transport.
+# No desktop connection, mapping recovery, transport fallback or retry.
 set -Eeuo pipefail
 
 helper="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/uu-ssh"
 if [[ $# == 0 || ${1:-} == -h || ${1:-} == --help ]]; then
     printf '%s\n' \
-        'Usage: uu-shell PEER [UU Terminal options...]' \
+        'Usage: uu-shell PEER [transport arguments...]' \
         'Example: uu-shell lab' \
-        'Requests a fresh native UU terminal in this terminal.' \
+        'Uses the transport explicitly selected by uu-ssh add.' \
+        'Native UU Terminal requests a fresh session by default.' \
+        'SSH profiles accept normal ssh arguments and remote commands.' \
         'Never issues device connect, accepts takeover or performs recovery.' \
         'Use --session-id ID to explicitly attach, or --list-sessions to inspect.' \
         'Even a session-list query may initialize UU transport.' \
@@ -16,15 +18,4 @@ if [[ $# == 0 || ${1:-} == -h || ${1:-} == --help ]]; then
         'No cloud fallback, auto-retry or connection-availability guarantee.'
     exit 0
 fi
-
-peer="$1"
-shift
-fresh=(--new-session)
-for option in "$@"; do
-    case "$option" in
-        --session-id|--session-id=*|--list-sessions|--kill-session|--kill-session=*|--new-session|-h|--help)
-            fresh=()
-            ;;
-    esac
-done
-exec "$helper" terminal "$peer" "${fresh[@]}" "$@"
+exec "$helper" shell "$@"

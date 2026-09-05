@@ -26,6 +26,66 @@ For durable agent-to-agent handoffs over these SSH aliases, use
 [`uu-link`: private inbox, outbox, and delivery receipts](agent-link.md).
 It requires no extra daemon and never executes message contents.
 
+### Mapping hosted by an existing SSH-reachable controller
+
+The mapping listener does not have to run on the computer where the shell is
+opened. A tested three-host topology used a native Mac controller that was
+already reachable through a separately pinned SSH alias:
+
+```text
+Ubuntu A -- strict SSH --> Mac controller:127.0.0.1:22022
+                              |
+                              +-- native UU Port Mapping --> Ubuntu B:127.0.0.1:22
+```
+
+Configure that route explicitly; it is never inferred or used as a fallback:
+
+```bash
+uu-ssh add lab --port 22022 --user YOUR_REMOTE_USER \
+  --via-ssh-host trusted-mac --shell-transport ssh
+uu-ssh check lab
+uu-shell lab
+```
+
+The generated `uu-lab` alias uses `ProxyJump trusted-mac`, while the destination
+still uses its own pinned `HostKeyAlias`, dedicated key, strict host checking,
+and public-key-only authentication. `uu-shell` executes that alias because the
+profile says `shell=ssh`; old profiles continue to select native Terminal.
+Use `--direct` to deliberately remove a previously configured jump host.
+
+This topology has a real third-host dependency: the controller Mac, its SSH
+service, UU app, account session, and loopback-only mapping must all remain
+available. In the live 2026-09-05 test it returned the exact Linux host/user and
+preserved five command exit statuses. The vendor mapping was then kicked by the
+server after about 421 seconds. One later GUI Reconnect click internally made
+three ICE attempts; none selected a candidate pair and no listener returned.
+Those observations prove useful fail-closed access when the mapping is live,
+not unattended availability. Do not hide this dependency or claim it is a
+direct two-Ubuntu connection.
+
+A native UU host can also forward to another SSH machine on its own LAN. Record
+that target explicitly so diagnostics describe the real topology:
+
+```bash
+uu-ssh add lab --port 22023 --user YOUR_REMOTE_USER --direct \
+  --mapping-target 192.0.2.25 --shell-transport ssh
+```
+
+This changes only local alias metadata; it does not create or edit the vendor
+rule. Verify that the controlled UU host can reach that target before relying
+on it, and pin the final SSH server's host key independently.
+
+In a separate 2026-09-05 acceptance test, a Wine4.39 controller mapped through
+an authorized native Windows4.38 host to an Ubuntu SSH server on the Windows
+host's LAN. Five fresh shells preserved exact exit statuses, a237638-byte
+binary/UTF-8 file made a byte-identical round trip, and one reverse SSH forward
+gave the Ubuntu peer an independently verified shell, PTY, UTF-8 stream, exit
+status, and file round trip back to the controller. Another18 shell checks
+passed over three minutes without losing the mapping. This removes the Mac
+dependency from that topology, but the native Windows host and the one UU
+mapping session remain runtime dependencies; the observation is not a reboot
+or unattended-reconnect claim.
+
 ### Important: control ownership and availability
 
 The live mapping later became unavailable. Reopening the panel displayed a
@@ -44,6 +104,9 @@ do not establish what initially removed the listener.
   mapping-management subcommand. This helper deliberately does not edit UU's
   private database or fabricate a vendor CLI flag.
 - UU desktop connectivity and SSH-mapping availability are distinct checks.
+- A jump-host profile skips the meaningless local socket probe and lets one
+  bounded strict OpenSSH check cover the jump and mapped destination. Failure
+  does not trigger a GUI reconnect, password prompt, retry, or alternate route.
 
 SSH itself does not acquire UU desktop-control ownership. A single native UU
 mapping plus one SSH return forward avoids a **second UU control connection**,
@@ -177,7 +240,8 @@ install -m 0755 scripts/uu-ssh "$HOME/.local/bin/uu-ssh"
 Run on the **controller**, not the destination:
 
 ```bash
-uu-ssh add lab --port 22709 --user YOUR_REMOTE_USER --device-id UU_DEVICE_ID
+uu-ssh add lab --port 22709 --user YOUR_REMOTE_USER \
+  --device-id UU_DEVICE_ID --shell-transport ssh
 uu-ssh key
 ```
 
@@ -217,6 +281,7 @@ can make `ssh.service` initially appear inactive while SSH still works.
 uu-ssh list
 uu-ssh check lab
 uu-ssh lab
+uu-shell lab
 ssh uu-lab 'hostname; uptime'
 scp ./report.md uu-lab:Documents/
 rsync -av --progress ./notes/ uu-lab:Documents/notes/
@@ -307,11 +372,14 @@ The helper uses only Python's standard library and OpenSSH. It writes:
   to restore global scope for the original config;
 - a private timestamped SSH-config backup when that file changes;
 - `~/.config/uu-ssh/peers/NAME.json`: local port, username, optional device ID.
+  It also records the explicit shell transport, optional SSH controller hop,
+  and remote-side mapping target used in diagnostics.
 
 The helper serializes alias setup, writes config files atomically with mode
 `0600`, refuses unmanaged fragments and unrelated preexisting aliases, and
 requires strict host-key checking plus public-key-only authentication. It
-does not enable agent forwarding. Repeated
+also disables password prompts, agent forwarding, connection multiplexing, and
+multi-attempt TCP connection loops for these aliases. Repeated
 setup preserves keys and unrelated configuration. Updating a saved peer's
 port is explicit; `add` does not delete host-key trust when the peer changes.
 

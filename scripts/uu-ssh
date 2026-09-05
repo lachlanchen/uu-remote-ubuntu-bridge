@@ -4,6 +4,7 @@
 import argparse
 import fcntl
 import getpass
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -32,6 +33,36 @@ def port(value):
     if not 1024 <= result <= 65535:
         raise argparse.ArgumentTypeError("local port must be 1024..65535")
     return result
+
+
+def ssh_host(value):
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", value):
+        raise argparse.ArgumentTypeError("invalid SSH jump-host alias")
+    return value
+
+
+def mapping_target(value):
+    try:
+        ipaddress.ip_address(value)
+        return value
+    except ValueError:
+        hostname = value[:-1] if value.endswith(".") else value
+        labels = hostname.split(".")
+        if (not hostname or len(hostname) > 253 or
+                any(not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?",
+                                     label) for label in labels)):
+            raise argparse.ArgumentTypeError("invalid remote-side mapping target")
+        return value
+
+
+def profile_route(profile):
+    via_ssh_host = profile.get("via_ssh_host", "")
+    if via_ssh_host:
+        ssh_host(via_ssh_host)
+    shell_transport = profile.get("shell_transport", "terminal")
+    if shell_transport not in {"terminal", "ssh"}:
+        raise ValueError(f"unsupported shell transport in peer profile: {shell_transport}")
+    return via_ssh_host, shell_transport
 
 
 def write_private(path, content):
@@ -86,6 +117,22 @@ def add(args):
         raise ValueError("invalid SSH user")
     if args.device_id and not re.fullmatch(r"[A-Za-z0-9-]{1,80}", args.device_id):
         raise ValueError("invalid UU device ID")
+    previous = load(args.peer) if profile_path(args.peer).exists() else {}
+    via_ssh_host = previous.get("via_ssh_host", "")
+    if args.via_ssh_host is not None:
+        via_ssh_host = args.via_ssh_host
+    elif args.direct:
+        via_ssh_host = ""
+    if via_ssh_host:
+        ssh_host(via_ssh_host)
+    if via_ssh_host == f"uu-{args.peer}":
+        raise ValueError("jump host cannot be the peer alias itself")
+    shell_transport = (args.shell_transport or
+                       previous.get("shell_transport", "terminal"))
+    if shell_transport not in {"terminal", "ssh"}:
+        raise ValueError(f"unsupported shell transport in peer profile: {shell_transport}")
+    remote_target = args.mapping_target or previous.get("mapping_target", "127.0.0.1")
+    remote_target = mapping_target(remote_target)
     ssh_dir = Path.home() / ".ssh"
     ssh_dir.mkdir(mode=0o700, exist_ok=True)
     with (ssh_dir / ".uu-ssh.lock").open("a") as lock:
@@ -114,53 +161,78 @@ def add(args):
             remainder = "".join(line for line in original.splitlines(keepends=True)
                                 if line.rstrip("\r\n") != INCLUDE)
             write_private(config, INCLUDE_BLOCK + remainder)
-        fragment = (MARKER + f"Host uu-{args.peer}\n"
-                    "    HostName 127.0.0.1\n"
-                    f"    Port {args.port}\n    User {args.user}\n"
-                    "    IdentityFile ~/.ssh/id_ed25519_uu_bridge\n"
-                    "    IdentitiesOnly yes\n"
-                    f"    HostKeyAlias uu-{args.peer}\n"
-                    "    StrictHostKeyChecking yes\n"
-                    "    PreferredAuthentications publickey\n"
-                    "    PasswordAuthentication no\n"
-                    "    KbdInteractiveAuthentication no\n"
-                    "    ForwardAgent no\n"
-                    "    ServerAliveInterval 30\n    ServerAliveCountMax 3\n"
-                    "    ConnectTimeout 10\n\n")
+        fragment_lines = [
+            MARKER.rstrip("\n"),
+            f"Host uu-{args.peer}",
+            "    HostName 127.0.0.1",
+            f"    Port {args.port}",
+            f"    User {args.user}",
+        ]
+        if via_ssh_host:
+            fragment_lines.append(f"    ProxyJump {via_ssh_host}")
+        fragment_lines.extend([
+            "    IdentityFile ~/.ssh/id_ed25519_uu_bridge",
+            "    IdentitiesOnly yes",
+            f"    HostKeyAlias uu-{args.peer}",
+            "    StrictHostKeyChecking yes",
+            "    PreferredAuthentications publickey",
+            "    PasswordAuthentication no",
+            "    KbdInteractiveAuthentication no",
+            "    NumberOfPasswordPrompts 0",
+            "    ForwardAgent no",
+            "    ControlMaster no",
+            "    ControlPath none",
+            "    ConnectionAttempts 1",
+            "    ServerAliveInterval 30",
+            "    ServerAliveCountMax 3",
+            "    ConnectTimeout 10",
+        ])
+        fragment = "\n".join(fragment_lines) + "\n\n"
         write_private(target, fragment)
-        previous = load(args.peer) if profile_path(args.peer).exists() else {}
         write_private(profile_path(args.peer), json.dumps({
             "name": args.peer, "port": args.port, "user": args.user,
             "device_id": args.device_id or previous.get("device_id", ""),
+            "via_ssh_host": via_ssh_host,
+            "shell_transport": shell_transport,
+            "mapping_target": remote_target,
         }, indent=2) + "\n")
     print(f"Ready: ssh uu-{args.peer}")
-    print(f"UU mapping on this controller: 127.0.0.1:{args.port} -> peer 127.0.0.1:22")
+    mapping_location = f"SSH host {via_ssh_host}" if via_ssh_host else "this controller"
+    print(f"UU mapping on {mapping_location}: 127.0.0.1:{args.port} -> "
+          f"remote-side target {remote_target}:22")
     print("Create/enable that rule in the UU port-mapping panel; add does not create a tunnel.")
     print(f"Public key to authorize on the peer: {key}.pub")
 
 
 def check(peer):
     profile = load(peer)
-    try:
-        with socket.create_connection(("127.0.0.1", profile["port"]), timeout=5) as conn:
-            conn.settimeout(5)
-            banner = conn.recv(256)
-        if not banner.startswith(b"SSH-"):
-            raise ValueError("mapped port did not return an SSH banner")
-    except (OSError, ValueError) as error:
-        raise ValueError(
-            f"uu-{peer}: {error}. Inspect the existing UU Port mapping "
-            f"127.0.0.1:{profile['port']} -> peer 127.0.0.1:22 and the peer's SSH service. "
-            "Leave active desktops connected; cancel any takeover prompt. "
-            "This check never opens a UU controller, Terminal, or recovery connection. "
-            "Coordinate mapping activation separately; do not restart the desktop."
-        ) from error
-    print(f"uu-{peer}: SSH transport responds; checking key authentication", flush=True)
+    via_ssh_host, _ = profile_route(profile)
+    remote_target = mapping_target(profile.get("mapping_target", "127.0.0.1"))
+    if via_ssh_host:
+        print(f"uu-{peer}: checking SSH through jump host {via_ssh_host}", flush=True)
+    else:
+        try:
+            with socket.create_connection(("127.0.0.1", profile["port"]), timeout=5) as conn:
+                conn.settimeout(5)
+                banner = conn.recv(256)
+            if not banner.startswith(b"SSH-"):
+                raise ValueError("mapped port did not return an SSH banner")
+        except (OSError, ValueError) as error:
+            raise ValueError(
+                f"uu-{peer}: {error}. Inspect the existing UU Port mapping "
+                f"127.0.0.1:{profile['port']} -> remote-side target "
+                f"{remote_target}:22 and the peer's SSH service. "
+                "Leave active desktops connected; cancel any takeover prompt. "
+                "This check never opens a UU controller, Terminal, or recovery connection. "
+                "Coordinate mapping activation separately; do not restart the desktop."
+            ) from error
+        print(f"uu-{peer}: SSH transport responds; checking key authentication", flush=True)
     try:
         return subprocess.run([
             "ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes",
             "-o", "PreferredAuthentications=publickey", "-o", "ForwardAgent=no",
-            "-o", "ClearAllForwardings=yes", "-o", "ConnectTimeout=5",
+            "-o", "ClearAllForwardings=yes", "-o", "ConnectionAttempts=1",
+            "-o", "NumberOfPasswordPrompts=0", "-o", "ConnectTimeout=5",
             f"uu-{peer}", "hostname; id -un; uname -s",
         ], timeout=15).returncode
     except subprocess.TimeoutExpired as error:
@@ -168,6 +240,32 @@ def check(peer):
             f"uu-{peer}: SSH authentication/command check timed out after 15 seconds. "
             "Only this diagnostic process was stopped; no UU recovery or desktop action was taken."
         ) from error
+
+
+def terminal(peer_name, options, fresh_by_default=False):
+    peer = load(peer_name)
+    if not peer.get("device_id"):
+        raise ValueError("peer has no device ID; repeat add with --device-id")
+    fresh = ["--new-session"] if fresh_by_default else []
+    for option in options:
+        if option in {"--session-id", "--list-sessions", "--kill-session",
+                      "--new-session", "-h", "--help"} or option.startswith(
+                          ("--session-id=", "--kill-session=")):
+            fresh = []
+    agent = shutil.which("uu-agent") or str(Path(__file__).resolve().with_name("uu-agent"))
+    os.execv(agent, [agent, "term", "--device-id", peer["device_id"], *fresh, *options])
+
+
+def shell(peer_name, options):
+    peer = load(peer_name)
+    _, transport = profile_route(peer)
+    if transport == "ssh":
+        os.execvp("ssh", ["ssh", f"uu-{peer_name}", *options])
+        return
+    if transport == "terminal":
+        terminal(peer_name, options, fresh_by_default=True)
+        return
+    raise AssertionError("validated shell transport was not dispatched")
 
 
 def main():
@@ -180,11 +278,23 @@ def main():
     p.add_argument("--port", type=port, required=True)
     p.add_argument("--user", default=getpass.getuser())
     p.add_argument("--device-id")
+    route = p.add_mutually_exclusive_group()
+    route.add_argument("--via-ssh-host", type=ssh_host,
+                       help="reach the mapping through an existing trusted SSH host")
+    route.add_argument("--direct", action="store_true",
+                       help="remove a previously configured SSH jump host")
+    p.add_argument("--shell-transport", choices=("terminal", "ssh"),
+                   help="transport selected by uu-shell (default: preserve or terminal)")
+    p.add_argument("--mapping-target", type=mapping_target,
+                   help="remote-side SSH target shown in diagnostics (default: preserve or 127.0.0.1)")
     sub.add_parser("key", help="create/reuse the dedicated key and print its public key")
     sub.add_parser("list", help="list configured peers")
     p = sub.add_parser("check", help="check mapped SSH and key authentication")
     p.add_argument("peer", type=name)
     p = sub.add_parser("terminal", help="UU native Terminal (requires terminal patch on peer)")
+    p.add_argument("peer", type=name)
+    p.add_argument("options", nargs=argparse.REMAINDER)
+    p = sub.add_parser("shell", help="open the peer with its explicitly configured shell transport")
     p.add_argument("peer", type=name)
     p.add_argument("options", nargs=argparse.REMAINDER)
     p = sub.add_parser("reverse", help="keep a reverse SSH mapping open in this terminal")
@@ -203,15 +313,17 @@ def main():
     elif args.command == "list":
         for path in sorted((Path.home() / ".config/uu-ssh/peers").glob("*.json")):
             peer = json.loads(path.read_text())
-            print(f"uu-{peer['name']}  {peer['user']}@127.0.0.1:{peer['port']}")
+            via_ssh_host, shell_transport = profile_route(peer)
+            via = f" via {via_ssh_host}" if via_ssh_host else ""
+            target = mapping_target(peer.get("mapping_target", "127.0.0.1"))
+            print(f"uu-{peer['name']}  {peer['user']}@127.0.0.1:{peer['port']}"
+                  f"{via} -> {target}:22  shell={shell_transport}")
     elif args.command == "check":
         return check(args.peer)
     elif args.command == "terminal":
-        peer = load(args.peer)
-        if not peer["device_id"]:
-            raise ValueError("peer has no device ID; repeat add with --device-id")
-        agent = shutil.which("uu-agent") or str(Path(__file__).resolve().with_name("uu-agent"))
-        os.execv(agent, [agent, "term", "--device-id", peer["device_id"], *args.options])
+        terminal(args.peer, args.options)
+    elif args.command == "shell":
+        shell(args.peer, args.options)
     elif args.command == "reverse":
         load(args.peer)
         print(f"Keeping peer 127.0.0.1:{args.listen_port} -> this computer 127.0.0.1:22; "

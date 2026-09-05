@@ -23,19 +23,19 @@ class UUShellTests(unittest.TestCase):
     def run_shell(self, *args):
         return subprocess.run(["bash", str(self.script), *args], capture_output=True)
 
-    def test_fresh_session_by_default_and_preserves_exit_status(self):
+    def test_delegates_to_profile_selected_shell_and_preserves_exit_status(self):
         result = self.run_shell("lab")
         self.assertEqual(result.returncode, 17)
         self.assertEqual(result.stdout.split(b"\0")[:-1],
-                         [b"terminal", b"lab", b"--new-session"])
+                         [b"shell", b"lab"])
 
-    def test_explicit_session_actions_are_not_changed(self):
+    def test_transport_arguments_are_not_changed(self):
         for options in (("--session-id", "42"), ("--session-id=42",),
                         ("--list-sessions",), ("--new-session",),
                         ("--kill-session", "42"), ("--kill-session=42",)):
             with self.subTest(options=options):
                 result = self.run_shell("lab", *options)
-                expected = ["terminal", "lab", *options]
+                expected = ["shell", "lab", *options]
                 self.assertEqual(result.stdout.split(b"\0")[:-1],
                                  [item.encode() for item in expected])
 
@@ -43,7 +43,7 @@ class UUShellTests(unittest.TestCase):
         token = "quotes ' 中文 $(touch SHOULD_NOT_EXIST)"
         result = self.run_shell("lab", "--session-id", token)
         self.assertEqual(result.stdout.split(b"\0")[:-1],
-                         [b"terminal", b"lab", b"--session-id", token.encode()])
+                         [b"shell", b"lab", b"--session-id", token.encode()])
 
     def test_help_does_not_call_vendor_helper(self):
         for options in ((), ("--help",), ("-h",)):

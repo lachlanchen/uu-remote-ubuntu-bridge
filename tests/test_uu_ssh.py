@@ -28,7 +28,11 @@ class UUSSHTests(unittest.TestCase):
         self.home_patch.start()
         self.addCleanup(self.home_patch.stop)
         self.key = helper.ensure_key()  # Real ssh-keygen, isolated temporary key.
-        self.args = argparse.Namespace(peer="lab", port=22709, user="alice", device_id="test-id")
+        self.args = argparse.Namespace(
+            peer="lab", port=22709, user="alice", device_id="test-id",
+            via_ssh_host=None, direct=False, shell_transport=None,
+            mapping_target=None,
+        )
 
     def add_peer(self, effective="hostname uu-lab\n"):
         with mock.patch.object(helper.subprocess, "run", return_value=argparse.Namespace(stdout=effective)):
@@ -75,9 +79,42 @@ class UUSSHTests(unittest.TestCase):
         self.assertEqual(peer["preferredauthentications"], "publickey")
         self.assertEqual(peer["passwordauthentication"], "no")
         self.assertEqual(peer["kbdinteractiveauthentication"], "no")
+        self.assertEqual(peer["numberofpasswordprompts"], "0")
         self.assertEqual(peer["forwardagent"], "no")
+        self.assertEqual(peer["controlmaster"], "false")
+        self.assertEqual(peer["connectionattempts"], "1")
+        self.assertIn("    ControlPath none\n",
+                      (self.home / ".ssh/uu-bridge/lab.conf").read_text())
         self.assertEqual(effective("original")["hostname"], "example.invalid")
         self.assertEqual(effective("unrelated")["serveraliveinterval"], "17")
+
+    def test_jump_host_route_is_explicit_parseable_and_removable(self):
+        self.args.via_ssh_host = "glassagent-mac"
+        self.args.shell_transport = "ssh"
+        self.add_peer()
+        profile = helper.load("lab")
+        self.assertEqual(profile["via_ssh_host"], "glassagent-mac")
+        self.assertEqual(profile["shell_transport"], "ssh")
+        self.assertEqual(profile["mapping_target"], "127.0.0.1")
+        fragment = (self.home / ".ssh/uu-bridge/lab.conf").read_text()
+        self.assertIn("    ProxyJump glassagent-mac\n", fragment)
+
+        self.args.via_ssh_host = None
+        self.args.direct = True
+        self.add_peer()
+        profile = helper.load("lab")
+        self.assertEqual(profile["via_ssh_host"], "")
+        self.assertEqual(profile["shell_transport"], "ssh")
+        self.assertNotIn("ProxyJump", (self.home / ".ssh/uu-bridge/lab.conf").read_text())
+
+    def test_remote_lan_mapping_target_is_validated_and_preserved(self):
+        self.args.mapping_target = "192.168.1.99"
+        self.add_peer()
+        self.assertEqual(helper.load("lab")["mapping_target"], "192.168.1.99")
+        self.args.mapping_target = None
+        self.args.port = 22023
+        self.add_peer()
+        self.assertEqual(helper.load("lab")["mapping_target"], "192.168.1.99")
 
     def test_refuses_unrelated_alias_and_unmanaged_fragment(self):
         with self.assertRaisesRegex(ValueError, "unrelated"):
@@ -103,6 +140,15 @@ class UUSSHTests(unittest.TestCase):
         for invalid in ("22", "0", "65536"):
             with self.assertRaises(argparse.ArgumentTypeError):
                 helper.port(invalid)
+        for invalid in ("-oProxyCommand=bad", "host name", "../host", "host\nProxyJump evil"):
+            with self.assertRaises(argparse.ArgumentTypeError):
+                helper.ssh_host(invalid)
+        for valid in ("127.0.0.1", "192.168.1.99", "::1", "server.example", "host.local."):
+            self.assertEqual(helper.mapping_target(valid), valid)
+        for invalid in ("", "-bad.example", "bad-.example", "host name", "host/path",
+                        "host\nProxyJump evil"):
+            with self.assertRaises(argparse.ArgumentTypeError):
+                helper.mapping_target(invalid)
 
     def test_closed_mapping_reports_action_without_starting_services(self):
         self.add_peer()
@@ -150,8 +196,60 @@ class UUSSHTests(unittest.TestCase):
                 self.assertIn("PreferredAuthentications=publickey", command)
                 self.assertIn("ForwardAgent=no", command)
                 self.assertIn("ClearAllForwardings=yes", command)
+                self.assertIn("ConnectionAttempts=1", command)
+                self.assertIn("NumberOfPasswordPrompts=0", command)
                 self.assertEqual(command[-2:], ["uu-lab", "hostname; id -un; uname -s"])
                 self.assertEqual(run.call_args.kwargs["timeout"], 15)
+
+    def test_jump_host_check_skips_local_socket_probe(self):
+        self.args.via_ssh_host = "glassagent-mac"
+        self.args.shell_transport = "ssh"
+        self.add_peer()
+        with mock.patch.object(helper.socket, "create_connection") as connect:
+            with mock.patch.object(helper.subprocess, "run", return_value=argparse.Namespace(returncode=0)) as run:
+                with contextlib.redirect_stdout(io.StringIO()) as output:
+                    self.assertEqual(helper.check("lab"), 0)
+                connect.assert_not_called()
+                self.assertIn("through jump host glassagent-mac", output.getvalue())
+                self.assertEqual(run.call_args.args[0][-2], "uu-lab")
+
+    def test_shell_dispatches_only_the_configured_transport(self):
+        literal = ["printf '%s'", "a b", "中文"]
+        with mock.patch.object(helper, "load", return_value={
+                "device_id": "test-id", "shell_transport": "ssh"}):
+            with mock.patch.object(helper.os, "execvp") as execute:
+                with mock.patch.object(helper, "terminal") as terminal:
+                    helper.shell("lab", literal)
+                    execute.assert_called_once_with("ssh", ["ssh", "uu-lab", *literal])
+                    terminal.assert_not_called()
+
+    def test_terminal_shell_requests_fresh_session_unless_action_is_explicit(self):
+        cases = (
+            ((), ["--new-session"]),
+            (("--session-id", "42"), ["--session-id", "42"]),
+            (("--session-id=42",), ["--session-id=42"]),
+            (("--list-sessions",), ["--list-sessions"]),
+            (("--new-session",), ["--new-session"]),
+            (("--kill-session", "42"), ["--kill-session", "42"]),
+        )
+        for options, expected in cases:
+            with self.subTest(options=options):
+                with mock.patch.object(helper, "load", return_value={
+                        "device_id": "test-id", "shell_transport": "terminal"}):
+                    with mock.patch.object(helper.shutil, "which", return_value="/bin/uu-agent"):
+                        with mock.patch.object(helper.os, "execv") as execute:
+                            helper.shell("lab", list(options))
+                            execute.assert_called_once_with(
+                                "/bin/uu-agent",
+                                ["/bin/uu-agent", "term", "--device-id", "test-id", *expected],
+                            )
+
+    def test_invalid_profile_transport_never_executes(self):
+        with mock.patch.object(helper, "load", return_value={"shell_transport": "fallback"}):
+            with mock.patch.object(helper.os, "execvp") as execute:
+                with self.assertRaisesRegex(ValueError, "unsupported shell transport"):
+                    helper.shell("lab", [])
+                execute.assert_not_called()
 
     def test_ssh_timeout_reports_failure_without_uu_recovery(self):
         self.add_peer()

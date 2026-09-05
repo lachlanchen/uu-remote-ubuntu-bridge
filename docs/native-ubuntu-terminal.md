@@ -119,26 +119,35 @@ artifact.
 
 ## Install and use
 
-For a terminal-to-terminal connection, use the short helper on either bridge:
+For a terminal-to-terminal connection, use the short helper on either bridge.
+The peer profile explicitly selects `terminal` or `ssh`; the helper never tries
+one and silently falls back to the other:
 
 ```bash
-# The peer name is one already configured with uu-ssh add.
+# Native Terminal is the default for old and newly created profiles.
+uu-ssh add lab --port 22709 --user YOUR_REMOTE_USER \
+  --device-id UU_DEVICE_ID --shell-transport terminal
 uu-shell lab
 
 # Explicitly resume a known vendor session instead of opening a fresh one:
 uu-shell lab --session-id SESSION_ID
+
+# A verified mapped-SSH profile accepts normal ssh arguments/commands instead:
+uu-ssh add lab --port 22709 --user YOUR_REMOTE_USER --shell-transport ssh
+uu-shell lab 'hostname; id -un'
 uu-shell --help
 ```
 
-It delegates to the existing native Terminal adapter, opens a fresh session
-by default, passes arguments literally, and preserves vendor exit status and
-the terminal's normal I/O/signals. It does not start a daemon, open a desktop,
-activate Port Mapping, retry, or fall back to a cloud host. The helper itself
-does not fix the controller-compatibility failures described above; acceptance
-still requires a real remote shell. Session-list requests are explicit and can
-initialize vendor transport. File transfer remains a separate acceptance test;
-use the verified mapped SSH/scp path when available, not pasted terminal text
-as an unverified file channel.
+For `terminal`, it delegates to the existing native Terminal adapter and opens
+a fresh session by default. For `ssh`, it executes the profile's pinned
+`uu-PEER` OpenSSH alias. Both paths pass arguments literally and preserve the
+selected transport's exit status and normal I/O/signals. It does not start a
+daemon, open a desktop, activate Port Mapping, retry, or fall back to another
+route. The helper itself does not fix controller-compatibility failures or a
+closed mapping; acceptance still requires a real remote shell. Session-list
+requests are explicit and can initialize vendor transport. File transfer
+remains a separate acceptance test; use a verified mapped SSH/scp path, not
+pasted terminal text as an unverified file channel.
 
 To update only the shell/SSH entry points without restarting the desktop:
 
