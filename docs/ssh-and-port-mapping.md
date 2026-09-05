@@ -336,6 +336,49 @@ weaken SSH authentication, or add an unbounded reconnect/takeover loop.
 
 ## Set up the SSH alias
 
+### Matching one-word commands on both computers
+
+With the existing `uu-7090` SSH config on the workstation, use
+[`ssh-uu-7090`](../examples/ssh-shortcuts/ssh-uu-7090). The peer counterpart is
+[`ssh-uu-lachlanserver`](../examples/ssh-shortcuts/ssh-uu-lachlanserver), which
+requires the peer's own `uu-lachlanserver` config. These small executable
+shortcuts pass arguments to native SSH without parsing, retries, takeover,
+transport fallback, or service changes. They are not created by `uu-ssh add`.
+
+For the workstation, from this repository (review an existing destination
+before replacing it):
+
+```bash
+install -d -m 0755 "$HOME/.local/bin"
+install -m 0755 examples/ssh-shortcuts/ssh-uu-7090 "$HOME/.local/bin/ssh-uu-7090"
+ssh-uu-7090
+ssh-uu-7090 hostname
+ssh-uu-7090 -G
+```
+
+On the peer, install only its counterpart, not the workstation command.
+With `~/.local/bin` already in PATH, no `.bashrc` reload is needed. These files
+persist across reboot, but they do not make a disconnected UU mapping live.
+`-G` checks SSH settings without connecting; it is not a connectivity test.
+Keep `scp file.txt uu-7090:/remote/path/` for file transfer.
+
+### Cloud relay as a separate optional transport
+
+A public server can carry two independently supervised outbound reverse-SSH
+tunnels, one from each Ubuntu host. Each reverse listener stays on cloud
+loopback; an authenticated SSH jump connection reaches the selected endpoint.
+That removes dependence on a UU controller session, but still depends on both
+networks and the cloud server. Recovery reopens the transport; it does not
+resurrect an already-lost SSH session. Use remote tmux for long-running work.
+
+This is the same underlying reverse-tunnel idea used by
+[LazyEdge](https://github.com/lachlanchen/LazyEdge), whose current application
+gateway is scoped to approved HTTP contracts, not arbitrary SSH/TCP service
+publication. Do not feed raw SSH through its HTTP guard or repurpose a running
+application tunnel. Plan dedicated identities, loopback ports and units.
+See the [cloud SSH relay design](https://github.com/lachlanchen/the-art-of-lazying/blob/main/lazy-hacks/remote-desktop/cloud-ssh-relay-plan.md).
+No cloud purchase, deployment, route switch or auto-fallback was made here.
+
 ### Inspect the existing mapping panel without fighting relay focus
 
 The bridge deliberately restores its desktop relay focus once per second.

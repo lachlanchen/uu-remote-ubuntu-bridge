@@ -1,0 +1,4 @@
+#!/bin/sh
+# Convenience command only: retain the existing pinned SSH alias and transport.
+# No UU takeover, tunnel restart, alternate route, or retry.
+exec /usr/bin/ssh uu-7090 "$@"
