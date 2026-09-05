@@ -10,6 +10,12 @@ with a dedicated Ed25519 key and returned the peer's Linux hostname and user.
 No extra Wine socket patch, virtual NIC, router change, or SSH daemon change
 was needed on either tested host.
 
+After the peer's own agent upgraded it to the audited 4.39.2.1561 build,
+**both SSH directions were independently verified** using one native UU
+mapping and one reverse SSH forward. Each host returned the other's actual
+Linux hostname and user using its own dedicated key. This is live-session
+acceptance, not a claim of uninterrupted or reboot-persistent transport.
+
 This is **one forwarded service, not a virtual LAN**. It does not make remote
 LAN addresses, broadcast discovery, ping, or every other port reachable. SSH
 works normally over that TCP stream, including `scp`, `rsync`, and additional
@@ -34,6 +40,36 @@ do not establish what initially removed the listener.
   mapping-management subcommand. This helper deliberately does not edit UU's
   private database or fabricate a vendor CLI flag.
 - UU desktop connectivity and SSH-mapping availability are distinct checks.
+
+### Recover an existing mapping without restarting the desktop
+
+On the tested 4.39.2 pair, a native terminal session-list query initialized the
+vendor connection and reopened the controller's already-saved SSH mapping:
+
+```bash
+# Requires add --device-id; this lists sessions, not a new terminal shell.
+timeout 15 uu-ssh terminal lab --list-sessions
+ss -ltn '( sport = :22709 )'
+uu-ssh check lab
+```
+
+The query returned `No active sessions.`; a wineserver-owned loopback listener
+then appeared and real SSH succeeded. This happened twice without accepting a
+GUI takeover, changing the peer's desktop, or restarting either bridge. It
+**does not create a missing mapping**. A query failure, ownership prompt, or
+absent listener still requires diagnosis; do not automatically accept takeover.
+
+One restored mapping subsequently disappeared despite unchanged local UU
+service/server PIDs and an active reverse SSH process. Its disappearance also
+closed the SSH return path. Therefore a successful query does not prove the
+connection will stay open: the vendor lifecycle still matters. Current `.slog`
+files are binary, so a growing file is not a decoded disconnect explanation.
+Do not attribute a precise cause without peer timestamps or readable evidence.
+
+After a drop, check both listeners, confirm the previous reverse process has
+exited, and restart **only the one owned forward** after the UU mapping works
+again. Do not run a second native mapping on its return port, restart RDP,
+weaken SSH authentication, or add an unbounded reconnect/takeover loop.
 
 ## Set up the SSH alias
 
@@ -145,8 +181,25 @@ Require a loopback-only listener. SSH daemon policy must allow remote
 forwarding; a non-default `GatewayPorts yes` can force a wider bind despite
 the client's requested address. Do not weaken server policy automatically.
 The reverse direction remains dependent on the original UU mapping and SSH
-process. This topology is based on standard OpenSSH forwarding; simultaneous
-two-host acceptance was deferred when the live peer required takeover.
+process. This topology was verified in both directions on the two live hosts
+after restoring the saved native mapping. Both agents independently checked
+host identity, key authentication, and loopback-only listeners. The initial
+takeover blocker was not bypassed by forcing a second control session.
+
+For an intentionally persistent *current login session*, a named tmux pane
+can own the forward (this is not boot autostart):
+
+```bash
+tmux new-session -d -s uu-ssh-lab-return uu-ssh reverse lab --listen-port 22999
+tmux set-option -w -t uu-ssh-lab-return:0 remain-on-exit on
+tmux capture-pane -p -t uu-ssh-lab-return:0.0 -S -20
+```
+
+`remain-on-exit` retains the pane's exit message if transport fails; it does
+not retry anything. Inspect it and check port ownership before recovering.
+Never blindly respawn a live pane or kill someone else's similarly named
+session. Record the owning host, exact session/pane, ports, and command in the
+private handoff so the peer does not launch a competing return tunnel.
 
 For truly independent unattended networking, use an approved VPN or existing
 reverse-tunnel gateway separately. This change installs neither.
@@ -198,6 +251,28 @@ SSH banner but authentication failure: check the destination's authorized
 public key and user. Changed host key: verify the destination identity, never
 automatically erase known-host entries. Do not restart XRDP or change keyboard
 layouts to fix a TCP mapping.
+
+### Visible desktop but clicks or keys fail
+
+Treat input separately from SSH. On the RDP-relay peer, mouse events logged
+`route=rdp focus=timeout result=0 error=21` while its operator deliberately
+foregrounded UU's management window to configure port mapping. The broker
+refused to inject into the wrong window. After the management-focus lease
+was released, both X11's active window and Wine's `GetForegroundWindow()`
+identified `Ubuntu-Desktop-Relay` again.
+
+Check the timestamp: an old focus error is not evidence of a new failure.
+Verify X11 **and** Win32 foreground state where applicable; X11 focus alone
+does not establish Wine focus. Keep the peer's proven RDP or direct-X11
+profile, and release only management focus owned by the diagnostic session.
+Do not inject test clicks into someone's active application. Isolated mouse,
+symbol, Chinese, emoji, and long-text tests can validate the patched route,
+but only a real UU client test confirms delivery from the user's device.
+
+The recorded case had foreground state restored and isolated tests passing;
+real-client click/typing confirmation was still pending. Do not call input
+accepted based solely on log silence or the bridge verifier's historical
+controller-input check.
 
 References: [OpenSSH forwarding options](https://man.openbsd.org/ssh),
 [SSH aliases, Includes, and host-key identity](https://man.openbsd.org/ssh_config),
