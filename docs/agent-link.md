@@ -119,3 +119,17 @@ deduplication, timeouts with retained outbox, strict/fixed SSH invocation,
 receipt validation, collision refusal, size validation, and symlink guards.
 Live two-host deployment and round-trip acceptance must be recorded separately;
 unit tests alone do not establish network reachability.
+
+### Two-host acceptance, 2026-09-05
+
+The same helper build was installed alone on both live Ubuntu hosts. An actual
+forward message and a reverse message received exact stored receipts, preserving
+English, Chinese, Japanese, emoji, quotes, and newlines. The reverse send was
+invoked by the workstation over SSH; it was a transport test, not an independent
+peer-agent reply. No desktop or UU runtime was restarted for installation.
+
+The underlying mapping later disappeared despite 36/36 peer-driven active SSH
+rounds over 433 seconds. A new `uu-link send` failed with connection refused
+and retained its saved UUID in the outbox, as designed. This is why receipts,
+explicit retries, and the private Markdown fallback are necessary. It does not
+make `uu-link` an alternative network transport when UU itself disconnects.
