@@ -1002,7 +1002,6 @@ log "Using private display $DISPLAY at $resolution and RDP port $rdp_port."
 if [[ "$cursor_guard_setting" == on ]]; then
     resolve_cursor_size
 fi
-start_x11_input_helper
 if ! start_terminal_bridge; then
     exit 1
 fi
@@ -1041,6 +1040,7 @@ mv "$private_display_tmp" "$private_display_file"
 
 /usr/bin/openbox >>"$state_dir/openbox.log" 2>&1 &
 openbox_pid=$!
+start_x11_input_helper
 
 if [[ "$desktop_relay" == rdp && ! -f "$freerdp_exe" ]]; then
     log 'The Windows FreeRDP client is missing from the Wine prefix.'
