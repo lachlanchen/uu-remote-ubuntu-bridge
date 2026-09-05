@@ -66,6 +66,15 @@ connection will stay open: the vendor lifecycle still matters. Current `.slog`
 files are binary, so a growing file is not a decoded disconnect explanation.
 Do not attribute a precise cause without peer timestamps or readable evidence.
 
+After the second recovery, the peer completed **30/30 bidirectional SSH
+rounds, zero failures, over 348 seconds**. The same owned reverse SSH process
+survived throughout, with no error in its retained pane. A separate 237568-byte
+known UTF-8 fixture (English, Chinese, Japanese, quotes, and newlines) also
+returned byte-exactly through both paths. These establish usable current
+transport, not a reboot test. No real desktop controller was attached during
+the peer's final input check, so desktop-control coexistence still requires
+that actual client acceptance.
+
 After a drop, check both listeners, confirm the previous reverse process has
 exited, and restart **only the one owned forward** after the UU mapping works
 again. Do not run a second native mapping on its return port, restart RDP,
