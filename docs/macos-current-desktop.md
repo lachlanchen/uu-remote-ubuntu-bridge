@@ -47,6 +47,17 @@ ssh glassagent-mac \
 The checked-in launcher is specific to the validated 7090 and its SSH alias.
 Change the properties at the top before compiling for another host.
 
+The launcher resolves `OptiPlex-7090.local` with mDNS instead of retaining a
+DHCP address. Router or subnet changes therefore do not require editing the
+app as long as both computers are on the same multicast-capable LAN. Keep the
+SSH alias pinned with `HostKeyAlias`; a changing address must never weaken host
+key verification.
+
+For **Separate Login (RDP)**, the launcher uses Windows App or Microsoft Remote
+Desktop when installed. On an older Mac with Royal TSX, it generates a small
+temporary `.rdp` file containing the same mDNS hostname and opens it with Royal
+TSX. No Windows App bookmark or stale numeric address is required.
+
 The first **Current Desktop** connection asks for the same password configured
 for the bridge. On the validated host it is stored by Screen Sharing in the
 Mac login keychain for `localhost:15922`. Select **Remember password**; later

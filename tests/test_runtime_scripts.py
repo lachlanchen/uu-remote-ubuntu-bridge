@@ -462,6 +462,11 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("x11vnc -storepasswd $relay_vnc_auth_quoted", installer)
         self.assertNotIn('-storepasswd "$rdp_password"', installer)
         self.assertIn('property vncTunnelPort : 15922', macos_launcher)
+        self.assertIn('property targetHost : "OptiPlex-7090.local"', macos_launcher)
+        self.assertNotIn("192.168.1.", macos_launcher)
+        self.assertNotIn("targetAddress", macos_launcher)
+        self.assertIn('applicationExists("/Applications/Royal TSX.app")', macos_launcher)
+        self.assertIn('"OptiPlex-7090.rdp"', macos_launcher)
         self.assertIn(
             '":127.0.0.1:" & (relayPort as text)',
             macos_launcher,

@@ -1,10 +1,8 @@
 property targetName : "OptiPlex 7090"
 property targetHost : "OptiPlex-7090.local"
-property targetAddress : "192.168.1.100"
 property sshAlias : "glassagent-ubuntu"
 property relayPort : 5922
 property vncTunnelPort : 15922
-property windowsBookmarkId : "E44C03B4-8BB5-4E52-9CBD-70C29E5F0404"
 
 on run
 	set connectionModes to {"Current Desktop", "Separate Login (RDP)", "Terminal (SSH)", "Connection Test"}
@@ -59,14 +57,21 @@ on openRemoteLogin()
 		my showUnavailable("Remote login", 3389)
 		return
 	end if
-	
-	set windowsCli to "/Applications/Windows App.app/Contents/MacOS/Windows App"
-	try
-		set bookmarkUri to do shell script quoted form of windowsCli & " --script bookmark export " & windowsBookmarkId & " --uri"
-	on error
-		set bookmarkUri to "rdp://full%20address=s%3A" & targetAddress & "%3A3389&username=s%3Alachlan&screen%20mode%20id=i%3A2&dynamic%20resolution=i%3A1&redirectclipboard=i%3A1&audiomode=i%3A0"
-	end try
-	do shell script "/usr/bin/open -a " & quoted form of "Windows App" & " " & quoted form of bookmarkUri
+
+	set rdpUri to "rdp://full%20address=s%3A" & targetHost & "%3A3389&username=s%3Alachlan&screen%20mode%20id=i%3A2&dynamic%20resolution=i%3A1&redirectclipboard=i%3A1&audiomode=i%3A0"
+	if my applicationExists("/Applications/Windows App.app") then
+		do shell script "/usr/bin/open -a " & quoted form of "Windows App" & " " & quoted form of rdpUri
+	else if my applicationExists("/Applications/Microsoft Remote Desktop.app") then
+		do shell script "/usr/bin/open -a " & quoted form of "Microsoft Remote Desktop" & " " & quoted form of rdpUri
+	else if my applicationExists("/Applications/Royal TSX.app") then
+		set lineFeed to ASCII character 10
+		set rdpContents to "full address:s:" & targetHost & ":3389" & lineFeed & "username:s:lachlan" & lineFeed & "screen mode id:i:2" & lineFeed & "dynamic resolution:i:1" & lineFeed & "redirectclipboard:i:1" & lineFeed & "audiomode:i:0" & lineFeed
+		set rdpPath to (POSIX path of (path to temporary items)) & "OptiPlex-7090.rdp"
+		do shell script "/usr/bin/printf %s " & quoted form of rdpContents & " > " & quoted form of rdpPath
+		do shell script "/usr/bin/open -a " & quoted form of "Royal TSX" & " " & quoted form of rdpPath
+	else
+		display alert "RDP client unavailable" message "Install Windows App, Microsoft Remote Desktop, or Royal TSX." as warning
+	end if
 end openRemoteLogin
 
 on openTerminal()
@@ -104,6 +109,15 @@ on stateLabel(isReady)
 	if isReady then return "Ready"
 	return "Unavailable"
 end stateLabel
+
+on applicationExists(applicationPath)
+	try
+		do shell script "/usr/bin/test -d " & quoted form of applicationPath
+		return true
+	on error
+		return false
+	end try
+end applicationExists
 
 on showUnavailable(serviceName, portNumber)
 	display alert serviceName & " is unavailable" message targetName & " did not answer on port " & (portNumber as text) & "." as warning
