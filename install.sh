@@ -54,6 +54,7 @@ saved_follow_desktop_resolution="$(
 saved_display="$(saved_setting UURB_DISPLAY)"
 saved_desktop_target="$(saved_setting UURB_DESKTOP_TARGET)"
 saved_desktop_relay="$(saved_setting UURB_DESKTOP_RELAY)"
+saved_shared_vnc_port="$(saved_setting UURB_DESKTOP_VNC_PORT)"
 saved_vnc_grab_keyboard="$(saved_setting UURB_VNC_GRAB_KEYBOARD)"
 saved_grd_fd_restart_threshold="$(
     saved_setting UURB_GRD_FD_RESTART_THRESHOLD
@@ -73,6 +74,7 @@ follow_desktop_resolution="${UURB_FOLLOW_DESKTOP_RESOLUTION:-${saved_follow_desk
 bridge_display="${UURB_DISPLAY:-${saved_display:-auto}}"
 desktop_target="${UURB_DESKTOP_TARGET:-${saved_desktop_target:-auto}}"
 desktop_relay="${UURB_DESKTOP_RELAY:-${saved_desktop_relay:-rdp}}"
+shared_vnc_port="${UURB_DESKTOP_VNC_PORT:-${saved_shared_vnc_port:-}}"
 vnc_grab_keyboard="${UURB_VNC_GRAB_KEYBOARD:-${saved_vnc_grab_keyboard:-on}}"
 grd_fd_restart_threshold="${UURB_GRD_FD_RESTART_THRESHOLD:-${saved_grd_fd_restart_threshold:-4096}}"
 text_key_delay_ms="$(resolve_text_key_delay \
@@ -329,6 +331,13 @@ if [[ "$desktop_target" != auto &&
 fi
 if [[ "$desktop_relay" != rdp && "$desktop_relay" != vnc ]]; then
     printf 'The desktop relay must be rdp or vnc.\n' >&2
+    exit 2
+fi
+if [[ -n "$shared_vnc_port" ]] && {
+    [[ ! "$shared_vnc_port" =~ ^[1-9][0-9]{3}$ ]] ||
+    ((shared_vnc_port < 5900 || shared_vnc_port > 5999));
+}; then
+    printf 'UURB_DESKTOP_VNC_PORT must be empty or in 5900..5999.\n' >&2
     exit 2
 fi
 if [[ "$vnc_grab_keyboard" != off && "$vnc_grab_keyboard" != on ]]; then
@@ -767,6 +776,9 @@ printf 'UURB_FOLLOW_DESKTOP_RESOLUTION=%s\n' \
 printf 'UURB_DISPLAY=%s\n' "$bridge_display" >>"$environment_tmp"
 printf 'UURB_DESKTOP_TARGET=%s\n' "$desktop_target" >>"$environment_tmp"
 printf 'UURB_DESKTOP_RELAY=%s\n' "$desktop_relay" >>"$environment_tmp"
+if [[ -n "$shared_vnc_port" ]]; then
+    printf 'UURB_DESKTOP_VNC_PORT=%s\n' "$shared_vnc_port" >>"$environment_tmp"
+fi
 printf 'UURB_VNC_GRAB_KEYBOARD=%s\n' \
     "$vnc_grab_keyboard" >>"$environment_tmp"
 printf 'UURB_GRD_FD_RESTART_THRESHOLD=%s\n' \
@@ -793,6 +805,8 @@ chmod 0600 "$environment_tmp"
 mv "$environment_tmp" "$environment_file"
 install -m 0755 "$repo_dir/scripts/uu-remote-bridge" \
     "$HOME/.local/bin/uu-remote-bridge"
+install -m 0755 "$repo_dir/scripts/uu-shared-physical-vnc" \
+    "$HOME/.local/bin/uu-shared-physical-vnc"
 install -m 0755 "$repo_dir/scripts/uu-remote" "$HOME/.local/bin/uu-remote"
 install -m 0755 "$repo_dir/scripts/uu-remote-console" \
     "$HOME/.local/bin/uu-remote-console"
@@ -814,6 +828,8 @@ install -m 0755 "$repo_dir/scripts/uu-keyring-unlock.py" \
     "$HOME/.local/bin/uu-keyring-unlock"
 install -m 0644 "$repo_dir/systemd/uu-remote-bridge.service" \
     "$HOME/.config/systemd/user/uu-remote-bridge.service"
+install -m 0644 "$repo_dir/systemd/uu-shared-physical-vnc.service" \
+    "$HOME/.config/systemd/user/uu-shared-physical-vnc.service"
 install -m 0644 "$repo_dir/systemd/uu-remote-console.service" \
     "$HOME/.config/systemd/user/uu-remote-console.service"
 install -m 0644 "$repo_dir/systemd/uu-keyring-unlock.service" \

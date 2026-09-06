@@ -6,6 +6,7 @@ bridge_user="${USER:-$(id -un)}"
 bridge_display="${UURB_DISPLAY:-auto}"
 desktop_target="${UURB_DESKTOP_TARGET:-auto}"
 desktop_relay="${UURB_DESKTOP_RELAY:-rdp}"
+shared_vnc_port="${UURB_DESKTOP_VNC_PORT:-}"
 vnc_grab_keyboard="${UURB_VNC_GRAB_KEYBOARD:-on}"
 rdp_port="${UURB_RDP_PORT:-3390}"
 resolution="${UURB_RESOLUTION:-1920x1080}"
@@ -538,8 +539,8 @@ desktop_candidate_matches_target() {
     local candidate_service="$2"
     local candidate_seat="$3"
     local candidate_bus="$4"
+    local candidate_xauthority="${5:-}"
     local normalized_candidate
-    local normalized_manager
     local normalized_target
 
     case "$desktop_target" in
@@ -547,12 +548,8 @@ desktop_candidate_matches_target() {
             [[ "$candidate_service" == xrdp-sesman ]]
             ;;
         physical)
-            normalized_candidate="$(normalized_x_display "$candidate_display")"
-            normalized_manager="$(normalized_x_display "$manager_display")"
-            [[ -n "$candidate_seat" || "$candidate_service" == gdm-* ||
-               ( "$candidate_bus" == "$manager_bus" &&
-                 -n "$manager_display" &&
-                 "$normalized_candidate" == "$normalized_manager" ) ]]
+            [[ "$candidate_xauthority" == "${XDG_RUNTIME_DIR:-/run/user/$UID}/gdm/Xauthority" ||
+               -n "$candidate_seat" || "$candidate_service" == gdm-* ]]
             ;;
         :*)
             normalized_candidate="$(normalized_x_display "$candidate_display")"
@@ -645,7 +642,7 @@ discover_desktop_session() {
         if [[ "$desktop_target" != auto ]]; then
             if desktop_candidate_matches_target \
                 "$candidate_display" "$candidate_session_service" \
-                "$candidate_session_seat" "$candidate_bus"; then
+                "$candidate_session_seat" "$candidate_bus" "$candidate_xauthority"; then
                 select_desktop_candidate \
                     "$candidate_bus" "$candidate_display" \
                     "$candidate_wayland" "$candidate_session_type" \
@@ -688,6 +685,35 @@ discover_desktop_session() {
     return 1
 }
 
+reuse_shared_vnc_relay() {
+    local pid cmdline listening
+    [[ "$shared_vnc_port" =~ ^[1-9][0-9]{3}$ ]] &&
+        ((shared_vnc_port >= 5900 && shared_vnc_port <= 5999)) || {
+        log 'UURB_DESKTOP_VNC_PORT must be in 5900..5999.'
+        return 1
+    }
+    for _ in {1..50}; do
+        listening="$(/usr/bin/ss -H -ltnp "sport = :$shared_vnc_port" 2>/dev/null)"
+        while read -r pid; do
+            [[ -r "/proc/$pid/cmdline" ]] || continue
+            cmdline=" $(/usr/bin/tr '\0' ' ' <"/proc/$pid/cmdline") "
+            [[ "$cmdline" == *" -localhost "* && "$cmdline" == *" -nopw "* ]] || continue
+            [[ "$cmdline" == *" -display ${desktop_display%%.*} "* ||
+               "$cmdline" == *" -display ${desktop_display%%.*}.0 "* ]] || continue
+            if [[ "$listening" == *"127.0.0.1:$shared_vnc_port "* &&
+                  "$listening" == *"pid=$pid,"* ]]; then
+                desktop_vnc_port="$shared_vnc_port"
+                # This service owns its process. Never add it to UU cleanup.
+                log "Reusing independently managed VNC for $desktop_display on 127.0.0.1:$desktop_vnc_port."
+                return 0
+            fi
+        done < <(/usr/bin/pgrep -u "$UID" -x x11vnc || true)
+        sleep 0.1
+    done
+    log 'Configured shared VNC relay is unavailable or targets a different desktop.'
+    return 1
+}
+
 start_desktop_relay() {
     local -a desktop_environment
     local desktop_vnc_log
@@ -719,6 +745,11 @@ start_desktop_relay() {
             /usr/bin/xdpyinfo >/dev/null 2>&1; then
             log 'The VNC relay cannot access the selected X11 desktop.'
             return 1
+        fi
+
+        if [[ -n "$shared_vnc_port" ]]; then
+            reuse_shared_vnc_relay
+            return $?
         fi
 
         desktop_vnc_log="$state_dir/desktop-x11vnc.log"

@@ -27,6 +27,7 @@ runtime_files=(
     scripts/uu-link
     scripts/uu-remote
     scripts/uu-remote-bridge
+    scripts/uu-shared-physical-vnc
     scripts/uu-remote-console
     scripts/upgrade-uu-remote.sh
     scripts/verify.sh
@@ -46,6 +47,7 @@ runtime_files=(
     systemd/uu-keyring-unlock.service
     systemd/uu-remote-bridge-unattended.conf
     systemd/uu-remote-bridge.service
+    systemd/uu-shared-physical-vnc.service
     systemd/uu-remote-console.service
     desktop/uu-remote.desktop.in
 )

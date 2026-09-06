@@ -1,5 +1,10 @@
 # Unattended Startup
 
+For one physical workspace shared by RDP, RealVNC and UU, see
+[Shared physical desktop](shared-physical-desktop.md). That opt-in setup
+keeps its VNC backend independent of UU restarts and avoids creating a new
+GNOME session for each access method.
+
 UU normally starts with the logged-in GNOME session. GDM automatic login is
 needed when the machine must become reachable through UU after a reboot with
 no local or RDP login first. Automatic login introduces a second problem:

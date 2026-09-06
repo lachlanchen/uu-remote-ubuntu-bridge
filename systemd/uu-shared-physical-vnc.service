@@ -1,0 +1,16 @@
+[Unit]
+Description=Shared physical GDM X11 desktop for authenticated remote clients
+After=graphical-session.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/uu-shared-physical-vnc
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=8
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target
