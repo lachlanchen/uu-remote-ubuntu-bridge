@@ -11,13 +11,14 @@ fi
 
 pull_latest=true
 promote_now=false
+runtime_only=false
 repo_override=''
 
 usage() {
     cat <<'EOF'
 usage: uu-remote-upgrade status [--repo PATH]
        uu-remote-upgrade check [--repo PATH] [--no-pull]
-       uu-remote-upgrade apply [--repo PATH] [--no-pull] [--now]
+       uu-remote-upgrade apply [--repo PATH] [--no-pull] [--now] [--runtime-only]
 
 Commands:
   status    show source, installed release, service, and updater state
@@ -28,6 +29,9 @@ Commands:
 Options:
   --repo PATH  use this repository checkout
   --no-pull    do not fetch or fast-forward the repository
+  --runtime-only  refresh helpers for the installed approved UU version only;
+               no product check/promotion or maintenance-timer changes;
+               requires --now to acknowledge the brief UU reconnect
   --now        explicitly bypass only the UU activity-idle delay; every hash,
                acceptance, login-preservation, snapshot, and rollback gate
                remains mandatory
@@ -46,6 +50,10 @@ while (($#)); do
             ;;
         --now)
             promote_now=true
+            shift
+            ;;
+        --runtime-only)
+            runtime_only=true
             shift
             ;;
         -h|--help)
@@ -75,6 +83,11 @@ case "$action" in
 esac
 if [[ "$action" != apply && "$promote_now" == true ]]; then
     printf -- '--now is valid only with apply.\n' >&2
+    exit 2
+fi
+if [[ "$runtime_only" == true &&
+      ( "$action" != apply || "$promote_now" != true ) ]]; then
+    printf -- '--runtime-only requires apply --now; the current UU connection will briefly reconnect.\n' >&2
     exit 2
 fi
 if [[ "$action" == status ]]; then
@@ -260,6 +273,7 @@ backup_paths=(
     "$HOME/.config/systemd/user/uu-remote-bridge.service"
     "$HOME/.config/systemd/user/uu-remote-bridge.service.d"
     "$HOME/.config/systemd/user/uu-remote-console.service"
+    "$HOME/.config/systemd/user/uu-shared-physical-vnc.service"
     "$HOME/.config/systemd/user/uu-keyring-unlock.service"
     "$HOME/.local/bin/uu-agent"
     "$HOME/.local/bin/uu-ssh"
@@ -269,6 +283,7 @@ backup_paths=(
     "$HOME/.local/bin/uu-remote"
     "$HOME/.local/bin/uu-remote-bridge"
     "$HOME/.local/bin/uu-remote-console"
+    "$HOME/.local/bin/uu-shared-physical-vnc"
     "$HOME/.local/bin/uu-remote-upgrade"
     "$HOME/.local/share/applications/uu-remote.desktop"
     "$HOME/Desktop/UU Remote.desktop"
@@ -389,6 +404,7 @@ xrdp_before="$(
         --property=ActiveState --property=MainPID
 )"
 
+promote_accepted_product() {
 log 'checking for an exact-hash accepted UU release'
 updater_command check
 updater_state_dir="$(read_updater_state_dir)"
@@ -443,6 +459,13 @@ PY
     [[ "$updater_phase" == promoted || "$updater_phase" == current ]] \
         || fail "accepted product promotion ended in phase: $updater_phase"
 fi
+}
+
+if [[ "$runtime_only" == true ]]; then
+    log 'runtime-only refresh: preserving the installed UU product and maintenance timers'
+else
+    promote_accepted_product
+fi
 
 [[ -f "$installed_manifest" ]] || fail 'installed release manifest disappeared'
 installed_version="$(manifest_field version)"
@@ -464,7 +487,9 @@ log "refreshing bridge runtime for approved UU $installed_version"
 run_live_check
 runtime_refresh_started=false
 
-refresh_updater_runtime
+if [[ "$runtime_only" != true ]]; then
+    refresh_updater_runtime
+fi
 "$HOME/.local/bin/uu-agent" runtime >/dev/null
 "$HOME/.local/bin/uu-agent" version >/dev/null
 

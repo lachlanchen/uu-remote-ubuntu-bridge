@@ -10,6 +10,18 @@ REPOSITORY = Path(__file__).resolve().parents[1]
 
 
 class RuntimeScriptTests(unittest.TestCase):
+    def test_runtime_only_refresh_requires_explicit_reconnect_acknowledgement(self):
+        script = REPOSITORY / "scripts" / "upgrade-uu-remote.sh"
+        for arguments in (("apply", "--runtime-only"), ("status", "--runtime-only")):
+            result = subprocess.run([str(script), *arguments], text=True,
+                                    capture_output=True, cwd=REPOSITORY)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("requires apply --now", result.stderr)
+        source = script.read_text()
+        self.assertIn('if [[ "$runtime_only" == true ]]; then', source)
+        self.assertIn("preserving the installed UU product and maintenance timers", source)
+        self.assertIn('if [[ "$runtime_only" != true ]]; then\n    refresh_updater_runtime', source)
+
     def test_all_shell_entrypoints_parse(self):
         scripts = [REPOSITORY / "install.sh", REPOSITORY / "uninstall.sh"]
         scripts.extend(sorted((REPOSITORY / "scripts").glob("*.sh")))
