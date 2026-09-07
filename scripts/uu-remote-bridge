@@ -1555,7 +1555,9 @@ for optional_pid in \
         critical_pids+=("$optional_pid")
     fi
 done
-wait -n "${critical_pids[@]}"
+exited_pid=""
+wait -n -p exited_pid "${critical_pids[@]}"
+child_status=$?
 set -e
-log 'A bridge process exited; systemd will restart the complete relay.'
+log "A bridge process exited (pid=${exited_pid:-unknown}, status=$child_status); systemd will restart the complete relay."
 exit 1

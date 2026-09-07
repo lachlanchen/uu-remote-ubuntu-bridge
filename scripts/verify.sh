@@ -79,6 +79,8 @@ saved_desktop_target="$(saved_setting UURB_DESKTOP_TARGET)"
 desktop_target="${UURB_DESKTOP_TARGET:-${saved_desktop_target:-auto}}"
 saved_desktop_relay="$(saved_setting UURB_DESKTOP_RELAY)"
 desktop_relay="${UURB_DESKTOP_RELAY:-${saved_desktop_relay:-rdp}}"
+saved_shared_vnc_port="$(saved_setting UURB_DESKTOP_VNC_PORT)"
+shared_vnc_port="${UURB_DESKTOP_VNC_PORT:-$saved_shared_vnc_port}"
 saved_keyboard_route="$(saved_setting UURB_KEYBOARD_ROUTE)"
 keyboard_route="${UURB_KEYBOARD_ROUTE:-${saved_keyboard_route:-rdp}}"
 saved_phone_text_mode="$(saved_setting UURB_PHONE_TEXT_MODE)"
@@ -154,19 +156,42 @@ relay_listener_ready() {
 }
 
 vnc_relay_ready() {
-    local viewer_pid
-    local x11vnc_pid
+    local server_pattern listener index
+    local -a server_arguments
 
-    x11vnc_pid="$(
+    if [[ -n "$shared_vnc_port" ]]; then
+        [[ "$shared_vnc_port" =~ ^59[0-9]{2}$ ]] || return 1
+        desktop_vnc_port="$shared_vnc_port"
+        server_pattern="^(/usr/bin/)?x11vnc .* -rfbport $desktop_vnc_port( |$)"
+    else
+        desktop_vnc_port="$(
+            /usr/bin/sed -n 's/^PORT=\([0-9][0-9]*\)$/\1/p' \
+                "$state_dir/desktop-x11vnc.log" 2>/dev/null | /usr/bin/tail -n 1
+        )"
+        server_pattern='^/usr/bin/x11vnc .* -autoport 5922( |$)'
+    fi
+    [[ "$desktop_vnc_port" =~ ^[0-9]+$ ]] &&
+        ((desktop_vnc_port >= 5900 && desktop_vnc_port <= 5999)) || return 1
+    desktop_x11vnc_pid="$(pgrep -o -u "$UID" -f "$server_pattern" || true)"
+    [[ -n "$desktop_x11vnc_pid" ]] || return 1
+    listener="$(/usr/bin/ss -H -ltnp "sport = :$desktop_vnc_port" 2>/dev/null)"
+    [[ "$listener" == *"127.0.0.1:$desktop_vnc_port "* &&
+       "$listener" == *"pid=$desktop_x11vnc_pid,"* ]] || return 1
+    desktop_vncviewer_pid="$(
         pgrep -o -u "$UID" -f \
-            '^/usr/bin/x11vnc .* -autoport 5922( |$)' 2>/dev/null || true
-    )"
-    viewer_pid="$(
-        pgrep -o -u "$UID" -f \
-            '^/usr/bin/vncviewer .*127\.0\.0\.1:[0-9]+( |$)' \
+            "^/usr/bin/vncviewer .*127\\.0\\.0\\.1:($desktop_vnc_port|$((desktop_vnc_port - 5900)))( |$)" \
             2>/dev/null || true
     )"
-    [[ -n "$x11vnc_pid" && -n "$viewer_pid" ]]
+    [[ -n "$desktop_vncviewer_pid" ]] || return 1
+    desktop_vnc_display=""
+    mapfile -d '' -t server_arguments <"/proc/$desktop_x11vnc_pid/cmdline"
+    for ((index=0; index+1<${#server_arguments[@]}; index++)); do
+        if [[ "${server_arguments[index]}" == -display ]]; then
+            desktop_vnc_display="${server_arguments[index+1]}"
+            break
+        fi
+    done
+    [[ "$desktop_vnc_display" == :* ]]
 }
 
 x11_route_ready() {
@@ -445,7 +470,9 @@ else
     fail 'Wine device registry hygiene is missing or stale devices remain'
 fi
 
-if [[ -f "$freerdp" ]] && \
+if [[ "$desktop_relay" == vnc ]]; then
+    printf 'INFO  FreeRDP is not used by the configured VNC relay\n'
+elif [[ -f "$freerdp" ]] && \
    [[ "$(sha256sum "$freerdp" | awk '{print $1}')" == \
       b384347b6d0dd1e0c9912d18f5993b4e30643470e2a627e112debb34e8710762 ]]; then
     pass 'pinned Windows FreeRDP SDL client is installed'
@@ -738,27 +765,7 @@ if [[ -n "$grd_pid" ]]; then
 fi
 else
     grd_pid=""
-    desktop_x11vnc_pid="$(
-        pgrep -o -u "$UID" -f \
-            '^/usr/bin/x11vnc .* -autoport 5922( |$)' 2>/dev/null || true
-    )"
-    desktop_vncviewer_pid="$(
-        pgrep -o -u "$UID" -f \
-            '^/usr/bin/vncviewer .*127\.0\.0\.1:[0-9]+( |$)' \
-            2>/dev/null || true
-    )"
-    desktop_vnc_port="$(
-        /usr/bin/sed -n 's/^PORT=\([0-9][0-9]*\)$/\1/p' \
-            "${XDG_STATE_HOME:-$HOME/.local/state}/uu-remote-bridge/desktop-x11vnc.log" \
-            2>/dev/null | /usr/bin/tail -n 1
-    )"
-    desktop_vnc_display="$(
-        process_environment_value DISPLAY "$desktop_x11vnc_pid" || true
-    )"
-    if [[ -n "$desktop_x11vnc_pid" && -n "$desktop_vncviewer_pid" &&
-          "$desktop_vnc_port" =~ ^[0-9]+$ ]] &&
-       /usr/bin/ss -H -ltnp "sport = :$desktop_vnc_port" 2>/dev/null | \
-           /usr/bin/grep -q "pid=$desktop_x11vnc_pid,"; then
+    if vnc_relay_ready; then
         pass "localhost VNC relay owns 127.0.0.1:$desktop_vnc_port and mirrors $desktop_vnc_display"
     else
         fail 'localhost VNC relay or its private-canvas viewer is unavailable'

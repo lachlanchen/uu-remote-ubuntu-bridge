@@ -1,14 +1,14 @@
 [Unit]
 Description=UU Remote bridge for the live GNOME desktop
 After=default.target
-StartLimitIntervalSec=300
-StartLimitBurst=5
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
 EnvironmentFile=-%h/.config/uu-remote-bridge/environment
 ExecStart=%h/.local/bin/uu-remote-bridge
-Restart=on-failure
+# A clean child/signal exit is still an outage; systemctl stop remains final.
+Restart=always
 RestartSec=30
 TimeoutStopSec=15
 KillMode=control-group

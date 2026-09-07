@@ -543,9 +543,34 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("for _ in {1..300}", readiness)
         self.assertNotIn('kill -0 "$freerdp_pid"', readiness)
         self.assertIn("launcher may exit", readiness)
-        self.assertIn("StartLimitIntervalSec=300", unit)
-        self.assertIn("StartLimitBurst=5", unit)
+        self.assertIn("StartLimitIntervalSec=0", unit)
+        self.assertIn("Restart=always", unit)
         self.assertIn("RestartSec=30", unit)
+
+    def test_critical_child_exit_records_status_and_requests_restart(self):
+        launcher = (REPOSITORY / "scripts" / "uu-remote-bridge").read_text()
+        supervision = launcher[launcher.index('set +e\ncritical_pids=('):]
+        harness = '''
+set -Eeuo pipefail
+log() { printf '%s\\n' "$*"; }
+(sleep 0.1; exit "$1") &
+xvfb_pid=$!
+openbox_pid=$xvfb_pid
+winlogon_pid=$xvfb_pid
+input_broker_pid=$xvfb_pid
+server_supervisor_pid=$xvfb_pid
+grd_pid= freerdp_pid= desktop_x11vnc_pid= vncviewer_pid=
+x11_input_pid= terminal_bridge_pid=
+'''
+        for status in (0, 7):
+            with self.subTest(status=status):
+                result = subprocess.run(
+                    ['bash', '-c', harness + supervision, 'probe', str(status)],
+                    capture_output=True, text=True, timeout=5,
+                )
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertIn(f'status={status}', result.stdout)
+                self.assertRegex(result.stdout, r'pid=\d+')
 
     def test_wine_cleanup_is_prefix_scoped(self):
         helper = REPOSITORY / "scripts" / "stop-wine-prefix"
@@ -688,7 +713,7 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("MemorySwapMax=2G", unit)
         self.assertIn("TasksMax=1024", unit)
         self.assertIn("OOMPolicy=stop", unit)
-        self.assertIn("Restart=on-failure", unit)
+        self.assertIn("Restart=always", unit)
 
     def test_freerdp_cache_is_checksum_backed(self):
         builder = (REPOSITORY / "scripts" / "build-winpr.sh").read_text()

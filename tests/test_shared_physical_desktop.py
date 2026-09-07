@@ -1,5 +1,6 @@
 """Exercise target selection when XRDP overwrites the user-manager DISPLAY."""
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -7,6 +8,57 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PhysicalTargetTests(unittest.TestCase):
+    def test_verifier_accepts_only_live_matching_vnc_transports(self):
+        source = (ROOT / 'scripts/verify.sh').read_text()
+        function = source[source.index('vnc_relay_ready() {'):
+                          source.index('x11_route_ready() {')]
+        function = function.replace('/usr/bin/ss ', 'probe_ss ')
+        script = r'''
+set -eu
+shared_vnc_port=$1
+mode=$2
+state_dir=$3
+pgrep() {
+    if [[ "$*" == *vncviewer* ]]; then
+        [[ "$mode" != wrong-viewer ]] || return 1
+    elif [[ -n "$shared_vnc_port" ]]; then
+        [[ "$*" == *"-rfbport 5922"* ]] || return 1
+    else
+        [[ "$*" == *"-autoport 5922"* ]] || return 1
+    fi
+    printf '%s\n' "$$"
+}
+probe_ss() {
+    [[ "$mode" != missing-listener ]] || return 0
+    pid=$$
+    [[ "$mode" != wrong-owner ]] || pid=1
+    printf 'LISTEN 0 32 127.0.0.1:5922 0.0.0.0:* users:(("x11vnc",pid=%s,fd=8))\n' "$pid"
+}
+''' + function + '\nvnc_relay_ready\n'
+        with tempfile.TemporaryDirectory() as temporary:
+            (Path(temporary) / 'desktop-x11vnc.log').write_text('PORT=5922\n')
+            for port, mode, success in (
+                ('5922', 'ready', True),
+                ('', 'ready', True),
+                ('5922', 'missing-listener', False),
+                ('5922', 'wrong-owner', False),
+                ('5922', 'wrong-viewer', False),
+                ('6000', 'ready', False),
+            ):
+                with self.subTest(port=port, mode=mode):
+                    result = subprocess.run(
+                        ['bash', '-c', script, 'probe', port, mode, temporary,
+                         '-display', ':0'],
+                        capture_output=True, text=True, timeout=5,
+                    )
+                    self.assertEqual(result.returncode == 0, success, result.stderr)
+
+    def test_vnc_does_not_require_unused_freerdp_binary(self):
+        source = (ROOT / 'scripts/verify.sh').read_text()
+        self.assertIn('if [[ "$desktop_relay" == vnc ]]; then\n'
+                      "    printf 'INFO  FreeRDP is not used", source)
+        self.assertIn('elif [[ -f "$freerdp" ]]', source)
+
     def test_gdm_desktop_wins_with_xrdp_manager_environment(self):
         source = (ROOT / 'scripts/uu-remote-bridge').read_text()
         functions = source[source.index('normalized_x_display() {'):
