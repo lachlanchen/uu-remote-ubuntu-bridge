@@ -1,6 +1,36 @@
 # SSH and port mapping between Ubuntu bridge hosts
 
-## Latest availability check — 2026-09-08
+## Current route: Tiny11 alone provides the extra endpoint
+
+The final 2026-09-08 setup removes 3040 entirely. 7090's UU client opens
+**Port Mapping to TINY11-KVM**, the separate native Windows guest on the
+workstation. Its rule maps peer loopback `22440` to `10.0.2.2:22` as reached
+from Tiny11. That is the workstation's native SSH service in this QEMU network.
+
+```text
+7090:22440 -> UU -> Tiny11 -> workstation SSH22
+workstation:22709 -> SSH return over that carrier -> 7090 SSH22
+```
+
+One enabled `uu-tiny11-return.service` runs **on 7090**, using its existing
+`uu-lachlanserver` alias and `-R 127.0.0.1:22709:127.0.0.1:22`. On the
+workstation, `uu-7090` now means local loopback22709, without ProxyJump.
+Existing `ssh-uu-7090` and `ssh-uu-lachlanserver` commands need no shell reload.
+The former workstation-side `uu-3040-return.service` is disabled.
+
+Both SSH directions, native host-key pins, Unicode output, exit statuses and a
+65569-byte bidirectional SCP test passed. The UU mapping's target is Tiny11;
+neither Ubuntu desktop is its target. Cloud SSH only helped with initial setup,
+and is not part of this final data path. Do not take over Tiny11 through another
+UU controller while using the carrier. Its noVNC management view is separate.
+
+See the [final setup and return service example](https://github.com/lachlanchen/kvm-qemu-workstation/blob/main/docs/uu-native-relay.md#current-setup-tiny11-is-the-relay-target).
+The saved mapping and enabled service are persistent configuration; automatic
+UU reconnection after reboot remains untested. No desktop/input patch changed.
+
+## Historical availability check — 2026-09-08
+
+This Mac route was retired in favor of the Tiny11-only setup above.
 
 The native Windows-VM-to-Mac carrier passed two-way SSH and file-transfer tests,
 then its dedicated Mac relay appeared offline in UU. The Windows VM remained
@@ -17,7 +47,7 @@ The independent cloud route remains separately named, with no silent fallback.
 
 ## What works, and what it is not
 
-### Current operating direction (2026-09-05, later test)
+### Earlier operating direction (2026-09-05, later test)
 
 The working mapping was subsequently reversed: the workstation originates
 UU Port Mapping **to the peer**, rather than the peer targeting the workstation
