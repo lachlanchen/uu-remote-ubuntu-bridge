@@ -83,6 +83,29 @@ It requires no extra daemon and never executes message contents.
 
 ### Mapping hosted by an existing SSH-reachable controller
 
+A native Windows KVM guest can serve as that separately authenticated
+controller or as a dedicated controlled endpoint. On 2026-09-07 the reference
+workstation installed the official signed UU 4.39.2.1561 client in its existing
+Tiny11 guest. The guest's automatic service and native GUI worked, and its
+existing SSH service successfully carried a jump to another LAN machine.
+It still required an ordinary UU account login at that checkpoint: a prepared
+SSH alias is not a verified UU tunnel.
+
+For a mapping created inside the guest, use `--via-ssh-host uu-vm`; the mapped
+`127.0.0.1` port belongs to Windows, not to the Linux host. Keep the normal
+Ubuntu bridge and input patches unchanged, and do not apply Wine patches to
+the native Windows installation. A QEMU user-network guest can also reach its
+Linux host at `10.0.2.2:22`, allowing a remote controller to target that SSH
+service through the guest's separate UU device identity. This address was
+verified to return the host's SSH banner; the vendor mapping still requires
+login and a live test.
+
+See the [native Windows VM installation and relay guide](https://github.com/lachlanchen/kvm-qemu-workstation/blob/main/docs/uu-native-relay.md)
+for the signed installer helper, configuration examples, and availability
+limits. An independent guest avoids sharing the host's UU identity, but taking
+over the mapping's remote target may still remove the carrier. Automatic
+Windows service startup is not proof of automatic mapping reconnection.
+
 The mapping listener does not have to run on the computer where the shell is
 opened. A tested three-host topology used a native Mac controller that was
 already reachable through a separately pinned SSH alias:
