@@ -1,0 +1,16 @@
+[Unit]
+Description=XRDP clipboard for the existing physical desktop
+After=graphical-session.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/shared-desktop-clipboard
+Restart=on-failure
+RestartSec=30
+TimeoutStopSec=8
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

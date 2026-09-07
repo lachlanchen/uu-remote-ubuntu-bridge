@@ -112,6 +112,76 @@ client-side scaling to fit its window. A VNC proxy is not a managed XRDP
 session: do not assume every chansrv feature (audio, drives and advanced
 clipboard integration) is available without separate configuration.
 
+### Enable the native RDP text clipboard separately
+
+The VNC backend deliberately uses `-seldir recv` to prevent UU semantic
+dictation text from echoing into Wine and causing an unintended paste. Do
+not remove this guard to repair RDP copy/paste. XRDP 0.9.24's built-in
+`libvnc` clipboard fallback is also Latin-1 only, which loses Chinese and
+Japanese characters.
+
+For an existing physical **display :0**, install the optional clipboard
+service as the desktop user:
+
+```bash
+install -m 0755 scripts/shared-desktop-clipboard "$HOME/.local/bin/shared-desktop-clipboard"
+install -m 0644 systemd/shared-desktop-clipboard.service "$HOME/.config/systemd/user/shared-desktop-clipboard.service"
+systemctl --user daemon-reload
+systemctl --user enable --now shared-desktop-clipboard.service
+```
+
+After backing up `/etc/xrdp/xrdp.ini`, add these entries to the existing
+`[PhysicalDesktop]` connection, retaining PAM authentication:
+
+```ini
+chansrvport=DISPLAY(0)
+channel.cliprdr=true
+channel.rdpsnd=false
+channel.rdpdr=false
+channel.drdynvc=false
+channel.rail=false
+channel.xrdpvr=false
+channel.tcutils=false
+```
+
+This enables only the clipboard, avoiding an accidental audio/drive change.
+The helper discovers and verifies the physical GDM authority; it refuses a
+different display number so the daemon and XRDP socket cannot silently point
+at different desktops. It runs the distribution's `/usr/sbin/xrdp-chansrv`,
+not a replacement RDP server. No clipboard polling, text logging, synthetic
+paste or new desktop is involved. If the physical display changes, review
+both the helper's display check and `chansrvport` together.
+
+Disconnect and reconnect the RDP client, with clipboard sharing enabled in
+the client. **Do not log out Ubuntu.** Existing connections do not acquire
+the new channel until reconnection. The user service is enabled for future
+logins; boot behavior still depends on the physical GDM login and was not
+verified by rebooting during this change. Multiple simultaneous RDP clients
+sharing one console/chansrv need separate acceptance; do not promise that
+each client has an independent clipboard on a shared desktop.
+
+On 7 September 2026, an isolated two-display test used an x11vnc backend
+with clipboard disabled entirely (`-nosel`), proving the transfer used
+native chansrv. ASCII punctuation, Chinese, Japanese and accents passed
+both ways. Multiline text survived, with the usual CRLF/LF conversion in
+one direction. The packaged 0.9.24 implementation **failed emoji outside
+the BMP in both directions**. This is the documented upstream
+[UTF-16 surrogate bug](https://github.com/neutrinolabs/xrdp/issues/2603),
+not a successful full-Unicode test. No broad RDP upgrade was made to hide
+that limitation. Real phone/Windows App paste and dictation still require
+controller-side confirmation after reconnecting.
+
+Inspect service state without reading the user's clipboard:
+
+```bash
+systemctl --user status shared-desktop-clipboard.service
+ls -l /run/xrdp/sockdir/xrdp_chansrv_socket_0
+```
+
+Rollback: restore the saved XRDP configuration, then disable this optional
+service with `systemctl --user disable --now shared-desktop-clipboard.service`.
+Reconnect the client; leave the shared VNC backend and physical desktop alive.
+
 On the tested XRDP build, new connections read the updated section without
 restarting xrdp or sesman. The existing separately managed desktop remains
 alive, with its windows preserved. Disconnect/reconnect the **client** to

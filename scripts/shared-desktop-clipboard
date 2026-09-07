@@ -1,0 +1,43 @@
+#!/usr/bin/python3
+"""Attach packaged XRDP clipboard channels to the existing physical X11 login.
+
+Never creates a desktop, reads clipboard contents, or injects a paste shortcut.
+The shared profile must point chansrvport at this display and enable cliprdr only.
+"""
+import os
+from pathlib import Path
+import re
+import subprocess
+
+uid = os.getuid()
+runtime = Path(os.environ.get('XDG_RUNTIME_DIR', f'/run/user/{uid}'))
+authority = runtime / 'gdm/Xauthority'
+if not authority.is_file():
+    raise SystemExit('Waiting for the physical GDM X11 login')
+display = None
+for proc in Path('/proc').iterdir():
+    if not proc.name.isdigit():
+        continue
+    try:
+        if proc.stat().st_uid != uid or (proc / 'comm').read_text().strip() != 'gnome-shell':
+            continue
+        env = dict(item.split('=', 1) for item in
+                   (proc / 'environ').read_bytes().decode(errors='replace').split('\0')
+                   if '=' in item)
+        if env.get('XDG_SESSION_TYPE') == 'x11' and env.get('XAUTHORITY') == str(authority):
+            display = env.get('DISPLAY')
+            break
+    except (OSError, ValueError):
+        continue
+if not display or not re.fullmatch(r':\d+(?:\.\d+)?', display):
+    raise SystemExit('No physical X11 desktop; no virtual fallback')
+if display.split('.')[0] != ':0':
+    raise SystemExit('Physical display changed; update chansrvport before starting')
+env = {**os.environ, 'DISPLAY': display, 'XAUTHORITY': str(authority)}
+subprocess.run(['/usr/bin/xdpyinfo', '-display', display], env=env,
+               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+logdir = Path.home() / '.local/state/shared-desktop-clipboard'
+logdir.mkdir(parents=True, exist_ok=True, mode=0o700)
+env['CHANSRV_LOG_PATH'] = str(logdir)
+print(f'XRDP clipboard channel attached to physical {display}', flush=True)
+os.execve('/usr/sbin/xrdp-chansrv', ['xrdp-chansrv'], env)
