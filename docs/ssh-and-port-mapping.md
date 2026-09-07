@@ -83,6 +83,18 @@ It requires no extra daemon and never executes message contents.
 
 ### Mapping hosted by an existing SSH-reachable controller
 
+**2026-09-08 follow-up:** the native Windows VM completed normal account login
+and created one real UU mapping through the dedicated Mac endpoint to the
+remote Ubuntu LAN SSH server. Guest loopback `23709` carried the outbound
+OpenSSH connection; the existing return unit exposed only peer loopback
+`22440` for the reverse direction. Both hostnames, Chinese/Japanese output,
+exact command exit statuses, a 42496-byte SCP round trip, and a peer-initiated
+return SCP passed. Restarting only the owned return unit, after checking that
+it had no active clients, restored the reverse connection. No UU desktop
+device was taken over, no host bridge was patched or restarted, and no extra
+supervisor was added. The guest's normal auto-start setting was enabled;
+vendor reconnection after OS reboot remains untested.
+
 A native Windows KVM guest can serve as that separately authenticated
 controller or as a dedicated controlled endpoint. On 2026-09-07 the reference
 workstation installed the official signed UU 4.39.2.1561 client in its existing
