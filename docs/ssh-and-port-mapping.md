@@ -1,5 +1,20 @@
 # SSH and port mapping between Ubuntu bridge hosts
 
+## Latest availability check — 2026-09-08
+
+The native Windows-VM-to-Mac carrier passed two-way SSH and file-transfer tests,
+then its dedicated Mac relay appeared offline in UU. The Windows VM remained
+logged in and reachable. An independent cloud SSH check reached the Ubuntu peer
+and initially the Mac. The Mac reported no active UU connections; restarting
+only its UU user agent did not restore the mapping. Subsequent LAN SSH and ping
+to the Mac also failed. This is an unresolved relay-availability interruption,
+not evidence of an Ubuntu keyboard, RDP, VNC, or dictation regression.
+
+Keep the successful tests as historical evidence. The saved rules, strict SSH
+aliases and one retrying return unit do not establish that an offline carrier
+works now. Restore and verify the dedicated relay, then test both commands again.
+The independent cloud route remains separately named, with no silent fallback.
+
 ## What works, and what it is not
 
 ### Current operating direction (2026-09-05, later test)
