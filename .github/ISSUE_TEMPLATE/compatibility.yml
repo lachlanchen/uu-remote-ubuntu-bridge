@@ -1,0 +1,107 @@
+name: "Compatibility report or request / 兼容性反馈或需求"
+description: "Share one public, privacy-safe compatibility result or need / 提交一条公开且不含隐私信息的兼容性反馈"
+title: "[Compatibility / 兼容性] "
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for one host/controller configuration.
+
+        This is a public issue. Include only ordinary product and version names.
+        Do not upload or link binaries, installers, credentials, identifiers,
+        logs, screenshots, typed or clipboard content, or private configuration.
+
+        Filing is free. Donations do not buy priority, compatibility work,
+        private support, or a delivery date.
+
+        此表单用于提交一套主机与控制端配置，内容会公开。请只填写普通的产品名
+        和版本号，不要上传或链接二进制文件、安装包、凭据、标识符、日志、截图、
+        输入或剪贴板内容、私有配置。提交免费；捐赠不代表优先处理、兼容性开发、
+        私人支持或交付日期。
+
+  - type: dropdown
+    id: report_kind
+    attributes:
+      label: "Result or request / 反馈类型"
+      options:
+        - "Tested: works / 已测试：可用"
+        - "Tested: partly works or is unstable / 已测试：部分可用或不稳定"
+        - "Tested: does not work / 已测试：不可用"
+        - "Not tested: requesting compatibility assessment / 未测试：请求兼容性评估"
+    validations:
+      required: true
+
+  - type: input
+    id: host
+    attributes:
+      label: "Ubuntu host / Ubuntu 主机"
+      description: "Give Ubuntu release, desktop version, session type, and CPU architecture."
+      placeholder: "Ubuntu 24.04; GNOME 46; Wayland, Xorg, or XRDP; x86-64"
+    validations:
+      required: true
+
+  - type: input
+    id: software
+    attributes:
+      label: "Bridge and UU versions / 桥接器与 UU 版本"
+      description: "Version or commit names only. If not installed or unknown, say so."
+      placeholder: "Bridge v0.2.0; UU Remote 4.33.0.8907"
+    validations:
+      required: true
+
+  - type: input
+    id: controller
+    attributes:
+      label: "Controller / 控制端"
+      description: "Give the controller platform, OS version, and UU app version if known. Do not include account or device IDs."
+      placeholder: "Android 16; UU Remote app version unknown"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: areas
+    attributes:
+      label: "Affected area / 涉及功能"
+      multiple: true
+      options:
+        - "Installation or startup / 安装或启动"
+        - "Connection or reconnection / 连接或重连"
+        - "Desktop video, resize, or cursor / 画面、缩放或光标"
+        - "Mouse / 鼠标"
+        - "Physical keyboard / 物理键盘"
+        - "Phone IME or Unicode text / 手机输入法或 Unicode 文本"
+        - "Clipboard / 剪贴板"
+        - "Audio / 音频"
+        - "Update or removal / 更新或卸载"
+        - "Other / 其他"
+    validations:
+      required: true
+
+  - type: textarea
+    id: need
+    attributes:
+      label: "Expected and observed result / 预期与实际结果"
+      description: |
+        In a few sentences, state what you need or tested. For a test, describe
+        the safe action, expected result, and observed result. Summarize errors
+        in your own words; do not paste logs.
+      placeholder: |
+        I tried...
+        I expected...
+        Instead...
+      render: text
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: "Public-report confirmation / 公开提交确认"
+      options:
+        - label: "I searched open and closed issues and did not find the same configuration and result. / 我已搜索现有问题，没有发现相同配置和结果。"
+          required: true
+        - label: "I included or linked no proprietary binaries, installers, credentials, tokens, account/device IDs, addresses, hostnames, raw logs, screenshots, typed/clipboard content, or private configuration. / 我没有包含或链接专有二进制文件、安装包、凭据、令牌、账号或设备 ID、地址、主机名、原始日志、截图、输入或剪贴板内容、私有配置。"
+          required: true
+        - label: "I understand that filing is free and public, and that donations do not guarantee priority, support, compatibility, or delivery. / 我理解提交免费且内容公开，捐赠不保证优先级、支持、兼容性或交付。"
+          required: true

@@ -17,6 +17,11 @@ RDP 中继呈现真实的 GNOME Wayland 会话。画面、鼠标、键盘、重�
 当前版本有意锁定为 UU 远程 `4.33.0.8907`、Ubuntu 24.04、GNOME 46 和
 Wine 11。任何未知二进制文件都会被拒绝，绝不会直接套用旧补丁。
 
+正在使用或需要其他 Ubuntu 版本、桌面/会话、CPU 架构、UU 版本或控制端平台？
+请[提交一条兼容性反馈或需求](https://github.com/lachlanchen/uu-remote-ubuntu-bridge/issues/new?template=compatibility.yml)。
+提交免费且内容公开，但不构成支持承诺。请勿附加或链接专有二进制文件、凭据、
+账号或设备 ID、原始日志、截图或私有配置。
+
 ## 快速安装
 
 ```bash

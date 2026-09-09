@@ -70,6 +70,26 @@ class DocumentationTests(unittest.TestCase):
         self.assertIn("这是不同的工具", readme)
         self.assertIn("本仓库仍专注于兼容官方 UU 客户端", readme)
 
+    def test_compatibility_intake_is_public_bilingual_and_privacy_safe(self) -> None:
+        form = (
+            REPO_DIR / ".github" / "ISSUE_TEMPLATE" / "compatibility.yml"
+        ).read_text(encoding="utf-8")
+        english = (REPO_DIR / "README.md").read_text(encoding="utf-8")
+        chinese = (REPO_DIR / "i18n" / "README.zh-Hans.md").read_text(
+            encoding="utf-8"
+        )
+
+        route = "issues/new?template=compatibility.yml"
+        self.assertIn(route, english)
+        self.assertIn(route, chinese)
+        self.assertIn("Compatibility report or request / 兼容性反馈或需求", form)
+        self.assertIn("Bridge and UU versions / 桥接器与 UU 版本", form)
+        self.assertIn("Expected and observed result / 预期与实际结果", form)
+        self.assertIn("Do not upload or link binaries", form)
+        self.assertIn("credentials, identifiers", form)
+        self.assertIn("typed or clipboard content", form)
+        self.assertIn("Donations do not buy priority", form)
+
     def test_release_handoff_has_required_update_controls(self) -> None:
         changelog = (REPO_DIR / "CHANGELOG.md").read_text(encoding="utf-8")
         release = (REPO_DIR / "docs/releases/v0.1.0.md").read_text(
