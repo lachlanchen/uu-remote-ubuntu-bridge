@@ -57,6 +57,19 @@ class DocumentationTests(unittest.TestCase):
         }
         self.assertEqual(TRANSLATIONS, actual)
 
+    def test_simplified_chinese_independent_route_keeps_language_and_source(self) -> None:
+        readme = (REPO_DIR / "i18n" / "README.zh-Hans.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "https://remote.lazying.art/zh-Hans/?utm_source=github&"
+            "utm_medium=readme&utm_campaign=uu_remote_bridge&"
+            "utm_content=independent_option_zh_hans",
+            readme,
+        )
+        self.assertIn("这是不同的工具", readme)
+        self.assertIn("本仓库仍专注于兼容官方 UU 客户端", readme)
+
     def test_release_handoff_has_required_update_controls(self) -> None:
         changelog = (REPO_DIR / "CHANGELOG.md").read_text(encoding="utf-8")
         release = (REPO_DIR / "docs/releases/v0.1.0.md").read_text(
