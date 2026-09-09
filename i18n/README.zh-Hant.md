@@ -51,4 +51,6 @@ PE 對應、語意地標、候選簽章和定點反組譯，但在逐項審閱�
 儲存庫不包含密碼、權杖、裝置識別碼、網易執行檔或私人日誌。本專案屬於
 [The Art of Lazying](https://lazying.art)。
 
+如果你更需要獨立於廠商的方案，[LazyRemote](https://remote.lazying.art/?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=independent_option_zh_hant) 由另一套開源 [LazyTunnel](https://github.com/lachlanchen/LazyTunnel) 核心提供自行託管的 SSH、終端機與 noVNC 存取。這是不同的工具；本儲存庫仍專注於相容官方 UU 用戶端。
+
 > 完整技術參考保留英文版本，以確保命令、雜湊和位元組記錄只有一個精確來源。

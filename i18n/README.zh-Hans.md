@@ -51,4 +51,6 @@ UU 控制端 -> Wine 中的 UU -> 输入代理 -> SDL FreeRDP
 仓库不包含密码、令牌、设备标识、网易可执行文件或私人日志。本项目属于
 [The Art of Lazying](https://lazying.art)。
 
+如果你更需要独立于厂商的方案，[LazyRemote](https://remote.lazying.art/?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=independent_option_zh_hans) 由另一套开源 [LazyTunnel](https://github.com/lachlanchen/LazyTunnel) 核心提供自托管的 SSH、终端与 noVNC 访问。这是不同的工具；本仓库仍专注于兼容官方 UU 客户端。
+
 > 完整技术参考保留英文版本，以确保命令、哈希和字节记录只有一个精确来源。

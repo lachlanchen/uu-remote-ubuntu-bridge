@@ -63,6 +63,8 @@ UU controller -> UU in Wine -> input broker -> SDL FreeRDP
 التنفيذية أو سجلات خاصة. المشروع جزء من
 [The Art of Lazying](https://lazying.art).
 
+إذا كنت تحتاج إلى مسار مستقل عن المورّد، فإن [LazyRemote](https://remote.lazying.art/?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=independent_option_ar) يستخدم نواة [LazyTunnel](https://github.com/lachlanchen/LazyTunnel) المفتوحة المصدر والمنفصلة للوصول الذاتي الاستضافة عبر SSH والطرفية وnoVNC. إنها أداة مختلفة؛ ويبقى هذا المستودع مسار التوافق مع عميل UU الرسمي.
+
 > المرجع التقني الكامل مكتوب بالإنجليزية لتبقى الأوامر والبصمات والبايتات
 > متطابقة في مصدر واحد.
 

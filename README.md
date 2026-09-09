@@ -38,6 +38,8 @@ The supported host is x86-64 Ubuntu 24.04 with a logged-in GNOME 46 desktop
 (physical, Wayland, Xorg, or XRDP). The installer checks this boundary and
 fails before making partial changes on an unsupported OS or architecture.
 
+If you need a vendor-independent route instead, [LazyRemote](https://remote.lazying.art/?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=independent_option) uses the separate open-source [LazyTunnel](https://github.com/lachlanchen/LazyTunnel) core for self-hosted SSH, terminal, and noVNC access. It is a different tool; this repository remains the compatibility path for the official UU client.
+
 ## Releases and behavior tracks
 
 | Tag | Purpose | Default input behavior |

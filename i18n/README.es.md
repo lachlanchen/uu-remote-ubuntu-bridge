@@ -54,5 +54,7 @@ El repositorio no incluye contraseñas, tokens, identificadores de dispositivo,
 ejecutables de UU ni registros privados. Forma parte de
 [The Art of Lazying](https://lazying.art).
 
+Si prefieres una opción independiente del proveedor, [LazyRemote](https://remote.lazying.art/?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=independent_option_es) utiliza el núcleo separado y de código abierto [LazyTunnel](https://github.com/lachlanchen/LazyTunnel) para ofrecer acceso autohospedado por SSH, terminal y noVNC. Es una herramienta distinta; este repositorio sigue siendo la vía de compatibilidad con el cliente oficial de UU.
+
 > La referencia técnica completa permanece en inglés para mantener comandos,
 > hashes y bytes en una única fuente exacta.

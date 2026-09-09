@@ -54,5 +54,7 @@ GNOME 46 и Wine 11. Неизвестные двоичные файлы нико
 или личные журналы. Проект является частью
 [The Art of Lazying](https://lazying.art).
 
+Если вам нужен независимый от поставщика вариант, [LazyRemote](https://remote.lazying.art/?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=independent_option_ru) использует отдельное открытое ядро [LazyTunnel](https://github.com/lachlanchen/LazyTunnel) для самостоятельно размещаемого доступа по SSH, через терминал и noVNC. Это другой инструмент; данный репозиторий остаётся средством совместимости с официальным клиентом UU.
+
 > Полная техническая документация остаётся на английском, чтобы команды,
 > хеши и байты имели один точный источник.
