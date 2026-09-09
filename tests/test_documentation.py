@@ -64,7 +64,7 @@ class DocumentationTests(unittest.TestCase):
         self.assertIn(
             "https://remote.lazying.art/zh-Hans/?utm_source=github&"
             "utm_medium=readme&utm_campaign=uu_remote_bridge&"
-            "utm_content=independent_option_zh_hans",
+            "utm_content=independent_option_zh_hans#review",
             readme,
         )
         self.assertIn("这是不同的工具", readme)
