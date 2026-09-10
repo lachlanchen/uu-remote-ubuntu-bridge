@@ -53,5 +53,13 @@ UU 컨트롤러 -> Wine의 UU -> 입력 브로커 -> SDL FreeRDP
 
 특정 공급업체에 의존하지 않는 경로가 필요하다면 [LazyRemote](https://remote.lazying.art/?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=independent_option_ko)를 사용할 수 있습니다. 별도의 오픈 소스 [LazyTunnel](https://github.com/lachlanchen/LazyTunnel) 코어를 바탕으로 SSH, 터미널, noVNC에 대한 자체 호스팅 접근을 제공합니다. 서로 다른 도구이며, 이 저장소는 계속 공식 UU 클라이언트의 호환 경로에 집중합니다.
 
+## 프로젝트 후원
+
+이 브리지가 시간을 아껴 주었다면 지속적인 호환성 유지보수를 후원할 수 있습니다:
+
+| GitHub Sponsors | LazyingArt Donate | PayPal | Stripe |
+| --- | --- | --- | --- |
+| [![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsor-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/lachlanchen) | [![Donate](https://img.shields.io/badge/LazyingArt-Donate-0EA5E9?style=for-the-badge&logo=ko-fi&logoColor=white)](https://chat.lazying.art/donate) | [![PayPal](https://img.shields.io/badge/PayPal-Donate-00457C?style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/RongzhouChen) | [![Stripe](https://img.shields.io/badge/Stripe-Donate-635BFF?style=for-the-badge&logo=stripe&logoColor=white)](https://buy.stripe.com/aFadR8gIaflgfQV6T4fw400) |
+
 > 명령, 해시 및 바이트의 정확한 단일 출처를 유지하기 위해 전체 기술 문서는
 > 영어로 관리합니다.

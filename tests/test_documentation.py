@@ -57,6 +57,22 @@ class DocumentationTests(unittest.TestCase):
         }
         self.assertEqual(TRANSLATIONS, actual)
 
+    def test_every_language_exposes_the_same_support_routes(self) -> None:
+        documents = [REPO_DIR / "README.md"] + [
+            REPO_DIR / "i18n" / name for name in sorted(TRANSLATIONS)
+        ]
+        routes = (
+            "https://github.com/sponsors/lachlanchen",
+            "https://chat.lazying.art/donate",
+            "https://paypal.me/RongzhouChen",
+            "https://buy.stripe.com/aFadR8gIaflgfQV6T4fw400",
+        )
+        for document in documents:
+            with self.subTest(document=document.name):
+                text = document.read_text(encoding="utf-8")
+                for route in routes:
+                    self.assertEqual(1, text.count(route), route)
+
     def test_simplified_chinese_independent_route_keeps_language_and_source(self) -> None:
         readme = (REPO_DIR / "i18n" / "README.zh-Hans.md").read_text(
             encoding="utf-8"

@@ -57,5 +57,13 @@ privé n'est versionné. Ce projet fait partie de
 
 Si vous avez plutôt besoin d'une solution indépendante du fournisseur, [LazyRemote](https://remote.lazying.art/?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=independent_option_fr) repose sur le cœur séparé et open source [LazyTunnel](https://github.com/lachlanchen/LazyTunnel) pour un accès autohébergé par SSH, terminal et noVNC. Il s'agit d'un autre outil ; ce dépôt reste la voie de compatibilité avec le client UU officiel.
 
+## Soutenir le projet
+
+Si ce pont vous fait gagner du temps, vous pouvez soutenir la maintenance continue de sa compatibilité :
+
+| GitHub Sponsors | LazyingArt Donate | PayPal | Stripe |
+| --- | --- | --- | --- |
+| [![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsor-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/lachlanchen) | [![Donate](https://img.shields.io/badge/LazyingArt-Donate-0EA5E9?style=for-the-badge&logo=ko-fi&logoColor=white)](https://chat.lazying.art/donate) | [![PayPal](https://img.shields.io/badge/PayPal-Donate-00457C?style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/RongzhouChen) | [![Stripe](https://img.shields.io/badge/Stripe-Donate-635BFF?style=for-the-badge&logo=stripe&logoColor=white)](https://buy.stripe.com/aFadR8gIaflgfQV6T4fw400) |
+
 > La référence technique complète reste en anglais afin de conserver une
 > source unique et exacte pour les commandes, empreintes et octets.

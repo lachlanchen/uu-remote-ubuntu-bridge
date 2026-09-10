@@ -58,4 +58,12 @@ UU 控制端 -> Wine 中的 UU -> 输入代理 -> SDL FreeRDP
 
 如果你更需要独立于厂商的方案，[LazyRemote 中文页](https://remote.lazying.art/zh-Hans/?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=independent_option_zh_hans#review) 由另一套开源 [LazyTunnel](https://github.com/lachlanchen/LazyTunnel) 核心提供自托管的 SSH、终端与 noVNC 访问。这是不同的工具；本仓库仍专注于兼容官方 UU 客户端。
 
+## 支持项目
+
+如果这个桥接器帮你节省了时间，可以支持我们继续维护兼容性：
+
+| GitHub Sponsors | LazyingArt Donate | PayPal | Stripe |
+| --- | --- | --- | --- |
+| [![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsor-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/lachlanchen) | [![Donate](https://img.shields.io/badge/LazyingArt-Donate-0EA5E9?style=for-the-badge&logo=ko-fi&logoColor=white)](https://chat.lazying.art/donate) | [![PayPal](https://img.shields.io/badge/PayPal-Donate-00457C?style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/RongzhouChen) | [![Stripe](https://img.shields.io/badge/Stripe-Donate-635BFF?style=for-the-badge&logo=stripe&logoColor=white)](https://buy.stripe.com/aFadR8gIaflgfQV6T4fw400) |
+
 > 完整技术参考保留英文版本，以确保命令、哈希和字节记录只有一个精确来源。

@@ -55,5 +55,13 @@ UU コントローラー -> Wine 上の UU -> 入力ブローカー -> SDL FreeR
 
 ベンダーに依存しない経路が必要な場合は、別のオープンソース中核 [LazyTunnel](https://github.com/lachlanchen/LazyTunnel) を使った [LazyRemote](https://remote.lazying.art/?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=independent_option_ja) で、SSH、ターミナル、noVNC へのセルフホスト型アクセスを利用できます。これは別のツールであり、このリポジトリは公式 UU クライアント向けの互換経路に引き続き専念します。
 
+## プロジェクトを支援
+
+このブリッジが時間の節約になった場合は、継続的な互換性メンテナンスを支援できます：
+
+| GitHub Sponsors | LazyingArt Donate | PayPal | Stripe |
+| --- | --- | --- | --- |
+| [![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsor-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/lachlanchen) | [![Donate](https://img.shields.io/badge/LazyingArt-Donate-0EA5E9?style=for-the-badge&logo=ko-fi&logoColor=white)](https://chat.lazying.art/donate) | [![PayPal](https://img.shields.io/badge/PayPal-Donate-00457C?style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/RongzhouChen) | [![Stripe](https://img.shields.io/badge/Stripe-Donate-635BFF?style=for-the-badge&logo=stripe&logoColor=white)](https://buy.stripe.com/aFadR8gIaflgfQV6T4fw400) |
+
 > コマンド、ハッシュ、バイト列の正確な単一情報源を保つため、完全な技術資料は
 > 英語版に集約しています。

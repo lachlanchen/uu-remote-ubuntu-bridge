@@ -53,4 +53,12 @@ PE 對應、語意地標、候選簽章和定點反組譯，但在逐項審閱�
 
 如果你更需要獨立於廠商的方案，[LazyRemote](https://remote.lazying.art/?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=independent_option_zh_hant) 由另一套開源 [LazyTunnel](https://github.com/lachlanchen/LazyTunnel) 核心提供自行託管的 SSH、終端機與 noVNC 存取。這是不同的工具；本儲存庫仍專注於相容官方 UU 用戶端。
 
+## 支持專案
+
+如果這個橋接器幫你節省了時間，可以支持我們繼續維護相容性：
+
+| GitHub Sponsors | LazyingArt Donate | PayPal | Stripe |
+| --- | --- | --- | --- |
+| [![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsor-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/lachlanchen) | [![Donate](https://img.shields.io/badge/LazyingArt-Donate-0EA5E9?style=for-the-badge&logo=ko-fi&logoColor=white)](https://chat.lazying.art/donate) | [![PayPal](https://img.shields.io/badge/PayPal-Donate-00457C?style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/RongzhouChen) | [![Stripe](https://img.shields.io/badge/Stripe-Donate-635BFF?style=for-the-badge&logo=stripe&logoColor=white)](https://buy.stripe.com/aFadR8gIaflgfQV6T4fw400) |
+
 > 完整技術參考保留英文版本，以確保命令、雜湊和位元組記錄只有一個精確來源。

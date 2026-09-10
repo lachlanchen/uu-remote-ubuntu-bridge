@@ -54,5 +54,13 @@ tư. Dự án thuộc [The Art of Lazying](https://lazying.art).
 
 Nếu cần một hướng không phụ thuộc nhà cung cấp, [LazyRemote](https://remote.lazying.art/?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=independent_option_vi) dùng lõi mã nguồn mở tách biệt [LazyTunnel](https://github.com/lachlanchen/LazyTunnel) để cung cấp quyền truy cập tự lưu trữ qua SSH, terminal và noVNC. Đây là một công cụ khác; kho mã này vẫn là lớp tương thích dành cho ứng dụng UU chính thức.
 
+## Ủng hộ dự án
+
+Nếu cây cầu này giúp bạn tiết kiệm thời gian, bạn có thể ủng hộ việc duy trì khả năng tương thích:
+
+| GitHub Sponsors | LazyingArt Donate | PayPal | Stripe |
+| --- | --- | --- | --- |
+| [![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsor-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/lachlanchen) | [![Donate](https://img.shields.io/badge/LazyingArt-Donate-0EA5E9?style=for-the-badge&logo=ko-fi&logoColor=white)](https://chat.lazying.art/donate) | [![PayPal](https://img.shields.io/badge/PayPal-Donate-00457C?style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/RongzhouChen) | [![Stripe](https://img.shields.io/badge/Stripe-Donate-635BFF?style=for-the-badge&logo=stripe&logoColor=white)](https://buy.stripe.com/aFadR8gIaflgfQV6T4fw400) |
+
 > Tài liệu kỹ thuật đầy đủ được giữ bằng tiếng Anh để lệnh, hash và byte chỉ có
 > một nguồn chính xác duy nhất.

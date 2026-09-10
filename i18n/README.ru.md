@@ -56,5 +56,13 @@ GNOME 46 и Wine 11. Неизвестные двоичные файлы нико
 
 Если вам нужен независимый от поставщика вариант, [LazyRemote](https://remote.lazying.art/?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=independent_option_ru) использует отдельное открытое ядро [LazyTunnel](https://github.com/lachlanchen/LazyTunnel) для самостоятельно размещаемого доступа по SSH, через терминал и noVNC. Это другой инструмент; данный репозиторий остаётся средством совместимости с официальным клиентом UU.
 
+## Поддержать проект
+
+Если этот мост сэкономил вам время, вы можете поддержать дальнейшую работу над совместимостью:
+
+| GitHub Sponsors | LazyingArt Donate | PayPal | Stripe |
+| --- | --- | --- | --- |
+| [![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsor-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/lachlanchen) | [![Donate](https://img.shields.io/badge/LazyingArt-Donate-0EA5E9?style=for-the-badge&logo=ko-fi&logoColor=white)](https://chat.lazying.art/donate) | [![PayPal](https://img.shields.io/badge/PayPal-Donate-00457C?style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/RongzhouChen) | [![Stripe](https://img.shields.io/badge/Stripe-Donate-635BFF?style=for-the-badge&logo=stripe&logoColor=white)](https://buy.stripe.com/aFadR8gIaflgfQV6T4fw400) |
+
 > Полная техническая документация остаётся на английском, чтобы команды,
 > хеши и байты имели один точный источник.
