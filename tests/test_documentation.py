@@ -86,6 +86,20 @@ class DocumentationTests(unittest.TestCase):
         self.assertIn("这是不同的工具", readme)
         self.assertIn("本仓库仍专注于兼容官方 UU 客户端", readme)
 
+    def test_simplified_chinese_readme_routes_to_the_complete_owned_guide(self) -> None:
+        readme = (REPO_DIR / "i18n" / "README.zh-Hans.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "https://blog.lazying.art/html/computer_internet/3818/"
+            "use-uu-remote-on-ubuntu-with-a-reproducible-bridge.html?"
+            "utm_source=github&utm_medium=readme&"
+            "utm_campaign=uu_remote_bridge&utm_content=zh_hans_guide",
+            readme,
+        )
+        self.assertIn("已验证范围", readme)
+        self.assertIn("不适合使用这座桥", readme)
+
     def test_primary_readmes_use_the_official_uu_domain_and_warn_about_unverified_linux_packages(self) -> None:
         english = (REPO_DIR / "README.md").read_text(encoding="utf-8")
         chinese = (REPO_DIR / "i18n" / "README.zh-Hans.md").read_text(

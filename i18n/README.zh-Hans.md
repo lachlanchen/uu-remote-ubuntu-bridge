@@ -26,6 +26,10 @@ UU 只从网易官方域名 [uuyc.163.com](https://uuyc.163.com/) 下载。官�
 提交免费且内容公开，但不构成支持承诺。请勿附加或链接专有二进制文件、凭据、
 账号或设备 ID、原始日志、截图或私有配置。
 
+如果想先弄清 Wine、中继、真实 GNOME 桌面和输入链路怎样接在一起，可以读这篇
+[完整中文指南](https://blog.lazying.art/html/computer_internet/3818/use-uu-remote-on-ubuntu-with-a-reproducible-bridge.html?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=zh_hans_guide)。
+它也说明了已验证范围、上游更新为何需要重新审查，以及什么时候不适合使用这座桥。
+
 ## 快速安装
 
 ```bash
