@@ -34,6 +34,12 @@ local RDP relay, and makes mouse and keyboard control work normally.
 > This is not a native UU Linux port and is not affiliated with NetEase. The
 > current manifest is intentionally locked to UU Remote `4.33.0.8907`.
 
+Download UU only from NetEase's official [uuyc.163.com](https://uuyc.163.com/)
+domain. Its current product page does not list a Linux host; this bridge uses
+the official Windows client and verifies the complete installer hash. Do not
+install an unverified `.deb`, `.rpm`, or AppImage from a look-alike download
+site.
+
 The supported host is x86-64 Ubuntu 24.04 with a logged-in GNOME 46 desktop
 (physical, Wayland, Xorg, or XRDP). The installer checks this boundary and
 fails before making partial changes on an unsupported OS or architecture.

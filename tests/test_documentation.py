@@ -86,6 +86,19 @@ class DocumentationTests(unittest.TestCase):
         self.assertIn("这是不同的工具", readme)
         self.assertIn("本仓库仍专注于兼容官方 UU 客户端", readme)
 
+    def test_primary_readmes_use_the_official_uu_domain_and_warn_about_unverified_linux_packages(self) -> None:
+        english = (REPO_DIR / "README.md").read_text(encoding="utf-8")
+        chinese = (REPO_DIR / "i18n" / "README.zh-Hans.md").read_text(
+            encoding="utf-8"
+        )
+        for text in (english, chinese):
+            self.assertGreaterEqual(text.count("https://uuyc.163.com/"), 1)
+            self.assertIn("`.deb`", text)
+            self.assertIn("`.rpm`", text)
+            self.assertIn("AppImage", text)
+        self.assertIn("does not list a Linux host", english)
+        self.assertIn("没有列出 Linux 被控端", chinese)
+
     def test_compatibility_intake_is_public_bilingual_and_privacy_safe(self) -> None:
         form = (
             REPO_DIR / ".github" / "ISSUE_TEMPLATE" / "compatibility.yml"
