@@ -52,7 +52,7 @@ trên một bản sao dùng một lần.
 Kho mã không chứa mật khẩu, token, mã thiết bị, tệp thực thi UU hoặc log riêng
 tư. Dự án thuộc [The Art of Lazying](https://lazying.art).
 
-Nếu cần một hướng không phụ thuộc nhà cung cấp, [LazyRemote](https://remote.lazying.art/?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=independent_option_vi) dùng lõi mã nguồn mở tách biệt [LazyTunnel](https://github.com/lachlanchen/LazyTunnel) để cung cấp quyền truy cập tự lưu trữ qua SSH, terminal và noVNC. Đây là một công cụ khác; kho mã này vẫn là lớp tương thích dành cho ứng dụng UU chính thức.
+Nếu cần một hướng không phụ thuộc nhà cung cấp, [LazyRemote](https://remote.lazying.art/?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=independent_option_vi#review) dùng lõi mã nguồn mở tách biệt [LazyTunnel](https://github.com/lachlanchen/LazyTunnel) để cung cấp quyền truy cập tự lưu trữ qua SSH, terminal và noVNC. Đây là một công cụ khác; kho mã này vẫn là lớp tương thích dành cho ứng dụng UU chính thức.
 
 ## Ủng hộ dự án
 

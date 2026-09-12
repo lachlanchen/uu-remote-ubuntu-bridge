@@ -86,6 +86,22 @@ class DocumentationTests(unittest.TestCase):
         self.assertIn("这是不同的工具", readme)
         self.assertIn("本仓库仍专注于兼容官方 UU 客户端", readme)
 
+    def test_every_language_independent_route_lands_on_review_scope(self) -> None:
+        documents = [REPO_DIR / "README.md"] + [
+            REPO_DIR / "i18n" / name for name in sorted(TRANSLATIONS)
+        ]
+        for document in documents:
+            with self.subTest(document=document.name):
+                text = document.read_text(encoding="utf-8")
+                matching = [
+                    target
+                    for target in MARKDOWN_LINK.findall(text)
+                    if "utm_campaign=uu_remote_bridge" in target
+                    and "utm_content=independent_option" in target
+                ]
+                self.assertEqual(1, len(matching))
+                self.assertTrue(matching[0].endswith("#review"))
+
     def test_simplified_chinese_readme_routes_to_the_complete_owned_guide(self) -> None:
         readme = (REPO_DIR / "i18n" / "README.zh-Hans.md").read_text(
             encoding="utf-8"

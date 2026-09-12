@@ -56,7 +56,7 @@ Passwörter, Token, Gerätekennungen, UU-Programme und private Protokolle werden
 nicht eingecheckt. Das Projekt gehört zu
 [The Art of Lazying](https://lazying.art).
 
-Wer stattdessen einen herstellerunabhängigen Weg benötigt, kann [LazyRemote](https://remote.lazying.art/?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=independent_option_de) nutzen. Es basiert auf dem separaten, quelloffenen [LazyTunnel](https://github.com/lachlanchen/LazyTunnel)-Kern und bietet selbst gehosteten Zugriff per SSH, Terminal und noVNC. Es ist ein anderes Werkzeug; dieses Repository bleibt der Kompatibilitätsweg für den offiziellen UU-Client.
+Wer stattdessen einen herstellerunabhängigen Weg benötigt, kann [LazyRemote](https://remote.lazying.art/?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=independent_option_de#review) nutzen. Es basiert auf dem separaten, quelloffenen [LazyTunnel](https://github.com/lachlanchen/LazyTunnel)-Kern und bietet selbst gehosteten Zugriff per SSH, Terminal und noVNC. Es ist ein anderes Werkzeug; dieses Repository bleibt der Kompatibilitätsweg für den offiziellen UU-Client.
 
 ## Projekt unterstützen
 

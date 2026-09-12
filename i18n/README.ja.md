@@ -53,7 +53,7 @@ UU コントローラー -> Wine 上の UU -> 入力ブローカー -> SDL FreeR
 しません。このプロジェクトは [The Art of Lazying](https://lazying.art)
 の一部です。
 
-ベンダーに依存しない経路が必要な場合は、別のオープンソース中核 [LazyTunnel](https://github.com/lachlanchen/LazyTunnel) を使った [LazyRemote](https://remote.lazying.art/?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=independent_option_ja) で、SSH、ターミナル、noVNC へのセルフホスト型アクセスを利用できます。これは別のツールであり、このリポジトリは公式 UU クライアント向けの互換経路に引き続き専念します。
+ベンダーに依存しない経路が必要な場合は、別のオープンソース中核 [LazyTunnel](https://github.com/lachlanchen/LazyTunnel) を使った [LazyRemote](https://remote.lazying.art/?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=independent_option_ja#review) で、SSH、ターミナル、noVNC へのセルフホスト型アクセスを利用できます。これは別のツールであり、このリポジトリは公式 UU クライアント向けの互換経路に引き続き専念します。
 
 ## プロジェクトを支援
 

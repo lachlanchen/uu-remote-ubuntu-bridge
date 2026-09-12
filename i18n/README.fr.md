@@ -55,7 +55,7 @@ Aucun mot de passe, jeton, identifiant d'appareil, exécutable UU ou journal
 privé n'est versionné. Ce projet fait partie de
 [The Art of Lazying](https://lazying.art).
 
-Si vous avez plutôt besoin d'une solution indépendante du fournisseur, [LazyRemote](https://remote.lazying.art/?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=independent_option_fr) repose sur le cœur séparé et open source [LazyTunnel](https://github.com/lachlanchen/LazyTunnel) pour un accès autohébergé par SSH, terminal et noVNC. Il s'agit d'un autre outil ; ce dépôt reste la voie de compatibilité avec le client UU officiel.
+Si vous avez plutôt besoin d'une solution indépendante du fournisseur, [LazyRemote](https://remote.lazying.art/?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=independent_option_fr#review) repose sur le cœur séparé et open source [LazyTunnel](https://github.com/lachlanchen/LazyTunnel) pour un accès autohébergé par SSH, terminal et noVNC. Il s'agit d'un autre outil ; ce dépôt reste la voie de compatibilité avec le client UU officiel.
 
 ## Soutenir le projet
 

@@ -51,7 +51,7 @@ UU 컨트롤러 -> Wine의 UU -> 입력 브로커 -> SDL FreeRDP
 비밀번호, 토큰, 장치 ID, UU 실행 파일 또는 개인 로그는 저장소에 커밋하지
 않습니다. 이 프로젝트는 [The Art of Lazying](https://lazying.art)의 일부입니다.
 
-특정 공급업체에 의존하지 않는 경로가 필요하다면 [LazyRemote](https://remote.lazying.art/?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=independent_option_ko)를 사용할 수 있습니다. 별도의 오픈 소스 [LazyTunnel](https://github.com/lachlanchen/LazyTunnel) 코어를 바탕으로 SSH, 터미널, noVNC에 대한 자체 호스팅 접근을 제공합니다. 서로 다른 도구이며, 이 저장소는 계속 공식 UU 클라이언트의 호환 경로에 집중합니다.
+특정 공급업체에 의존하지 않는 경로가 필요하다면 [LazyRemote](https://remote.lazying.art/?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=independent_option_ko#review)를 사용할 수 있습니다. 별도의 오픈 소스 [LazyTunnel](https://github.com/lachlanchen/LazyTunnel) 코어를 바탕으로 SSH, 터미널, noVNC에 대한 자체 호스팅 접근을 제공합니다. 서로 다른 도구이며, 이 저장소는 계속 공식 UU 클라이언트의 호환 경로에 집중합니다.
 
 ## 프로젝트 후원
 
