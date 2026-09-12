@@ -6,6 +6,10 @@
 #define UURB_FIXTURE_TEXT L"controller clipboard fixture"
 #endif
 
+#ifndef UURB_FIXTURE_HOLD_MS
+#define UURB_FIXTURE_HOLD_MS 2000UL
+#endif
+
 static LRESULT CALLBACK fixture_window_proc(HWND window, UINT message,
                                              WPARAM wparam, LPARAM lparam)
 {
@@ -20,6 +24,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR command_line,
     WNDCLASSW window_class;
     HGLOBAL allocation;
     HWND window;
+    MSG message;
+    ULONGLONG deadline;
     wchar_t *destination;
 
     (void)previous;
@@ -58,7 +64,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR command_line,
         return 7;
     }
     CloseClipboard();
-    Sleep(2000);
+    deadline = GetTickCount64() + UURB_FIXTURE_HOLD_MS;
+    while (GetTickCount64() < deadline) {
+        while (PeekMessageW(&message, NULL, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+        Sleep(10);
+    }
     DestroyWindow(window);
     return 0;
 }

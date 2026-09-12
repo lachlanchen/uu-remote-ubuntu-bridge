@@ -58,7 +58,7 @@ mkdir -p "$output_dir"
     "$repo_dir/src/uu_x11_input.c" -ldl
 "$host_cc" "${common[@]}" -I "$repo_dir/src" \
     -o "$output_dir/uu-x11-clipboard" \
-    "$repo_dir/src/uu_x11_clipboard.c"
+    "$repo_dir/src/uu_x11_clipboard.c" -ldl
 "$host_cc" "${common[@]}" -I "$repo_dir/src" \
     -o "$output_dir/uu-terminal-bridge" \
     "$repo_dir/src/uu_terminal_bridge.c" -lutil

@@ -15,6 +15,15 @@ static SOCKET clipboard_socket = INVALID_SOCKET;
 static BOOL winsock_initialized;
 static unsigned short clipboard_port;
 static char clipboard_token[UURB_X11_CLIPBOARD_TOKEN_SIZE + 1];
+static unsigned int diagnostic_reports;
+
+static void report_clipboard_failure(const char *stage)
+{
+    if (diagnostic_reports++ < 64U) {
+        fprintf(stderr, "controller-clipboard-failure stage=%s\n", stage);
+        fflush(stderr);
+    }
+}
 
 static void close_clipboard_socket(void)
 {
@@ -142,10 +151,12 @@ static BOOL owner_is_gameviewer(void)
     wchar_t path[MAX_PATH];
     DWORD length = ARRAYSIZE(path);
     const wchar_t *basename;
+    const wchar_t *slash_basename;
 
     owner = GetClipboardOwner();
-    if (!owner || !GetWindowThreadProcessId(owner, &process_id) ||
-        process_id == 0)
+    if (!owner)
+        return FALSE;
+    if (!GetWindowThreadProcessId(owner, &process_id) || process_id == 0)
         return FALSE;
     process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, process_id);
     if (!process)
@@ -157,10 +168,17 @@ static BOOL owner_is_gameviewer(void)
     CloseHandle(process);
     basename = wcsrchr(path, L'\\');
     basename = basename ? basename + 1 : path;
+    /* Wine can expose a Unix-style path here, while Windows uses a
+     * backslash-separated DOS path.  Authorize the executable name, not one
+     * platform's path spelling. */
+    slash_basename = wcsrchr(basename, L'/');
+    if (slash_basename)
+        basename = slash_basename + 1;
     return lstrcmpiW(basename, L"GameViewer.exe") == 0;
 }
 
-static BOOL read_clipboard_utf8(char **output, DWORD *output_size)
+static BOOL read_clipboard_utf8(DWORD expected_sequence, char **output,
+                                DWORD *output_size)
 {
     HANDLE handle;
     const wchar_t *source;
@@ -176,6 +194,17 @@ static BOOL read_clipboard_utf8(char **output, DWORD *output_size)
     *output_size = 0;
     if (!OpenClipboard(NULL))
         return FALSE;
+    /* The sequence and owner are one authorization decision.  Checking the
+     * owner before OpenClipboard leaves a race where another process can take
+     * the clipboard between the check and the read. */
+    if (GetClipboardSequenceNumber() != expected_sequence) {
+        CloseClipboard();
+        return FALSE;
+    }
+    if (!owner_is_gameviewer()) {
+        CloseClipboard();
+        return FALSE;
+    }
     handle = GetClipboardData(CF_UNICODETEXT);
     if (!handle) {
         CloseClipboard();
@@ -223,6 +252,16 @@ static BOOL read_clipboard_utf8(char **output, DWORD *output_size)
         }
     }
     GlobalUnlock(handle);
+    if (GetClipboardSequenceNumber() != expected_sequence) {
+        CloseClipboard();
+        HeapFree(GetProcessHeap(), 0, normalized);
+        return FALSE;
+    }
+    if (!owner_is_gameviewer()) {
+        CloseClipboard();
+        HeapFree(GetProcessHeap(), 0, normalized);
+        return FALSE;
+    }
     CloseClipboard();
     if (normalized_units == 0) {
         HeapFree(GetProcessHeap(), 0, normalized);
@@ -257,10 +296,12 @@ static BOOL forward_current_clipboard(DWORD sequence)
     DWORD text_size;
     BOOL sent = FALSE;
 
-    if (!owner_is_gameviewer() || !read_clipboard_utf8(&text, &text_size))
+    if (!read_clipboard_utf8(sequence, &text, &text_size))
         return FALSE;
-    if (!connect_clipboard_listener())
+    if (!connect_clipboard_listener()) {
+        report_clipboard_failure("connect");
         goto cleanup;
+    }
     request.magic = UURB_X11_CLIPBOARD_MAGIC;
     request.sequence = sequence;
     request.text_bytes = text_size;
@@ -271,6 +312,7 @@ static BOOL forward_current_clipboard(DWORD sequence)
         response.magic != UURB_X11_CLIPBOARD_MAGIC ||
         response.sequence != sequence || response.result != text_size ||
         response.error != 0) {
+        report_clipboard_failure("native-owner");
         close_clipboard_socket();
         goto cleanup;
     }
@@ -283,10 +325,17 @@ cleanup:
 
 int wmain(void)
 {
-    DWORD delivered_sequence = 0;
+    DWORD delivered_sequence;
 
     if (!configure_bridge())
         return 2;
+    /* Do not replay whatever happened to be in GameViewer's clipboard before
+     * this helper was started.  Only sequence changes observed after startup
+     * are eligible for forwarding. */
+    delivered_sequence = GetClipboardSequenceNumber();
+    fprintf(stderr,
+            "Wine clipboard companion ready; direction=controller-to-host-only.\n");
+    fflush(stderr);
     for (;;) {
         DWORD sequence = GetClipboardSequenceNumber();
 

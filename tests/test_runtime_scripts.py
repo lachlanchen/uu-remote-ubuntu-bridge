@@ -560,7 +560,8 @@ winlogon_pid=$xvfb_pid
 input_broker_pid=$xvfb_pid
 server_supervisor_pid=$xvfb_pid
 grd_pid= freerdp_pid= desktop_x11vnc_pid= vncviewer_pid=
-x11_input_pid= terminal_bridge_pid=
+x11_input_pid= x11_clipboard_pid= wine_clipboard_bridge_pid=
+terminal_bridge_pid=
 '''
         for status in (0, 7):
             with self.subTest(status=status):
@@ -749,18 +750,45 @@ x11_input_pid= terminal_bridge_pid=
             REPOSITORY / "src" / "uu_wine_clipboard_bridge.c"
         ).read_text()
         listener = (REPOSITORY / "src" / "uu_x11_clipboard.c").read_text()
+        fixture = (
+            REPOSITORY / "tests" / "probes" / "uu_controller_clipboard_fixture.c"
+        ).read_text()
+        functional = (
+            REPOSITORY / "scripts" / "test-controller-clipboard.sh"
+        ).read_text()
+        workflow = (
+            REPOSITORY / ".github" / "workflows" / "validate.yml"
+        ).read_text()
 
         self.assertIn('L"GameViewer.exe"', companion)
         self.assertIn("GetClipboardOwner()", companion)
         self.assertIn("GetClipboardData(CF_UNICODETEXT)", companion)
+        self.assertIn("delivered_sequence = GetClipboardSequenceNumber();", companion)
+        self.assertGreaterEqual(companion.count("owner_is_gameviewer()"), 2)
+        self.assertGreaterEqual(
+            companion.count("GetClipboardSequenceNumber() != expected_sequence"),
+            2,
+        )
         self.assertIn("INADDR_LOOPBACK", companion)
         self.assertIn("INADDR_LOOPBACK", listener)
-        self.assertIn('start_owner("CLIPBOARD"', listener)
-        self.assertIn('start_owner("PRIMARY"', listener)
+        self.assertIn('"CLIPBOARD", text, size', listener)
+        self.assertIn('"PRIMARY", text, size', listener)
+        self.assertIn('"-verbose"', listener)
+        self.assertIn("XGetSelectionOwner", listener)
+        self.assertIn("SO_RCVTIMEO", listener)
+        self.assertIn("SO_SNDTIMEO", listener)
         self.assertNotIn("SetClipboardData", listener)
         self.assertNotIn("SendInput", companion + listener)
         self.assertIn("-seldir recv", launcher)
         self.assertIn("-ServerCutText=0", launcher)
+        self.assertIn('if [[ "$desktop_relay" != vnc ]]; then', launcher)
+        self.assertIn('"$x11_clipboard_pid"', launcher)
+        self.assertIn('"$wine_clipboard_bridge_pid"', launcher)
+        self.assertIn("PeekMessageW", fixture)
+        self.assertIn("startup-baseline=existing content ignored", functional)
+        self.assertIn("failure-mode=xclip failure rejected", functional)
+        self.assertIn("lifecycle=deadlines bounded and owner children reaped", functional)
+        self.assertIn("./scripts/test-controller-clipboard.sh", workflow)
 
     def test_opt_in_cursor_guard_uses_absolute_ungrabbed_mouse(self):
         launcher = (REPOSITORY / "scripts" / "uu-remote-bridge").read_text()

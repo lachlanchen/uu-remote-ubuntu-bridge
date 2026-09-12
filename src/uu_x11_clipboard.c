@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include <arpa/inet.h>
 #include <ctype.h>
+#include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -10,10 +11,36 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
 #include "x11_clipboard_protocol.h"
+
+#ifndef UURB_XCLIP_PATH
+#define UURB_XCLIP_PATH "/usr/bin/xclip"
+#endif
+
+/* Match uu_x11_input.c: keep the helper buildable with runtime X11 libraries
+ * only, then prove that each foreground xclip owns its requested selection. */
+typedef struct _XDisplay Display;
+typedef int Bool;
+typedef unsigned long Atom;
+typedef unsigned long Window;
+typedef Display *(*x_open_display_fn)(const char *);
+typedef int (*x_close_display_fn)(Display *);
+typedef int (*x_sync_fn)(Display *, Bool);
+typedef Atom (*x_intern_atom_fn)(Display *, const char *, Bool);
+typedef Window (*x_get_selection_owner_fn)(Display *, Atom);
+
+typedef struct x11_api {
+    void *library;
+    x_open_display_fn open_display;
+    x_close_display_fn close_display;
+    x_sync_fn sync;
+    x_intern_atom_fn intern_atom;
+    x_get_selection_owner_fn get_selection_owner;
+} x11_api;
 
 static volatile sig_atomic_t stop_requested;
 static volatile sig_atomic_t listener_fd = -1;
@@ -25,11 +52,22 @@ static void stop_owner(volatile sig_atomic_t *owner_pid)
 {
     pid_t pid = (pid_t)*owner_pid;
     int status;
+    unsigned int attempt;
 
     *owner_pid = -1;
     if (pid <= 0)
         return;
     kill(pid, SIGTERM);
+    for (attempt = 0; attempt < 25; attempt++) {
+        pid_t result = waitpid(pid, &status, WNOHANG);
+
+        if (result == pid || (result < 0 && errno == ECHILD))
+            return;
+        if (result < 0 && errno != EINTR)
+            break;
+        usleep(2000);
+    }
+    kill(pid, SIGKILL);
     while (waitpid(pid, &status, 0) < 0 && errno == EINTR)
         ;
 }
@@ -127,6 +165,37 @@ static bool valid_token(const char *token)
     return true;
 }
 
+static bool load_x11_api(x11_api *api)
+{
+    memset(api, 0, sizeof(*api));
+    api->library = dlopen("libX11.so.6", RTLD_NOW | RTLD_LOCAL);
+    if (!api->library)
+        return false;
+    api->open_display = (x_open_display_fn)dlsym(api->library,
+                                                 "XOpenDisplay");
+    api->close_display = (x_close_display_fn)dlsym(api->library,
+                                                   "XCloseDisplay");
+    api->sync = (x_sync_fn)dlsym(api->library, "XSync");
+    api->intern_atom = (x_intern_atom_fn)dlsym(api->library,
+                                               "XInternAtom");
+    api->get_selection_owner = (x_get_selection_owner_fn)dlsym(
+        api->library, "XGetSelectionOwner");
+    if (!api->open_display || !api->close_display || !api->sync ||
+        !api->intern_atom || !api->get_selection_owner) {
+        dlclose(api->library);
+        memset(api, 0, sizeof(*api));
+        return false;
+    }
+    return true;
+}
+
+static void unload_x11_api(x11_api *api)
+{
+    if (api->library)
+        dlclose(api->library);
+    memset(api, 0, sizeof(*api));
+}
+
 /* Strict UTF-8 validation also rejects NUL.  The companion is the only
  * intended sender, but content is nevertheless treated as untrusted. */
 static bool valid_utf8_text(const unsigned char *text, size_t size)
@@ -173,11 +242,22 @@ static bool valid_utf8_text(const unsigned char *text, size_t size)
     return true;
 }
 
-static bool start_owner(const char *selection, const char *text, size_t size,
+static bool start_owner(const x11_api *api, Display *display,
+                        const char *selection, const char *text, size_t size,
                         volatile sig_atomic_t *owner_pid)
 {
+    Atom selection_atom;
     int input_pipe[2];
     pid_t pid;
+    Window previous_owner;
+    Window current_owner = 0;
+    unsigned int attempt;
+
+    selection_atom = api->intern_atom(display, selection, 0);
+    if (selection_atom == 0)
+        return false;
+    api->sync(display, 0);
+    previous_owner = api->get_selection_owner(display, selection_atom);
 
     if (pipe2(input_pipe, O_CLOEXEC) != 0)
         return false;
@@ -201,35 +281,66 @@ static bool start_owner(const char *selection, const char *text, size_t size,
             close(null_fd);
         }
         setenv("LC_ALL", "C.UTF-8", 1);
-        execl("/usr/bin/xclip", "xclip", "-selection", selection,
-              "-in", "-loops", "0", (char *)NULL);
+        /* -verbose keeps xclip in the foreground.  Without it xclip forks,
+         * leaving the launcher PID unable to supervise or clean up the real
+         * X11 selection owner. */
+        execl(UURB_XCLIP_PATH, "xclip", "-selection", selection,
+              "-in", "-loops", "0", "-verbose", (char *)NULL);
         _exit(127);
     }
     close(input_pipe[0]);
+    *owner_pid = (sig_atomic_t)pid;
     if (!write_fd_all(input_pipe[1], text, size)) {
         close(input_pipe[1]);
-        kill(pid, SIGTERM);
-        waitpid(pid, NULL, 0);
+        stop_owner(owner_pid);
         return false;
     }
     close(input_pipe[1]);
-    *owner_pid = (sig_atomic_t)pid;
-    return true;
+
+    for (attempt = 0; attempt < 100; attempt++) {
+        int status;
+        pid_t result;
+
+        api->sync(display, 0);
+        current_owner = api->get_selection_owner(display, selection_atom);
+        if (current_owner != 0 && current_owner != previous_owner)
+            return true;
+        result = waitpid(pid, &status, WNOHANG);
+        if (result == pid || (result < 0 && errno == ECHILD)) {
+            *owner_pid = -1;
+            return false;
+        }
+        if (result < 0 && errno != EINTR)
+            break;
+        usleep(5000);
+    }
+    stop_owner(owner_pid);
+    return false;
 }
 
-static bool replace_clipboard(const char *text, size_t size)
+static bool replace_clipboard(const x11_api *api, Display *display,
+                              const char *text, size_t size)
 {
     volatile sig_atomic_t old_clipboard = clipboard_owner_pid;
     volatile sig_atomic_t old_primary = primary_owner_pid;
+    volatile sig_atomic_t new_clipboard = -1;
+    volatile sig_atomic_t new_primary = -1;
 
-    clipboard_owner_pid = primary_owner_pid = -1;
-    if (!start_owner("CLIPBOARD", text, size, &clipboard_owner_pid) ||
-        !start_owner("PRIMARY", text, size, &primary_owner_pid)) {
-        stop_owners();
-        clipboard_owner_pid = old_clipboard;
-        primary_owner_pid = old_primary;
+    if (!start_owner(api, display, "CLIPBOARD", text, size,
+                     &new_clipboard) ||
+        !start_owner(api, display, "PRIMARY", text, size, &new_primary)) {
+        stop_owner(&new_clipboard);
+        stop_owner(&new_primary);
+        /* A partial X11 handoff can already have displaced either old owner.
+         * Do not restore stale PIDs as if they still owned the selections. */
+        stop_owner(&old_clipboard);
+        stop_owner(&old_primary);
+        clipboard_owner_pid = -1;
+        primary_owner_pid = -1;
         return false;
     }
+    clipboard_owner_pid = new_clipboard;
+    primary_owner_pid = new_primary;
     stop_owner(&old_clipboard);
     stop_owner(&old_primary);
     return true;
@@ -247,7 +358,20 @@ static bool send_response(int client, uint32_t sequence, uint32_t result,
     return write_all(client, &response, sizeof(response));
 }
 
-static void serve_client(int client, const char *token)
+static bool set_client_deadlines(int client)
+{
+    struct timeval timeout;
+
+    timeout.tv_sec = 1;
+    timeout.tv_usec = 0;
+    return setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &timeout,
+                      sizeof(timeout)) == 0 &&
+           setsockopt(client, SOL_SOCKET, SO_SNDTIMEO, &timeout,
+                      sizeof(timeout)) == 0;
+}
+
+static void serve_client(int client, const char *token,
+                         const x11_api *api, Display *display)
 {
     uurb_x11_clipboard_handshake handshake;
 
@@ -282,7 +406,7 @@ static void serve_client(int client, const char *token)
         text[request.text_bytes] = '\0';
         if (!valid_utf8_text((const unsigned char *)text, request.text_bytes))
             error = UURB_X11_CLIPBOARD_ERROR_INVALID_TEXT;
-        else if (!replace_clipboard(text, request.text_bytes))
+        else if (!replace_clipboard(api, display, text, request.text_bytes))
             error = UURB_X11_CLIPBOARD_ERROR_OWNER;
         free(text);
         if (!send_response(client, request.sequence,
@@ -342,8 +466,12 @@ int main(int argc, char **argv)
 {
     const char *token = getenv("UURB_X11_CLIPBOARD_TOKEN");
     const char *ready_file = NULL;
+    Display *display = NULL;
     struct sigaction action;
     int status = EXIT_FAILURE;
+    x11_api api;
+
+    memset(&api, 0, sizeof(api));
 
     if (argc == 3 && strcmp(argv[1], "--ready-file") == 0)
         ready_file = argv[2];
@@ -358,6 +486,10 @@ int main(int argc, char **argv)
     sigaction(SIGTERM, &action, NULL);
     signal(SIGPIPE, SIG_IGN);
 
+    if (!load_x11_api(&api) || !(display = api.open_display(NULL))) {
+        fprintf(stderr, "Cannot inspect X11 clipboard ownership.\n");
+        goto cleanup;
+    }
     listener_fd = create_listener(ready_file);
     if (listener_fd < 0) {
         fprintf(stderr, "Cannot create the private X11 clipboard listener.\n");
@@ -372,8 +504,12 @@ int main(int argc, char **argv)
                 continue;
             break;
         }
+        if (!set_client_deadlines(client)) {
+            close(client);
+            continue;
+        }
         active_client_fd = client;
-        serve_client(client, token);
+        serve_client(client, token, &api, display);
         active_client_fd = -1;
         close(client);
     }
@@ -383,6 +519,9 @@ cleanup:
     stop_owners();
     if (listener_fd >= 0)
         close(listener_fd);
+    if (display)
+        api.close_display(display);
+    unload_x11_api(&api);
     unlink(ready_file);
     return status;
 }

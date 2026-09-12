@@ -967,6 +967,9 @@ start_x11_input_helper() {
 start_x11_clipboard_helper() {
     local selected_xauthority
 
+    if [[ "$desktop_relay" != vnc ]]; then
+        return 0
+    fi
     if [[ ! -x "$x11_clipboard_helper" ]]; then
         log 'The optional one-way X11 clipboard helper is missing; retaining the existing clipboard behavior.'
         return 0
@@ -1643,6 +1646,8 @@ for optional_pid in \
     "$desktop_x11vnc_pid" \
     "$vncviewer_pid" \
     "$x11_input_pid" \
+    "$x11_clipboard_pid" \
+    "$wine_clipboard_bridge_pid" \
     "$terminal_bridge_pid"; do
     if [[ -n "$optional_pid" ]]; then
         critical_pids+=("$optional_pid")
