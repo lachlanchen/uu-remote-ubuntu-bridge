@@ -78,12 +78,12 @@ done
 
 "$repo_dir/scripts/build-compat.sh" "$temporary_dir/compat" >/dev/null
 x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \
-    -municode -mwindows \
+    -municode \
     -DUURB_FIXTURE_TEXT='L"Mac controller 中文\r\nsecond line"' \
     -o "$temporary_dir/GameViewer.exe" \
     "$repo_dir/tests/probes/uu_controller_clipboard_fixture.c" -luser32
 x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \
-    -municode -mwindows \
+    -municode \
     -DUURB_FIXTURE_TEXT='L"must not leave OtherApp"' \
     -o "$temporary_dir/OtherApp.exe" \
     "$repo_dir/tests/probes/uu_controller_clipboard_fixture.c" -luser32
@@ -142,9 +142,16 @@ exec 8>&- 8<&-
 # the baseline, not an event to forward to the host.
 DISPLAY="$wine_display" WINEPREFIX="$wine_prefix" WINEDEBUG=-all \
     WINEDLLOVERRIDES='mscoree,mshtml=' \
-    "$wine_bin" "$temporary_dir/GameViewer.exe" &
+    "$wine_bin" "$temporary_dir/GameViewer.exe" \
+    >"$temporary_dir/startup-fixture.log" 2>&1 &
 fixture_pid=$!
-sleep 0.4
+for _ in {1..100}; do
+    grep -q 'fixture clipboard ready' \
+        "$temporary_dir/startup-fixture.log" 2>/dev/null && break
+    kill -0 "$fixture_pid" 2>/dev/null || break
+    sleep 0.05
+done
+grep -q 'fixture clipboard ready' "$temporary_dir/startup-fixture.log"
 DISPLAY="$wine_display" WINEPREFIX="$wine_prefix" WINEDEBUG=-all \
     WINEDLLOVERRIDES='mscoree,mshtml=' \
     UURB_X11_CLIPBOARD_PORT="$port" UURB_X11_CLIPBOARD_TOKEN="$token" \
@@ -171,8 +178,16 @@ fixture_pid=""
 
 DISPLAY="$wine_display" WINEPREFIX="$wine_prefix" WINEDEBUG=-all \
     WINEDLLOVERRIDES='mscoree,mshtml=' \
-    "$wine_bin" "$temporary_dir/GameViewer.exe" &
+    "$wine_bin" "$temporary_dir/GameViewer.exe" \
+    >"$temporary_dir/gameviewer-fixture.log" 2>&1 &
 fixture_pid=$!
+for _ in {1..100}; do
+    grep -q 'fixture clipboard ready' \
+        "$temporary_dir/gameviewer-fixture.log" 2>/dev/null && break
+    kill -0 "$fixture_pid" 2>/dev/null || break
+    sleep 0.05
+done
+grep -q 'fixture clipboard ready' "$temporary_dir/gameviewer-fixture.log"
 expected=$'Mac controller 中文\nsecond line'
 observed=""
 for _ in {1..80}; do
@@ -196,8 +211,16 @@ fixture_pid=""
 
 DISPLAY="$wine_display" WINEPREFIX="$wine_prefix" WINEDEBUG=-all \
     WINEDLLOVERRIDES='mscoree,mshtml=' \
-    "$wine_bin" "$temporary_dir/OtherApp.exe" &
+    "$wine_bin" "$temporary_dir/OtherApp.exe" \
+    >"$temporary_dir/other-fixture.log" 2>&1 &
 fixture_pid=$!
+for _ in {1..100}; do
+    grep -q 'fixture clipboard ready' \
+        "$temporary_dir/other-fixture.log" 2>/dev/null && break
+    kill -0 "$fixture_pid" 2>/dev/null || break
+    sleep 0.05
+done
+grep -q 'fixture clipboard ready' "$temporary_dir/other-fixture.log"
 sleep 0.5
 observed="$(DISPLAY="$host_display" timeout 0.5 \
     xclip -selection clipboard -out 2>/dev/null || true)"
