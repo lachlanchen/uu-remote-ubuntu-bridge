@@ -40,13 +40,24 @@ jobs:
       - name: Compile Python
         run: python3 -m compileall -q scripts tests
 
-      - name: Install test compiler
+      - name: Install test compilers and isolated clipboard runtime
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-mingw-w64-x86-64-win32
+          sudo apt-get install -y --no-install-recommends \
+            gcc-mingw-w64-x86-64-win32 \
+            wine wine64 wine64-tools \
+            x11-utils xclip xvfb
 
       - name: Run unit and documentation tests
         run: python3 -m unittest discover -s tests -v
+
+      - name: Exercise the one-way controller clipboard boundary
+        env:
+          UURB_WINE_BIN: /usr/bin/wine
+          UURB_WINEBOOT_BIN: /usr/bin/wineboot
+          UURB_WINESERVER_BIN: /usr/bin/wineserver
+          WINEGCC: /usr/bin/winegcc
+        run: ./scripts/test-controller-clipboard.sh
 
       - name: Validate approved manifests
         run: python3 scripts/patch-gameviewer.py manifests

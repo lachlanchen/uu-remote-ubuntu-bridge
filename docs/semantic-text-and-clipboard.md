@@ -119,6 +119,16 @@ This channel is independent of phone-IME input. Copying text on a UU client
 uses the VNC clipboard relay; typing or dictating into UU's phone keyboard uses
 the adaptive broker route.
 
+Controllers that update only GameViewer's Win32 clipboard use an additional
+VNC/X11-only companion. It ignores the clipboard present at startup and
+accepts a later text change only while the locked clipboard owner remains
+`GameViewer.exe`. A token-authenticated loopback listener then installs the
+text on the physical X11 desktop. Success means foreground owner processes
+have been confirmed for both `CLIPBOARD` and `PRIMARY`; an `xclip` launch or
+ownership failure is rejected. The listener has one-second socket deadlines,
+and the launcher treats both companions as critical children so a crash
+cannot leave an untracked selection owner running.
+
 ## Isolated acceptance
 
 The test creates a temporary X display and Wine prefix. It does not type into
@@ -128,6 +138,7 @@ the logged-in desktop or inspect the user's clipboard:
 ./scripts/test-rdp-semantic-text.sh
 ./scripts/test-x11-clipboard-text.sh
 ./scripts/test-vnc-clipboard-relay.sh
+./scripts/test-controller-clipboard.sh
 ```
 
 The first pass creates separate clipboard and Wine relay displays. It proves
@@ -146,6 +157,11 @@ route=x11-clipboard-text error=0
 The third pass proves that a client cut-text packet reaches the isolated VNC
 server, reverse clipboard feedback is disabled, and a target-side Unicode
 paste remains exact without a loop.
+
+The controller-clipboard pass proves startup content is not replayed,
+non-GameViewer owners are ignored, Unicode multiline text reaches both X11
+selections exactly, a missing `xclip` is rejected, stalled clients time out,
+and helper shutdown leaves no owner child behind.
 
 Retain the established regression tests as separate boundaries:
 
