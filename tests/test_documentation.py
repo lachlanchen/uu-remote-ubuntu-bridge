@@ -86,6 +86,24 @@ class DocumentationTests(unittest.TestCase):
         self.assertIn("这是不同的工具", readme)
         self.assertIn("本仓库仍专注于兼容官方 UU 客户端", readme)
 
+    def test_high_traffic_readmes_offer_a_sample_first_network_review_path(self) -> None:
+        english = (REPO_DIR / "README.md").read_text(encoding="utf-8")
+        chinese = (REPO_DIR / "i18n" / "README.zh-Hans.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("USD 250 review", english)
+        self.assertIn("one reachable relay and up to three computers", english)
+        self.assertIn("network_review_sample_en", english)
+        self.assertIn("network_review_fit_check_en", english)
+        self.assertIn("excludes deployment, hardware, and ongoing support", english)
+
+        self.assertIn("固定评估服务为 USD 250", chinese)
+        self.assertIn("一台可连接的中继和最多三台电脑", chinese)
+        self.assertIn("network_review_sample_zh_hans", chinese)
+        self.assertIn("network_review_fit_check_zh_hans", chinese)
+        self.assertIn("不包含部署、硬件和持续支持", chinese)
+
     def test_every_language_independent_route_lands_on_review_scope(self) -> None:
         documents = [REPO_DIR / "README.md"] + [
             REPO_DIR / "i18n" / name for name in sorted(TRANSLATIONS)

@@ -66,6 +66,11 @@ UU 控制端 -> Wine 中的 UU -> 输入代理 -> SDL FreeRDP
 
 如果你更需要独立于厂商的方案，[LazyRemote 中文页](https://remote.lazying.art/zh-Hans/?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=independent_option_zh_hans#review) 由另一套开源 [LazyTunnel](https://github.com/lachlanchen/LazyTunnel) 核心提供自托管的 SSH、终端与 noVNC 访问。这是不同的工具；本仓库仍专注于兼容官方 UU 客户端。
 
+如果已有一台可连接的中继和最多三台电脑，但希望在改动前先核对端口暴露与密钥
+角色，可以先看[完整中文样例](https://remote.lazying.art/zh-Hans/sample-report.html?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=network_review_sample_zh_hans)。
+可选的固定评估服务为 USD 250，先做[免费的纯元数据适配确认](https://lazying.art/lazyremote/fit-check/?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=network_review_fit_check_zh_hans)，
+不包含部署、硬件和持续支持。
+
 ## 支持项目
 
 如果这个桥接器帮你节省了时间，可以支持我们继续维护兼容性：

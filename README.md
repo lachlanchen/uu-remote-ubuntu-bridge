@@ -53,6 +53,13 @@ screenshots, or private configuration.
 
 If you need a vendor-independent route instead, [LazyRemote](https://remote.lazying.art/?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=independent_option#review) uses the separate open-source [LazyTunnel](https://github.com/lachlanchen/LazyTunnel) core for self-hosted SSH, terminal, and noVNC access. It is a different tool; this repository remains the compatibility path for the official UU client.
 
+Already have one reachable relay and up to three computers, but want the
+exposure and key roles checked before changing anything? Read the [complete
+sample](https://remote.lazying.art/sample-report.html?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=network_review_sample_en)
+first. The optional USD 250 review starts with a [free metadata-only fit
+check](https://lazying.art/lazyremote/fit-check/?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=network_review_fit_check_en)
+and excludes deployment, hardware, and ongoing support.
+
 ## Releases and behavior tracks
 
 | Tag | Purpose | Default input behavior |
