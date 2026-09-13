@@ -68,7 +68,7 @@ UU 控制端 -> Wine 中的 UU -> 输入代理 -> SDL FreeRDP
 
 如果已有一台可连接的中继和最多三台电脑，但希望在改动前先核对端口暴露与密钥
 角色，可以先看[完整中文样例](https://remote.lazying.art/zh-Hans/sample-report.html?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=network_review_sample_zh_hans)。
-可选的固定评估服务为 USD 250，先做[免费的纯元数据适配确认](https://lazying.art/lazyremote/fit-check/?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=network_review_fit_check_zh_hans)，
+可选的固定评估服务为 USD 250，先做[免费的纯元数据适配确认](https://lazying.art/lazyremote/fit-check/zh-Hans/?utm_source=github&utm_medium=readme&utm_campaign=uu_remote_bridge&utm_content=network_review_fit_check_zh_hans)，
 不包含部署、硬件和持续支持。
 
 ## 支持项目
