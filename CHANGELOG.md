@@ -8,6 +8,14 @@ locked by the release manifest.
 
 ### Fixed
 
+- prevent the managed Wine process tree from launching the vendor's in-place
+  `Upgrade.exe`, which can replace patched helpers outside the guarded update
+  transaction; test the block with a harmless isolated executable
+- quote sandbox bind paths for systemd's property parser, including Windows
+  installer paths containing spaces; bound Wine initialization and the whole
+  staging service, and honor passwordless sudo without an unnecessary prompt
+- remove stale runtime-test assertions and keep missing terminal-handoff
+  diagnostics concise without hiding the verification failure
 - block `winebth.sys` in the dedicated launcher's and registry cleaner's Wine
   module overrides: on Wine 11 the driver was still loaded despite registry
   `Start=4`, rebuilding tens of thousands of Bluetooth observations and
@@ -43,6 +51,11 @@ locked by the release manifest.
 
 ### Added
 
+- read-only `./install.sh --check-host`, explicit ARM64/Oracle VPS guidance
+  for compatibility issue #12, and architecture regression tests
+- exact-hash static support and a rollback-first repair procedure for
+  `4.40.1.2090`; no unattended promotion acceptance is implied; see the
+  [repair record](docs/releases/4.40.1.2090-repair.md)
 - a dependency-light `uu-ssh` helper for dedicated keys, persistent OpenSSH
   aliases, mapped-port diagnostics, native UU terminal shortcuts, and opt-in
   reverse SSH forwarding; real Ubuntu-to-Ubuntu key login was verified through

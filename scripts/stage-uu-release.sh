@@ -11,6 +11,19 @@ sandbox_backend='auto'
 keep_workdir=false
 staging_method='archive-extraction'
 
+systemd_bind_path() {
+    local source="$1" target="$2"
+
+    # systemd parses this property again; shell quoting alone is insufficient.
+    if [[ "$source" == *:* || "$source" == *$'\n'* || "$source" == *$'\r'* ]]; then
+        printf 'Unsupported colon or newline in sandbox bind path.\n' >&2
+        return 1
+    fi
+    source="${source//\\/\\\\}"
+    source="${source//\"/\\\"}"
+    printf '"%s":%s' "$source" "$target"
+}
+
 usage() {
     cat <<'EOF'
 usage: scripts/stage-uu-release.sh --installer PATH [options]
@@ -147,7 +160,8 @@ if ((${#server_candidates[@]} != 1 || ${#healthd_candidates[@]} != 1)); then
                     /opt/wine-stable/bin/wineserver -w || true
             }
             trap cleanup EXIT
-            /opt/wine-stable/bin/wine wineboot -u
+            /usr/bin/timeout --kill-after=10s 120s \
+                /opt/wine-stable/bin/wine wineboot -u
             /usr/bin/timeout --kill-after=10s 180s \
                 /opt/wine-stable/bin/wine /input/uu-installer.exe /S
             sleep 2
@@ -210,7 +224,9 @@ if ((${#server_candidates[@]} != 1 || ${#healthd_candidates[@]} != 1)); then
                 }
             done
             printf 'Archive extraction had no payload. Sudo is needed for a locked-down transient systemd sandbox.\n'
-            sudo -v
+            sandbox_bind="$(systemd_bind_path "$output" /work)"
+            installer_bind="$(systemd_bind_path "$installer" /input/uu-installer.exe)"
+            sudo -n true 2>/dev/null || sudo -v
             sudo systemd-run --wait --pipe --collect --quiet \
                 --uid="$UID" \
                 --gid="$(id -g)" \
@@ -231,9 +247,10 @@ if ((${#server_candidates[@]} != 1 || ${#healthd_candidates[@]} != 1)); then
                 --property=ProtectHostname=yes \
                 --property=LockPersonality=yes \
                 --property=RemoveIPC=yes \
+                --property=RuntimeMaxSec=360 \
                 --property=UMask=0077 \
-                --property="BindPaths=$output:/work" \
-                --property="BindReadOnlyPaths=$installer:/input/uu-installer.exe" \
+                --property="BindPaths=$sandbox_bind" \
+                --property="BindReadOnlyPaths=$installer_bind" \
                 --setenv=HOME=/work/sandbox-home \
                 --setenv=WINEPREFIX=/work/wine-prefix \
                 --setenv=WINEDEBUG=-all \

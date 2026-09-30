@@ -31,7 +31,7 @@ uuyc_cli="$wine_prefix/drive_c/Program Files/Netease/GameViewer/bin/uuyc-cli.exe
 devcon="$wine_prefix/drive_c/Program Files/Netease/GameViewer/bin/drivers/devcon.exe"
 devcon_backup="$devcon.uu-original"
 case "$release_version" in
-    4.33.0.8907|4.34.0.8979|4.39.1.1375|4.39.2.1561)
+    4.33.0.8907|4.34.0.8979|4.39.1.1375|4.39.2.1561|4.40.1.2090)
         devcon_original_sha256='46731d6ea59dd9b63ad641c79646bb5ff64e1b877a1226536e3fe34d1ab4ee10'
         ;;
     *)
@@ -279,7 +279,7 @@ server_startup_ready() {
     [[ "$modified" =~ ^[0-9]+$ ]] || return 1
     ((modified >= service_start_epoch)) || return 1
     case "$release_version" in
-        4.39.1.1375|4.39.2.1561)
+        4.39.1.1375|4.39.2.1561|4.40.1.2090)
             signature="$(
                 /usr/bin/od -An -tx1 -N8 "$latest_server_log" 2>/dev/null |
                     /usr/bin/tr -d '[:space:]'
@@ -302,7 +302,7 @@ structured_release_ipc_ready() {
     local private_display
 
     case "$release_version" in
-        4.39.1.1375|4.39.2.1561) ;;
+        4.39.1.1375|4.39.2.1561|4.40.1.2090) ;;
         *) return 0 ;;
     esac
     [[ -x "$wine_bin" && -f "$uuyc_cli" ]] || return 1
@@ -314,7 +314,7 @@ structured_release_ipc_ready() {
             "XAUTHORITY=$bridge_xauthority_file" \
             "WINEPREFIX=$wine_prefix" \
             WINEDEBUG=-all \
-            WINEDLLOVERRIDES='winedbg.exe=d;mscoree,mshtml=' \
+            WINEDLLOVERRIDES='upgrade.exe=d;winedbg.exe=d;mscoree,mshtml=' \
             "$wine_bin" "$uuyc_cli" version 2>/dev/null |
             /usr/bin/tr -d '\r' | /usr/bin/tail -n 1
     )"
@@ -393,7 +393,7 @@ service_start_epoch="$(date -d "$service_started_at" +%s 2>/dev/null || true)"
 latest_server_log=''
 server_log_pattern='log_*.txt'
 case "$release_version" in
-    4.39.1.1375|4.39.2.1561) server_log_pattern='log_*.slog' ;;
+    4.39.1.1375|4.39.2.1561|4.40.1.2090) server_log_pattern='log_*.slog' ;;
 esac
 for _ in {1..240}; do
     latest_server_log="$(
@@ -799,7 +799,7 @@ terminal_config_token="$(
     /usr/bin/sed -n 's/^token=//p' "$terminal_config" 2>/dev/null || true
 )"
 terminal_config_lines="$(
-    /usr/bin/wc -l <"$terminal_config" 2>/dev/null || true
+    { /usr/bin/wc -l <"$terminal_config"; } 2>/dev/null || true
 )"
 terminal_config_mode="$(
     /usr/bin/stat -c '%a' "$terminal_config" 2>/dev/null || true

@@ -103,7 +103,7 @@ run_cli() {
         XAUTHORITY="$xauthority" \
         WINEPREFIX="$wine_prefix" \
         WINEDEBUG=-all \
-        WINEDLLOVERRIDES='winedbg.exe=d;mscoree,mshtml=' \
+        WINEDLLOVERRIDES='upgrade.exe=d;winedbg.exe=d;mscoree,mshtml=' \
         "$wine_bin" "$cli_exe" "$@"
 }
 

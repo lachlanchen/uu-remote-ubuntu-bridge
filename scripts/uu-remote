@@ -4,6 +4,7 @@ set -Eeuo pipefail
 
 export WINEPREFIX="${WINEPREFIX:-$HOME/.local/share/wineprefixes/uu-remote}"
 export WINEDEBUG="${WINEDEBUG:--all}"
+export WINEDLLOVERRIDES="upgrade.exe=d;${WINEDLLOVERRIDES:-winedbg.exe=d;mscoree,mshtml=}"
 
 wine_bin="${WINE_BIN:-/opt/wine-stable/bin/wine}"
 wineserver_bin="${WINESERVER_BIN:-/opt/wine-stable/bin/wineserver}"

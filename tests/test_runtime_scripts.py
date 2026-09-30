@@ -166,7 +166,7 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn('[[ "$uu_audio_setting" != system', launcher)
         self.assertIn("winepulse.drv=d;winedbg.exe=d", launcher)
         self.assertIn(
-            "export WINEDLLOVERRIDES='winebth.sys=d;winedbg.exe=d;mscoree,mshtml='",
+            "export WINEDLLOVERRIDES='upgrade.exe=d;winebth.sys=d;winedbg.exe=d;mscoree,mshtml='",
             launcher,
         )
         self.assertIn("pcm.!default", silent_alsa)
@@ -175,6 +175,14 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("uu-remote-bridge.service.d", upgrader)
         self.assertNotIn("systemctl --user restart pipewire", launcher)
         self.assertNotIn("systemctl --user restart wireplumber", launcher)
+
+    def test_managed_wine_launchers_disable_vendor_in_place_upgrade(self):
+        for name in ("uu-remote-bridge", "uu-agent", "uu-remote", "verify.sh"):
+            with self.subTest(name=name):
+                source = (REPOSITORY / "scripts" / name).read_text()
+                self.assertIn("upgrade.exe=d;", source)
+        installer = (REPOSITORY / "install.sh").read_text()
+        self.assertNotIn("upgrade.exe=d;", installer)
 
     def test_physical_session_uses_manager_display_fallback(self):
         launcher = (REPOSITORY / "scripts" / "uu-remote-bridge").read_text()

@@ -5,6 +5,12 @@ promotion, bridge refresh, and post-update verification into one repeatable
 operation. It is intended for an already working bridge whose account login,
 keyboard behavior, and XRDP access must survive the update.
 
+If UU's own updater has already changed the binary behind the saved manifest,
+the normal upgrade preflight must fail. Use the
+[audited drift-repair procedure](releases/4.40.1.2090-repair.md), not a forced
+promotion or a manually falsified version. A product release and a bridge
+runtime refresh are separate acceptance decisions.
+
 ## Commands
 
 After one current-source installation, use either spelling:
