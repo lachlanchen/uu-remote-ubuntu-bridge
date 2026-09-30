@@ -12,6 +12,7 @@ runtime_files=(
     scripts/build-compat.sh
     scripts/build-libei.sh
     scripts/build-winpr.sh
+    scripts/check-host.sh
     scripts/clean-wine-device-registry
     scripts/compare-pe-normalized.py
     scripts/configure-unattended.sh

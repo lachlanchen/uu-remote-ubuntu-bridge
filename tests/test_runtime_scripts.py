@@ -95,7 +95,7 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("--manage-service", cleaner)
         self.assertIn("restore an unknown devcon.exe backup", uninstaller)
         self.assertIn("overwrite an unknown live devcon.exe", uninstaller)
-        self.assertIn("Wine device registry cannot accumulate", verifier)
+        self.assertIn("Wine device registry has no stale input or Bluetooth devices", verifier)
         self.assertIn("repair-registry)", command)
         self.assertIn("scripts/clean-wine-device-registry", digest)
         self.assertIn("scripts/inspect-wine-device-registry.py", digest)
@@ -166,7 +166,7 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn('[[ "$uu_audio_setting" != system', launcher)
         self.assertIn("winepulse.drv=d;winedbg.exe=d", launcher)
         self.assertIn(
-            "export WINEDLLOVERRIDES='winedbg.exe=d;mscoree,mshtml='",
+            "export WINEDLLOVERRIDES='winebth.sys=d;winedbg.exe=d;mscoree,mshtml='",
             launcher,
         )
         self.assertIn("pcm.!default", silent_alsa)

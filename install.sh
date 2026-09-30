@@ -96,11 +96,13 @@ unattended=false
 automatic_updates=false
 upgrade_existing=false
 prefix_only=false
+check_host_only=false
 
 usage() {
     cat <<'EOF'
 usage: ./install.sh [options]
 
+  --check-host          read-only OS/CPU compatibility check; no installation
   --uu-installer PATH    use a previously downloaded audited installer
   --release-manifest PATH
                          use an approved release manifest
@@ -159,6 +161,10 @@ EOF
 
 while (($#)); do
     case "$1" in
+        --check-host)
+            check_host_only=true
+            shift
+            ;;
         --uu-installer)
             uu_installer="${2:?--uu-installer requires a path}"
             shift 2
@@ -277,25 +283,16 @@ while (($#)); do
     esac
 done
 
+"$repo_dir/scripts/check-host.sh"
+if [[ "$check_host_only" == true ]]; then
+    exit 0
+fi
 if [[ $EUID -eq 0 ]]; then
     printf 'Run this installer as the desktop user, not as root.\n' >&2
     exit 1
 fi
-if [[ "$(uname -m)" != x86_64 ]]; then
-    printf 'Only x86_64 Ubuntu is currently supported.\n' >&2
-    exit 1
-fi
-if [[ ! -r /etc/os-release ]]; then
-    printf 'Cannot identify this operating system.\n' >&2
-    exit 1
-fi
 # shellcheck source=/dev/null
 source /etc/os-release
-if [[ "${ID:-}" != ubuntu || "${VERSION_ID:-}" != 24.04 ]]; then
-    printf 'Only Ubuntu 24.04 is currently supported; detected %s %s.\n' \
-        "${ID:-unknown}" "${VERSION_ID:-unknown}" >&2
-    exit 1
-fi
 if [[ ! "$rdp_port" =~ ^[1-9][0-9]{0,4}$ ]] ||
    ((rdp_port < 1024 || rdp_port > 65535)); then
     printf 'The RDP port must be an integer from 1024 through 65535.\n' >&2

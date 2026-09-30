@@ -7,6 +7,8 @@ body:
     attributes:
       value: |
         Use this form for one host/controller configuration.
+        Check docs/compatibility.md first. The supported host is x86-64 Ubuntu
+        24.04; ARM64/aarch64 VPS hosts are not currently supported.
 
         This is a public issue. Include only ordinary product and version names.
         Do not upload or link binaries, installers, credentials, identifiers,

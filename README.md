@@ -51,6 +51,8 @@ site.
 The supported host is x86-64 Ubuntu 24.04 with a logged-in GNOME 46 desktop
 (physical, Wayland, Xorg, or XRDP). The installer checks this boundary and
 fails before making partial changes on an unsupported OS or architecture.
+Use `./install.sh --check-host` for a read-only OS/CPU check. ARM64 Oracle
+VPS hosts are not supported; see [host compatibility](docs/compatibility.md).
 
 Using—or needing—another Ubuntu release, desktop/session, CPU architecture,
 UU version, or controller platform? [Share one compatibility report or
