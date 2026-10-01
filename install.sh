@@ -670,8 +670,10 @@ fi
     --manifest "$release_manifest" >/dev/null
 
 "$repo_dir/scripts/build-compat.sh" "$compat_build"
-"$repo_dir/scripts/build-winpr.sh" "$freerdp_build"
-"$repo_dir/scripts/build-libei.sh" "$libei_build"
+if [[ "$desktop_relay" == rdp ]]; then
+    "$repo_dir/scripts/build-winpr.sh" "$freerdp_build"
+    "$repo_dir/scripts/build-libei.sh" "$libei_build"
+fi
 
 mkdir -p "$wine_prefix/compat" "$freerdp_install" "$libei_install"
 if [[ -e "$terminal_proxy_install" ]] &&
@@ -705,16 +707,18 @@ install -m 0755 "$compat_build/winlogon.exe" \
     "$wine_prefix/compat/winlogon.exe"
 install -m 0755 "$compat_build/winlogon.exe.so" \
     "$wine_prefix/compat/winlogon.exe.so"
-install -m 0755 "$freerdp_build/"*.dll "$freerdp_build/sdl-freerdp.exe" \
-    "$freerdp_install/"
-install -m 0755 "$compat_build/winpr-sspi-shim.dll" \
-    "$freerdp_install/winpr-sspi-shim.dll"
-install -m 0755 "$libei_build/libei.so.1.2.1" \
-    "$libei_install/libei.so.1.2.1"
-ln -sfn libei.so.1.2.1 "$libei_install/libei.so.1"
-mkdir -p "$freerdp_install/ossl-modules"
-install -m 0755 "$freerdp_build/ossl-modules/legacy.dll" \
-    "$freerdp_install/ossl-modules/legacy.dll"
+if [[ "$desktop_relay" == rdp ]]; then
+    install -m 0755 "$freerdp_build/"*.dll "$freerdp_build/sdl-freerdp.exe" \
+        "$freerdp_install/"
+    install -m 0755 "$compat_build/winpr-sspi-shim.dll" \
+        "$freerdp_install/winpr-sspi-shim.dll"
+    install -m 0755 "$libei_build/libei.so.1.2.1" \
+        "$libei_install/libei.so.1.2.1"
+    ln -sfn libei.so.1.2.1 "$libei_install/libei.so.1"
+    mkdir -p "$freerdp_install/ossl-modules"
+    install -m 0755 "$freerdp_build/ossl-modules/legacy.dll" \
+        "$freerdp_install/ossl-modules/legacy.dll"
+fi
 runtime_digest_tmp="$(mktemp "$wine_prefix/compat/.runtime-source-sha256.XXXXXX")"
 "$repo_dir/scripts/runtime-source-digest" >"$runtime_digest_tmp"
 chmod 0644 "$runtime_digest_tmp"

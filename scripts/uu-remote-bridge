@@ -169,8 +169,9 @@ private_display_file="$runtime_dir/private-display"
 console_focus_file="$runtime_dir/console-focus"
 wine_stop_bin="$HOME/.local/libexec/uu-remote-stop-wine-prefix"
 
-if [[ ! -x "$libei_dir/libei.so.1.2.1" ||
-      ! -L "$libei_dir/libei.so.1" ]]; then
+if [[ "$desktop_relay" == rdp ]] &&
+   { [[ ! -x "$libei_dir/libei.so.1.2.1" ]] ||
+     [[ ! -L "$libei_dir/libei.so.1" ]]; }; then
     printf 'The patched libei keymap-FD backport is missing; reinstall the bridge.\n' >&2
     exit 1
 fi
