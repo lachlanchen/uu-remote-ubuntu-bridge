@@ -20,6 +20,7 @@ runtime_files=(
     scripts/runtime-settings.sh
     scripts/runtime-source-digest
     scripts/stop-wine-prefix
+    scripts/release-grd-clipboard.py
     scripts/uu_connection_status.py
     scripts/uu-keyring-unlock.py
     scripts/uu-agent

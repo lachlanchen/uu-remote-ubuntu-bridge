@@ -448,6 +448,11 @@ cleanup() {
         sleep 0.1
     done
 
+    if [[ -n "$grd_pid" && -x "$HOME/.local/libexec/uu-release-grd-clipboard" ]]; then
+        /usr/bin/timeout --kill-after=1s 3s \
+            "$HOME/.local/libexec/uu-release-grd-clipboard" "$grd_pid" || true
+    fi
+
     for pid in \
         "$server_supervisor_pid" \
         "$input_broker_pid" \
@@ -972,15 +977,13 @@ start_x11_input_helper() {
 start_x11_clipboard_helper() {
     local selected_xauthority
 
-    if [[ "$desktop_relay" != vnc ]]; then
-        return 0
-    fi
     if [[ ! -x "$x11_clipboard_helper" ]]; then
         log 'The optional one-way X11 clipboard helper is missing; retaining the existing clipboard behavior.'
         return 0
     fi
-    if [[ "$desktop_session_type" != x11 || -z "$desktop_display" ]]; then
-        log "One-way Mac clipboard forwarding requires the selected physical X11 desktop; selected ${desktop_session_type:-unknown}."
+    if [[ ( "$desktop_session_type" != x11 && "$desktop_session_type" != wayland ) ||
+          -z "$desktop_display" ]]; then
+        log "One-way Mac clipboard forwarding requires the selected X11/Xwayland display; selected ${desktop_session_type:-unknown}."
         return 0
     fi
     selected_xauthority="$desktop_xauthority"
@@ -1045,7 +1048,7 @@ start_wine_clipboard_bridge() {
         wine_clipboard_bridge_pid=""
         return 0
     fi
-    log 'Mac/UU clipboard forwarding is active: GameViewer CF_UNICODETEXT -> physical X11 only.'
+    log 'Mac/UU clipboard forwarding is active: GameViewer CF_UNICODETEXT -> selected X11/Xwayland desktop only.'
 }
 
 start_terminal_bridge() {

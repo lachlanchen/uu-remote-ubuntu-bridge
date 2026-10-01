@@ -8,6 +8,35 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PhysicalTargetTests(unittest.TestCase):
+    def test_controller_clipboard_accepts_authorized_xwayland_with_rdp(self):
+        source = (ROOT / 'scripts/uu-remote-bridge').read_text()
+        start = source.index('start_x11_clipboard_helper() {')
+        prefix = source[start:source.index('    rm -f "$x11_clipboard_ready_file"', start)]
+        prefix = prefix.replace('/usr/bin/env ', 'probe_env ')
+        script = '''set -eu
+desktop_relay=$1
+desktop_session_type=$2
+desktop_display=$3
+authorized=$4
+desktop_xauthority=/test/auth
+x11_clipboard_helper=/bin/true
+log() { :; }
+probe_env() { [[ "$authorized" == yes ]]; }
+''' + prefix + '    printf "ready\\n"\n}\nstart_x11_clipboard_helper\n'
+        for relay, session, display, auth, ready in (
+            ('vnc', 'x11', ':0', 'yes', True),
+            ('rdp', 'x11', ':0', 'yes', True),
+            ('rdp', 'wayland', ':0', 'yes', True),
+            ('rdp', 'wayland', ':0', 'no', False),
+            ('rdp', 'wayland', '', 'yes', False),
+            ('rdp', 'unknown', ':0', 'yes', False),
+        ):
+            with self.subTest(relay=relay, session=session, display=display, auth=auth):
+                result = subprocess.run(['bash', '-c', script, 'probe', relay,
+                                         session, display, auth],
+                                        capture_output=True, text=True, check=True, timeout=3)
+                self.assertEqual(result.stdout == 'ready\n', ready)
+
     def test_verifier_accepts_only_live_matching_vnc_transports(self):
         source = (ROOT / 'scripts/verify.sh').read_text()
         function = source[source.index('vnc_relay_ready() {'):

@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "review_status": "approved",
+  "product": "NetEase UU Remote",
+  "version": "4.42.1.2835",
+  "architecture": "x86_64",
+  "installer": {
+    "filename": "uu-4.42.1.2835.exe",
+    "url": "https://api.nrd.nie.163.com/api/v1/release/dl/1?channel=gwqd",
+    "sha256": "d3a7776f6fb00b196e2fcbf8acba06fd52b19437b0da80fec0ae838ee362f06f"
+  },
+  "server": {
+    "filename": "GameViewerServer.exe",
+    "reported_version": "4.42.0.2770",
+    "size": 33508344,
+    "original_sha256": "0ee0a46aa715a48c7f47c3dbfd9477bf31295bc17ce0caa1401d3de0120bf6fd",
+    "patched_sha256": "3bcd664ad1b5b776b8e3f28276123bc3c7ac40464a19879dfc7aaa0f804706e5",
+    "patches": [
+      {
+        "id": "constructor-virtual-input-argument",
+        "description": "Force the constructor virtual-input argument to false",
+        "rationale": "Initialize the relocated virtual-input Boolean at object offset 0x268 to false; retain the vendor SendInput backend under Wine without enabling its unavailable VHID driver.",
+        "file_offset": "0x5cfa20",
+        "original": "0fb68550010000888368020000c6836902000000",
+        "replacement": "31c09090909090888368020000c6836902000000"
+      },
+      {
+        "id": "read-setting-virtual-input-result",
+        "description": "Return false from the virtual-input setting read",
+        "rationale": "Prevent a later settings refresh from switching back to the unavailable kernel path.",
+        "file_offset": "0x5a78e2",
+        "original": "83fb020f94c08807488b4c24784833cc",
+        "replacement": "83fb0231c0908807488b4c24784833cc"
+      },
+      {
+        "id": "runtime-virtual-input-setter",
+        "description": "Store false in the runtime virtual-input setter",
+        "rationale": "Keep runtime control messages from restoring the kernel-driver path.",
+        "file_offset": "0x5a7994",
+        "original": "0fb6f24c8bf133ff897c2430488b5908",
+        "replacement": "31f6904c8bf133ff897c2430488b5908"
+      }
+    ]
+  },
+  "health_monitor": {
+    "filename": "GameViewerHealthd.exe",
+    "original_sha256": "872491f2e3e17a91a2f75bfe42d484892d0da7bd535113833df0706ac0bad015"
+  },
+  "landmarks": [
+    "virtual switch state:",
+    "virtual_mouse_setting result=updated enabled=",
+    "input_backend_initialized backend=send_input",
+    "input_backend_activation result=failed current=send_input requested=vhid reason=vhid_open_failed",
+    "input_send result=failed backend=send_input reason=event_count_overflow count="
+  ],
+  "imports": [
+    "USER32.dll!SendInput",
+    "wevtapi.dll!EvtOpenPublisherMetadata"
+  ],
+  "review": {
+    "reviewed_by": "lachlanchen",
+    "reviewed_at": "2026-10-01T00:02:19.252530+00:00",
+    "evidence": "Static review only. Relocated constructor stores the virtual-input Boolean at +0x268 and logs that same field; complete reader and setter instruction sequences retain 4.40.1 semantics. New backend starts with SendInput and its callback tail-calls the imported USER32 SendInput with sizeof(INPUT)=40. False backend selection releases VHID; failed VHID open retains SendInput. No controller acceptance or unattended promotion approval.",
+    "source_audit": "draft-manifest.json",
+    "source_audit_sha256": "4369d8cee635103e716f37ab7abdb5b20cbfec499d96ff904b3e07c61a0ef608"
+  }
+}

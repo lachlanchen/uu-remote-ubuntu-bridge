@@ -22,6 +22,8 @@ manifest_field() {
         --manifest "$release_manifest"
 }
 release_version="$(manifest_field version)"
+reported_version="$(manifest_field server.reported_version 2>/dev/null || true)"
+reported_version="${reported_version:-$release_version}"
 server="$wine_prefix/drive_c/Program Files/Netease/GameViewer/bin/$(manifest_field server.filename)"
 healthd="$wine_prefix/drive_c/Program Files/Netease/GameViewer/bin/$(manifest_field health_monitor.filename)"
 healthd_original_sha256="$(manifest_field health_monitor.original_sha256)"
@@ -31,7 +33,7 @@ uuyc_cli="$wine_prefix/drive_c/Program Files/Netease/GameViewer/bin/uuyc-cli.exe
 devcon="$wine_prefix/drive_c/Program Files/Netease/GameViewer/bin/drivers/devcon.exe"
 devcon_backup="$devcon.uu-original"
 case "$release_version" in
-    4.33.0.8907|4.34.0.8979|4.39.1.1375|4.39.2.1561|4.40.1.2090)
+    4.33.0.8907|4.34.0.8979|4.39.1.1375|4.39.2.1561|4.40.1.2090|4.42.1.2835)
         devcon_original_sha256='46731d6ea59dd9b63ad641c79646bb5ff64e1b877a1226536e3fe34d1ab4ee10'
         ;;
     *)
@@ -279,7 +281,7 @@ server_startup_ready() {
     [[ "$modified" =~ ^[0-9]+$ ]] || return 1
     ((modified >= service_start_epoch)) || return 1
     case "$release_version" in
-        4.39.1.1375|4.39.2.1561|4.40.1.2090)
+        4.39.1.1375|4.39.2.1561|4.40.1.2090|4.42.1.2835)
             signature="$(
                 /usr/bin/od -An -tx1 -N8 "$latest_server_log" 2>/dev/null |
                     /usr/bin/tr -d '[:space:]'
@@ -300,9 +302,12 @@ server_startup_ready() {
 structured_release_ipc_ready() {
     local cli_version
     local private_display
+    local ipc_reply
+    local attempt
+    local nonce="uurb-ready-$$-$RANDOM"
 
     case "$release_version" in
-        4.39.1.1375|4.39.2.1561|4.40.1.2090) ;;
+        4.39.1.1375|4.39.2.1561|4.40.1.2090|4.42.1.2835) ;;
         *) return 0 ;;
     esac
     [[ -x "$wine_bin" && -f "$uuyc_cli" ]] || return 1
@@ -318,7 +323,23 @@ structured_release_ipc_ready() {
             "$wine_bin" "$uuyc_cli" version 2>/dev/null |
             /usr/bin/tr -d '\r' | /usr/bin/tail -n 1
     )"
-    [[ "$cli_version" == "$release_version" ]]
+    [[ "$cli_version" == "$reported_version" ]] || return 1
+    # The server log can appear before the desktop client's IPC listener.
+    for attempt in {1..10}; do
+        ipc_reply="$(
+            timeout 3 /usr/bin/env \
+                "DISPLAY=$private_display" \
+                "XAUTHORITY=$bridge_xauthority_file" \
+                "WINEPREFIX=$wine_prefix" \
+                WINEDEBUG=-all \
+                WINEDLLOVERRIDES='upgrade.exe=d;winedbg.exe=d;mscoree,mshtml=' \
+                "$wine_bin" "$uuyc_cli" echo "$nonce" 2>/dev/null |
+                /usr/bin/tr -d '\r' | /usr/bin/tail -n 1
+        )" || ipc_reply=''
+        [[ "$ipc_reply" == "$nonce" ]] && return 0
+        sleep 0.5
+    done
+    return 1
 }
 
 while (($#)); do
@@ -393,7 +414,7 @@ service_start_epoch="$(date -d "$service_started_at" +%s 2>/dev/null || true)"
 latest_server_log=''
 server_log_pattern='log_*.txt'
 case "$release_version" in
-    4.39.1.1375|4.39.2.1561|4.40.1.2090) server_log_pattern='log_*.slog' ;;
+    4.39.1.1375|4.39.2.1561|4.40.1.2090|4.42.1.2835) server_log_pattern='log_*.slog' ;;
 esac
 for _ in {1..240}; do
     latest_server_log="$(
@@ -417,10 +438,10 @@ else
 fi
 if structured_release_ipc_ready; then
     if [[ "$server_log_pattern" == 'log_*.slog' ]]; then
-        pass "local UU IPC reports the expected $release_version release"
+        pass "local UU IPC responds; bundle $release_version reports $reported_version"
     fi
 else
-    fail 'structured-log release did not answer the local version IPC check'
+    fail 'structured-log release did not pass the exact-version and live IPC echo checks'
 fi
 
 pass "approved UU release manifest $release_version is active"

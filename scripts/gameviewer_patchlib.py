@@ -148,6 +148,10 @@ def manifest_from_dict(
 
     installer = _mapping(raw.get("installer"), "installer")
     server = _mapping(raw.get("server"), "server")
+    if "reported_version" in server:
+        reported_version = _string(server, "reported_version", "server")
+        if not re.fullmatch(r"[0-9]+(?:\.[0-9]+){3}", reported_version):
+            raise ManifestError("server.reported_version must be an exact four-part version")
     healthd = _mapping(raw.get("health_monitor"), "health_monitor")
     server_size = server.get("size")
     if not isinstance(server_size, int) or isinstance(server_size, bool) or server_size <= 0:

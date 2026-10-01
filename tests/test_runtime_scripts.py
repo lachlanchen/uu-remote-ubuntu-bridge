@@ -696,6 +696,9 @@ terminal_bridge_pid=
         self.assertIn("server_log_pattern='log_*.slog'", verifier)
         self.assertIn("structured_release_ipc_ready", verifier)
         self.assertIn('"$wine_bin" "$uuyc_cli" version', verifier)
+        self.assertIn('"$wine_bin" "$uuyc_cli" echo "$nonce"', verifier)
+        self.assertIn('[[ "$cli_version" == "$reported_version" ]]', verifier)
+        self.assertIn('[[ "$ipc_reply" == "$nonce" ]]', verifier)
 
     def test_verifier_supports_the_application_profile_network_namespace(self):
         verifier = (REPOSITORY / "scripts" / "verify.sh").read_text()
@@ -789,7 +792,11 @@ terminal_bridge_pid=
         self.assertNotIn("SendInput", companion + listener)
         self.assertIn("-seldir recv", launcher)
         self.assertIn("-ServerCutText=0", launcher)
-        self.assertIn('if [[ "$desktop_relay" != vnc ]]; then', launcher)
+        start = launcher.index('start_x11_clipboard_helper() {')
+        companion = launcher[start:launcher.index('start_wine_clipboard_bridge() {', start)]
+        self.assertNotIn('"$desktop_relay" != vnc', companion)
+        self.assertIn('"$desktop_session_type" != wayland', companion)
+        self.assertIn('/usr/bin/xdpyinfo', companion)
         self.assertIn('"$x11_clipboard_pid"', launcher)
         self.assertIn('"$wine_clipboard_bridge_pid"', launcher)
         self.assertIn("PeekMessageW", fixture)

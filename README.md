@@ -306,18 +306,20 @@ viewer and being pasted again.
 
 Some UU controllers publish received desktop text only to GameViewer's Win32
 clipboard under Wine, without creating an X11 selection on the private
-display. On the explicit VNC/X11 fallback, a separate one-way companion
+display. A separate one-way companion
 accepts only new `CF_UNICODETEXT` changes whose clipboard owner remains exactly
 `GameViewer.exe` throughout the locked read. Existing clipboard content is
 baselined at companion startup and is not replayed. The companion sends the
 bounded UTF-8 value over an authenticated loopback socket to a native helper.
 The helper acknowledges only after foreground `xclip` children are confirmed
 as the new owners of both `CLIPBOARD` and `PRIMARY` on the selected physical
-X11 desktop. It never reads the host clipboard or emits a paste key. Images,
+X11/Xwayland desktop. It never reads the host clipboard or emits a paste key. Images,
 rich text, and files are deliberately ignored. Socket operations have bounded
 deadlines, and either helper exiting causes the service to clean up and
 restart. This preserves `ServerCutText=0` and the receive-only VNC boundary
-while allowing controller-to-Ubuntu text paste.
+while allowing controller-to-Ubuntu text paste. The companion also runs with
+the RDP relay when the selected desktop exposes an authorized X11 or Xwayland
+display; it is not limited to the VNC/X11 track.
 See [semantic phone text and clipboard relay](docs/semantic-text-and-clipboard.md).
 
 On the validated XRDP workstation, the first live direct-UU run produced 256

@@ -78,6 +78,24 @@ class FixturePromotion(Promotion):
 
 
 class PromotionTests(unittest.TestCase):
+    def test_442_static_review_does_not_enable_unattended_promotion(self) -> None:
+        raw = json.loads(
+            (REPO_DIR / "patches/uu-remote-4.42.1.2835.json").read_text()
+        )
+        self.assertEqual("approved", raw["review_status"])
+        self.assertEqual("4.42.0.2770", raw["server"]["reported_version"])
+        self.assertNotIn("acceptance", raw)
+        with self.assertRaisesRegex(PromotionError, "no versioned acceptance"):
+            validate_acceptance(raw)
+        patches = {item["id"]: item for item in raw["server"]["patches"]}
+        constructor = patches["constructor-virtual-input-argument"]
+        self.assertEqual("0x5cfa20", constructor["file_offset"])
+        original = bytes.fromhex(constructor["original"])
+        replacement = bytes.fromhex(constructor["replacement"])
+        self.assertEqual(len(original), len(replacement))
+        self.assertEqual(original[7:], replacement[7:])
+        self.assertIn("input_backend_initialized backend=send_input", raw["landmarks"])
+
     def make_fixture(
         self, root: Path, *, damage_login: bool = False
     ) -> tuple[FixturePromotion, Path]:

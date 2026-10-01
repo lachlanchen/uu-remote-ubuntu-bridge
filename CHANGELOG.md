@@ -8,6 +8,14 @@ locked by the release manifest.
 
 ### Fixed
 
+- release only a bridge-owned, stalled GNOME Remote Desktop clipboard FUSE
+  request during shutdown, after TERM and before KILL; verify process identity,
+  cgroup, open FUSE connection, mount path, owner, and pending request first
+- enable the existing one-way GameViewer clipboard companion for authorized
+  Xwayland desktops using the RDP relay, as well as the VNC/X11 track
+- require a fresh local IPC echo reply in addition to an exact reported
+  version for structured-log releases; support audited installer/binary
+  version differences without accepting arbitrary versions
 - prevent the managed Wine process tree from launching the vendor's in-place
   `Upgrade.exe`, which can replace patched helpers outside the guarded update
   transaction; test the block with a harmless isolated executable
@@ -51,6 +59,9 @@ locked by the release manifest.
 
 ### Added
 
+- exact-hash static support for UU `4.42.1.2835`, whose bundled executables
+  report `4.42.0.2770`; automatic promotion remains disabled pending complete
+  controller acceptance; see the [review and rollback record](docs/releases/4.42.1.2835-static-review.md)
 - read-only `./install.sh --check-host`, explicit ARM64/Oracle VPS guidance
   for compatibility issue #12, and architecture regression tests
 - exact-hash static support and a rollback-first repair procedure for

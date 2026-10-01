@@ -559,7 +559,7 @@ healthd_sha256="$(manifest_field health_monitor.original_sha256)"
 devcon_exe="$uu_bin/drivers/devcon.exe"
 devcon_backup="$devcon_exe.uu-original"
 case "$release_version" in
-    4.33.0.8907|4.34.0.8979|4.39.1.1375|4.39.2.1561|4.40.1.2090)
+    4.33.0.8907|4.34.0.8979|4.39.1.1375|4.39.2.1561|4.40.1.2090|4.42.1.2835)
         devcon_sha256='46731d6ea59dd9b63ad641c79646bb5ff64e1b877a1226536e3fe34d1ab4ee10'
         ;;
     *)
@@ -818,6 +818,8 @@ install -m 0755 "$repo_dir/scripts/upgrade-uu-remote.sh" \
     "$HOME/.local/bin/uu-remote-upgrade"
 install -m 0755 "$repo_dir/scripts/stop-wine-prefix" \
     "$HOME/.local/libexec/uu-remote-stop-wine-prefix"
+install -m 0755 "$repo_dir/scripts/release-grd-clipboard.py" \
+    "$HOME/.local/libexec/uu-release-grd-clipboard"
 install -m 0755 "$repo_dir/scripts/clean-wine-device-registry" \
     "$HOME/.local/libexec/uu-clean-wine-device-registry"
 install -m 0755 "$repo_dir/scripts/inspect-wine-device-registry.py" \

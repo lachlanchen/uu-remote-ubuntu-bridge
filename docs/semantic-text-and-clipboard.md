@@ -120,14 +120,21 @@ uses the VNC clipboard relay; typing or dictating into UU's phone keyboard uses
 the adaptive broker route.
 
 Controllers that update only GameViewer's Win32 clipboard use an additional
-VNC/X11-only companion. It ignores the clipboard present at startup and
+one-way companion, independent of whether the desktop relay is RDP or VNC.
+It requires an authorized X11 or Xwayland display for the selected desktop.
+It ignores the clipboard present at startup and
 accepts a later text change only while the locked clipboard owner remains
 `GameViewer.exe`. A token-authenticated loopback listener then installs the
-text on the physical X11 desktop. Success means foreground owner processes
+text on that selected desktop's X11/Xwayland clipboard. Success means foreground owner processes
 have been confirmed for both `CLIPBOARD` and `PRIMARY`; an `xclip` launch or
 ownership failure is rejected. The listener has one-second socket deadlines,
 and the launcher treats both companions as critical children so a crash
 cannot leave an untracked selection owner running.
+
+The RDP/Xwayland extension fixes an observed case where copying text on the
+Mac controller updated UU's Win32 clipboard but a physical Ubuntu paste still
+returned stale text. It does not add a reverse Ubuntu-to-controller clipboard
+sync, replay the clipboard at startup, or broaden the accepted Win32 owner.
 
 ## Isolated acceptance
 

@@ -120,6 +120,15 @@ class PatchToolingTests(unittest.TestCase):
         with self.assertRaises(ManifestError):
             manifest_value(manifest, "server.patches")
 
+    def test_reported_version_is_optional_but_exact(self) -> None:
+        self.raw["server"]["reported_version"] = "4.42.0.2770"
+        self.assertEqual("4.42.0.2770", manifest_value(self.manifest(), "server.reported_version"))
+        for value in ("4.42", "4.42.*", "4.42.0.2770-extra", "", 442):
+            with self.subTest(value=value):
+                self.raw["server"]["reported_version"] = value
+                with self.assertRaises(ManifestError):
+                    self.manifest()
+
     def test_repository_manifest_is_approved(self) -> None:
         manifest = load_manifest(
             REPO_DIR / "patches" / "uu-remote-4.33.0.8907.json"
