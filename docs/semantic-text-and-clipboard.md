@@ -138,6 +138,54 @@ sync, replay the clipboard at startup, or broaden the accepted Win32 owner.
 
 ## Isolated acceptance
 
+### Optional host-to-controller text on the X11/VNC track
+
+The default remains the established one-way path. On an X11/VNC host, the
+opt-in `UURB_HOST_CLIPBOARD=on` service setting adds a separate return path.
+It requires `python3-xlib`, XFixes and XRes; it does not change keyboard maps,
+paste keys, the semantic broker, the shared VNC server, or XRDP.
+
+```ini
+# ~/.config/systemd/user/uu-remote-bridge.service.d/30-host-clipboard.conf
+[Service]
+Environment=UURB_HOST_CLIPBOARD=on
+```
+
+After installing current source, run `systemctl --user daemon-reload` and
+restart **only** `uu-remote-bridge.service`. Disable it by removing this
+specific drop-in and restarting that service. Both operations briefly
+disconnect UU. Other desktop clients and open applications remain running.
+
+The return helper listens for fresh X11 CLIPBOARD ownership changes. XRes
+identifies the actual local owner process; same-user application copies may
+be served on the private Wine clipboard. Owners descended from the bridge
+are excluded, including incoming clipboard and dictation `xclip` children.
+It does not replay startup content, inspect PRIMARY, synthesize a paste, or
+log/persist copied text. UTF-8 text is bounded to 60 KiB; unsupported, oversized,
+invalid, or timed-out conversions leave the previous destination unchanged.
+Images and files are not supported by this return helper.
+
+When enabled, the private VNC viewer's ClientCutText channel is disabled;
+the existing authenticated GameViewer companion still supplies the inbound
+route. This prevents a host copy returning through the VNC viewer and
+overwriting a semantic paste. The private viewer's ServerCutText stays off.
+Disabling that protection globally would reintroduce the earlier paste loop.
+
+The isolated test proves startup preservation, exact multiline Chinese/emoji,
+bridge-owner exclusion, oversized-copy rejection, subsequent copies, and
+Wine CF_UNICODETEXT (with normal Windows CRLF conversion):
+
+```bash
+UURB_TEST_X11=1 UURB_TEST_WINE=1 python3 -m unittest discover \
+  -s tests -p test_host_clipboard.py -v
+```
+
+This verifies the local Windows clipboard boundary, not every remote client's
+clipboard policy. Test copy/paste in both directions through the real UU client
+after enabling it. Native Wayland and the RDP relay do not use this extension.
+
+### Existing acceptance suite
+
 The test creates a temporary X display and Wine prefix. It does not type into
 the logged-in desktop or inspect the user's clipboard:
 
