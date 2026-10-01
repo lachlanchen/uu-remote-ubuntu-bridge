@@ -78,15 +78,22 @@ class FixturePromotion(Promotion):
 
 
 class PromotionTests(unittest.TestCase):
-    def test_442_static_review_does_not_enable_unattended_promotion(self) -> None:
+    def test_442_acceptance_is_hash_bound_and_has_evidence(self) -> None:
         raw = json.loads(
             (REPO_DIR / "patches/uu-remote-4.42.1.2835.json").read_text()
         )
         self.assertEqual("approved", raw["review_status"])
         self.assertEqual("4.42.0.2770", raw["server"]["reported_version"])
-        self.assertNotIn("acceptance", raw)
+        acceptance = validate_acceptance(raw)
+        self.assertEqual(270, acceptance["stability_seconds"])
+        self.assertTrue((REPO_DIR / acceptance["evidence"]).is_file())
+        static_only = dict(raw)
+        del static_only["acceptance"]
         with self.assertRaisesRegex(PromotionError, "no versioned acceptance"):
-            validate_acceptance(raw)
+            validate_acceptance(static_only)
+        mismatched = dict(raw, acceptance=dict(acceptance, installer_sha256="0" * 64))
+        with self.assertRaisesRegex(PromotionError, "installer hash"):
+            validate_acceptance(mismatched)
         patches = {item["id"]: item for item in raw["server"]["patches"]}
         constructor = patches["constructor-virtual-input-argument"]
         self.assertEqual("0x5cfa20", constructor["file_offset"])

@@ -57,6 +57,20 @@
     "USER32.dll!SendInput",
     "wevtapi.dll!EvtOpenPublisherMetadata"
   ],
+  "acceptance": {
+    "schema_version": 1,
+    "disposable_prefix": true,
+    "controller_input": true,
+    "reconnect": true,
+    "service_restart": true,
+    "login_preservation": true,
+    "stability_seconds": 270,
+    "evidence": "docs/releases/4.42.1.2835-acceptance.md",
+    "accepted_at": "2026-10-01T02:52:00+00:00",
+    "accepted_by": "lachlanchen",
+    "installer_sha256": "d3a7776f6fb00b196e2fcbf8acba06fd52b19437b0da80fec0ae838ee362f06f",
+    "patched_server_sha256": "3bcd664ad1b5b776b8e3f28276123bc3c7ac40464a19879dfc7aaa0f804706e5"
+  },
   "review": {
     "reviewed_by": "lachlanchen",
     "reviewed_at": "2026-10-01T00:02:19.252530+00:00",
