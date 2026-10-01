@@ -61,8 +61,8 @@ locked by the release manifest.
 
 - exact-hash support for UU `4.42.1.2835`, whose bundled executables report
   `4.42.0.2770`; hash-bound workstation acceptance now covers physical-desktop
-  video, mouse/buttons, English typing, Chinese clipboard, reconnect, service
-  restart, and retained login. See the [acceptance and limitations](docs/releases/4.42.1.2835-acceptance.md)
+  video, mouse/buttons, English typing, bidirectional Chinese text clipboard,
+  reconnect, service restart, and retained login. See the [acceptance and limitations](docs/releases/4.42.1.2835-acceptance.md)
   and [static review/rollback record](docs/releases/4.42.1.2835-static-review.md).
 - read-only `./install.sh --check-host`, explicit ARM64/Oracle VPS guidance
   for compatibility issue #12, and architecture regression tests

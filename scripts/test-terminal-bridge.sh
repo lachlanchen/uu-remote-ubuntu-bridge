@@ -3,6 +3,9 @@
 set -Eeuo pipefail
 umask 077
 
+# DISPLAY= alone still lets Wine open its Wayland configuration window.
+export WAYLAND_DISPLAY=/nonexistent/uurb-terminal-test
+
 repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 wine_bin="${UURB_WINE_BIN:-/opt/wine-stable/bin/wine}"
 wineserver_bin="${UURB_WINESERVER_BIN:-/opt/wine-stable/bin/wineserver}"

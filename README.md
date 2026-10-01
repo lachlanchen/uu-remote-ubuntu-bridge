@@ -40,7 +40,15 @@ local RDP relay, and makes mouse and keyboard control work normally.
 | Authentication | Normal UU sign-in and separate GNOME RDP credential |
 
 > This is not a native UU Linux port and is not affiliated with NetEase. The
-> current manifest is intentionally locked to UU Remote `4.33.0.8907`.
+> default fresh-install manifest is intentionally locked to UU Remote
+> `4.33.0.8907`. Newer releases have separate exact-hash manifests.
+
+The [4.42.1.2835 workstation upgrade](docs/releases/4.42.1.2835-acceptance.md)
+passed physical-desktop video, mouse, English typing, bidirectional Chinese
+text clipboard, reconnect, service restart, login preservation, and the
+270-second stability gate. The prior working runtime remains tagged and
+backed up. See that record for test limits and rollback details; this is not
+a claim that every controller or hardware configuration was tested.
 
 Download UU only from NetEase's official [uuyc.163.com](https://uuyc.163.com/)
 domain. Its current product page does not list a Linux host; this bridge uses
