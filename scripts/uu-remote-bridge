@@ -187,6 +187,7 @@ input_broker_pid=""
 x11_input_pid=""
 x11_clipboard_pid=""
 wine_clipboard_bridge_pid=""
+host_clipboard_pid=""
 terminal_bridge_pid=""
 server_supervisor_pid=""
 grd_user_service_was_active=false
@@ -410,6 +411,7 @@ cleanup() {
         "$input_broker_pid" \
         "$x11_input_pid" \
         "$wine_clipboard_bridge_pid" \
+        "$host_clipboard_pid" \
         "$x11_clipboard_pid" \
         "$terminal_bridge_pid" \
         "$winlogon_pid" \
@@ -431,6 +433,7 @@ cleanup() {
             "$input_broker_pid" \
             "$x11_input_pid" \
             "$wine_clipboard_bridge_pid" \
+            "$host_clipboard_pid" \
             "$x11_clipboard_pid" \
             "$terminal_bridge_pid" \
             "$winlogon_pid" \
@@ -459,6 +462,7 @@ cleanup() {
         "$input_broker_pid" \
         "$x11_input_pid" \
         "$wine_clipboard_bridge_pid" \
+        "$host_clipboard_pid" \
         "$x11_clipboard_pid" \
         "$terminal_bridge_pid" \
         "$winlogon_pid" \
@@ -1296,6 +1300,23 @@ if ! /opt/wine-stable/bin/wine "$input_injector_exe" \
     exit 1
 fi
 start_wine_clipboard_bridge
+
+# Opt-in return path for actual desktop copies. Keep semantic phone/IME text
+# and incoming clipboard owners out of it; never synthesize a paste here.
+vnc_client_cut_text=1
+if [[ "${UURB_HOST_CLIPBOARD:-off}" == on && "$desktop_relay" == vnc &&
+      -n "$x11_clipboard_port" && -n "$wine_clipboard_bridge_pid" ]]; then
+    /usr/bin/env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" \
+        /usr/bin/python3 "$HOME/.local/libexec/uu-host-clipboard" \
+        --host-display "$desktop_display" \
+        --host-authority "$desktop_xauthority" --bridge-pid "$$" \
+        >>"$state_dir/host-clipboard.log" 2>&1 &
+    host_clipboard_pid=$!
+    # The authenticated GameViewer companion handles inbound text. Do not
+    # bounce the return clipboard back through the private VNC viewer.
+    vnc_client_cut_text=0
+    log 'Host-to-UU text clipboard enabled; semantic and incoming owners excluded.'
+fi
 if [[ "$cursor_guard_setting" == on ]]; then
     cursor_guard_windows_path="$(
         /opt/wine-stable/bin/winepath -w "$cursor_guard_dll"
@@ -1427,7 +1448,7 @@ else
         -GrabKeyboard="$vnc_grab_keyboard_value" \
         -SendKeyEvents=1 \
         -SendPointerEvents=1 \
-        -ClientCutText=1 \
+        -ClientCutText="$vnc_client_cut_text" \
         -ServerCutText=0 \
         -SendPrimary=0 \
         -SendInitialClipboard=0 \
@@ -1657,6 +1678,7 @@ for optional_pid in \
     "$x11_input_pid" \
     "$x11_clipboard_pid" \
     "$wine_clipboard_bridge_pid" \
+    "$host_clipboard_pid" \
     "$terminal_bridge_pid"; do
     if [[ -n "$optional_pid" ]]; then
         critical_pids+=("$optional_pid")

@@ -21,6 +21,7 @@ runtime_files=(
     scripts/runtime-source-digest
     scripts/stop-wine-prefix
     scripts/release-grd-clipboard.py
+    scripts/uu-host-clipboard.py
     scripts/uu_connection_status.py
     scripts/uu-keyring-unlock.py
     scripts/uu-agent

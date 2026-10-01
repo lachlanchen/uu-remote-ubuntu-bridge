@@ -155,6 +155,7 @@ rm -f \
     "$HOME/.local/libexec/uu-inspect-wine-device-registry.py" \
     "$HOME/.local/libexec/uu-remote-stop-wine-prefix" \
     "$HOME/.local/libexec/uu-release-grd-clipboard" \
+    "$HOME/.local/libexec/uu-host-clipboard" \
     "$HOME/.local/bin/uu-keyring-unlock" \
     "$HOME/.config/systemd/user/uu-keyring-unlock.service" \
     "$HOME/.config/systemd/user/uu-remote-bridge.service" \

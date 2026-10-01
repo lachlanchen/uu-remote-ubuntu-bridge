@@ -8,6 +8,12 @@ locked by the release manifest.
 
 ### Fixed
 
+- avoid downloading or installing unused FreeRDP/libei dependencies for the
+  VNC relay; an expired pinned nightly URL no longer blocks VNC-only refreshes
+- add an opt-in, owner-filtered X11 host-to-Wine text clipboard return path;
+  exclude bridge-owned dictation/incoming selections and disable the redundant
+  private VNC cut-text channel while enabled
+
 - release only a bridge-owned, stalled GNOME Remote Desktop clipboard FUSE
   request during shutdown, after TERM and before KILL; verify process identity,
   cgroup, open FUSE connection, mount path, owner, and pending request first

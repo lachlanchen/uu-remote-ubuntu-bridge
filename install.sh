@@ -824,6 +824,8 @@ install -m 0755 "$repo_dir/scripts/stop-wine-prefix" \
     "$HOME/.local/libexec/uu-remote-stop-wine-prefix"
 install -m 0755 "$repo_dir/scripts/release-grd-clipboard.py" \
     "$HOME/.local/libexec/uu-release-grd-clipboard"
+install -m 0755 "$repo_dir/scripts/uu-host-clipboard.py" \
+    "$HOME/.local/libexec/uu-host-clipboard"
 install -m 0755 "$repo_dir/scripts/clean-wine-device-registry" \
     "$HOME/.local/libexec/uu-clean-wine-device-registry"
 install -m 0755 "$repo_dir/scripts/inspect-wine-device-registry.py" \

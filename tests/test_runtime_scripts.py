@@ -252,7 +252,8 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn(
             '-GrabKeyboard="$vnc_grab_keyboard_value"', launcher
         )
-        self.assertIn("-ClientCutText=1", launcher)
+        self.assertIn("vnc_client_cut_text=1", launcher)
+        self.assertIn('-ClientCutText="$vnc_client_cut_text"', launcher)
         self.assertIn("-ServerCutText=0", launcher)
         self.assertIn("-SendPrimary=0", launcher)
         self.assertIn("-SendInitialClipboard=0", launcher)
@@ -569,7 +570,7 @@ input_broker_pid=$xvfb_pid
 server_supervisor_pid=$xvfb_pid
 grd_pid= freerdp_pid= desktop_x11vnc_pid= vncviewer_pid=
 x11_input_pid= x11_clipboard_pid= wine_clipboard_bridge_pid=
-terminal_bridge_pid=
+terminal_bridge_pid= host_clipboard_pid=
 '''
         for status in (0, 7):
             with self.subTest(status=status):

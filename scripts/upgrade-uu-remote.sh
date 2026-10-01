@@ -290,6 +290,7 @@ backup_paths=(
     "$HOME/.local/libexec/uu-connection-status"
     "$HOME/.local/libexec/uu-remote-stop-wine-prefix"
     "$HOME/.local/libexec/uu-release-grd-clipboard"
+    "$HOME/.local/libexec/uu-host-clipboard"
     "$wine_prefix/compat"
     "$wine_prefix/drive_c/Program Files/FreeRDP"
     "$wine_prefix/drive_c/Program Files/Netease/GameViewer/bin"
