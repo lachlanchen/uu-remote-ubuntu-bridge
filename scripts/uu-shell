@@ -7,6 +7,9 @@ helper="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/uu-ssh"
 if [[ $# == 0 || ${1:-} == -h || ${1:-} == --help ]]; then
     printf '%s\n' \
         'Usage: uu-shell PEER [transport arguments...]' \
+        '       uu-shell --lazy PEER [SSH arguments...]' \
+        '       uu-shell --native PEER [UU terminal options...]' \
+        '       uu-shell --list' \
         'Example: uu-shell lab' \
         'Uses the transport explicitly selected by uu-ssh add.' \
         'Native UU Terminal requests a fresh session by default.' \
@@ -18,4 +21,9 @@ if [[ $# == 0 || ${1:-} == -h || ${1:-} == --help ]]; then
         'No cloud fallback, auto-retry or connection-availability guarantee.'
     exit 0
 fi
+case "$1" in
+    --lazy) shift; exec "$helper" fleet-shell "$@" ;;
+    --native) shift; exec "$helper" native-shell "$@" ;;
+    --list) shift; exec "$helper" list "$@" ;;
+esac
 exec "$helper" shell "$@"

@@ -52,6 +52,13 @@ class UUShellTests(unittest.TestCase):
             self.assertIn(b"Usage: uu-shell PEER", result.stdout)
             self.assertNotIn(b"\0", result.stdout)
 
+    def test_explicit_transport_never_falls_back(self):
+        for option, command in (("--lazy", "fleet-shell"), ("--native", "native-shell")):
+            result = self.run_shell(option, "lab", "literal ' 中文")
+            self.assertEqual(result.returncode, 17)
+            self.assertEqual(result.stdout.split(b"\0")[:-1],
+                             [command.encode(), b"lab", "literal ' 中文".encode()])
+
     def test_installer_lifecycle_includes_helper(self):
         for relative in ("install.sh", "uninstall.sh", "scripts/upgrade-uu-remote.sh",
                          "scripts/runtime-source-digest"):

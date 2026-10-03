@@ -2,6 +2,9 @@
 
 ## Result
 
+For explicit LazyTunnel-backed shortcuts on Linux, macOS and Windows, plus
+current native UU compatibility results, read [fleet shell shortcuts](fleet-shell.md).
+
 The UU controller's **Terminal** feature can open the bridge host's real
 Ubuntu login shell. The controller may still label the choice `PowerShell`;
 on this Wine-hosted Ubuntu device that label is a compatibility entry point,

@@ -5,6 +5,7 @@ import contextlib
 import importlib.machinery
 import importlib.util
 import io
+import json
 from pathlib import Path
 import subprocess
 import tempfile
@@ -57,6 +58,36 @@ class UUSSHTests(unittest.TestCase):
         self.assertEqual(len(backups), 1)
         self.assertEqual(backups[0].read_text(), original)
         self.assertEqual(config.stat().st_mode & 0o777, 0o600)
+
+    def test_fleet_selection_reuses_identity_preserves_prior_profile_and_never_falls_back(self):
+        self.add_peer()
+        old = helper.profile_path("lab").read_bytes()
+        ssh_before = (self.home / ".ssh/config").read_bytes()
+        bundle = self.home / ".config/lazytunnel-fleet/bundle.json"
+        bundle.parent.mkdir()
+        bundle.write_text(json.dumps({"aliases": ["lab"]}))
+        args = argparse.Namespace(peer="lab", fleet_peer=None, device_id=None, terminal_shell="zsh")
+        helper.add_fleet(args)
+        helper.add_fleet(args)
+        backups = list(helper.profile_path("lab").parent.glob("lab.json.before-fleet.*"))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(backups[0].read_bytes(), old)
+        self.assertEqual((self.home / ".ssh/config").read_bytes(), ssh_before)
+        with mock.patch.object(helper.os, "execv", side_effect=OSError("offline")) as execute, \
+             mock.patch.object(helper, "terminal") as native:
+            with self.assertRaises(OSError):helper.shell("lab", ["exit 7"])
+            self.assertEqual(execute.call_args.args[1][-2:], ["lab", "exit 7"])
+            native.assert_not_called()
+        with self.assertRaises(ValueError):helper.fleet_command("unknown", [])
+
+    def test_macos_native_picker_is_not_reported_as_a_shell(self):
+        with mock.patch.object(helper.sys, "platform", "darwin"), \
+             mock.patch.object(helper, "load", return_value={"device_id":"test-id"}), \
+             mock.patch.object(helper.os, "execv") as execute:
+            helper.terminal("lab", [], fresh_by_default=True)
+            self.assertEqual(execute.call_args.args[1][-2:], ["term", "test-id"])
+            with self.assertRaisesRegex(ValueError, "terminal picker"):
+                helper.terminal("lab", ["--session-id", "42"])
 
     def test_openssh_parses_alias_and_preserves_original_global_scope(self):
         config = self.home / ".ssh/config"

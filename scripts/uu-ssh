@@ -60,7 +60,7 @@ def profile_route(profile):
     if via_ssh_host:
         ssh_host(via_ssh_host)
     shell_transport = profile.get("shell_transport", "terminal")
-    if shell_transport not in {"terminal", "ssh"}:
+    if shell_transport not in {"terminal", "ssh", "lazytunnel"}:
         raise ValueError(f"unsupported shell transport in peer profile: {shell_transport}")
     return via_ssh_host, shell_transport
 
@@ -206,6 +206,12 @@ def add(args):
 
 def check(peer):
     profile = load(peer)
+    if profile_route(profile)[1] == "lazytunnel":
+        command = fleet_command(profile.get("fleet_peer", peer), ["-o", "BatchMode=yes", "hostname"])
+        print(f"uu-{peer}: checking the explicitly selected LazyTunnel SSH route", flush=True)
+        return subprocess.run(command, timeout=45).returncode
+    if "port" not in profile:
+        raise ValueError("no UU port mapping is configured; this profile has native Terminal only")
     via_ssh_host, _ = profile_route(profile)
     remote_target = mapping_target(profile.get("mapping_target", "127.0.0.1"))
     if via_ssh_host:
@@ -246,6 +252,13 @@ def terminal(peer_name, options, fresh_by_default=False):
     peer = load(peer_name)
     if not peer.get("device_id"):
         raise ValueError("peer has no device ID; repeat add with --device-id")
+    if sys.platform == "darwin":
+        if options:
+            raise ValueError("macOS UU opens its terminal picker; Windows CLI terminal flags are not supported")
+        cli = "/Applications/UURemote.app/Contents/Helpers/uuyc-cli"
+        print("uu-shell: native UU macOS terminal picker (a GUI, not an SSH shell)", file=sys.stderr)
+        os.execv(cli, [cli, "term", peer["device_id"]])
+        return
     fresh = ["--new-session"] if fresh_by_default else []
     for option in options:
         if option in {"--session-id", "--list-sessions", "--kill-session",
@@ -253,12 +266,54 @@ def terminal(peer_name, options, fresh_by_default=False):
                           ("--session-id=", "--kill-session=")):
             fresh = []
     agent = shutil.which("uu-agent") or str(Path(__file__).resolve().with_name("uu-agent"))
-    os.execv(agent, [agent, "term", "--device-id", peer["device_id"], *fresh, *options])
+    selected_shell = peer.get("terminal_shell", "powershell")
+    if selected_shell not in {"powershell", "cmd", "zsh", "bash"}:
+        raise ValueError("invalid terminal shell")
+    defaults = [] if "terminal_shell" not in peer or any(x == "--shell" or x.startswith("--shell=") for x in options) else ["--shell", selected_shell]
+    os.execv(agent, [agent, "term", "--device-id", peer["device_id"], *fresh, *defaults, *options])
+
+
+def fleet_command(peer_name, options):
+    peer_name = name(peer_name)
+    bundle = json.loads((Path.home() / ".config/lazytunnel-fleet/bundle.json").read_text())
+    if peer_name not in bundle["aliases"]:
+        raise ValueError("device is not enrolled in this LazyTunnel account")
+    wrapper = Path.home() / ".local/bin/ssh-lazy"
+    return [str(wrapper), peer_name, *options]
+
+
+def fleet_shell(peer_name, options):
+    command = fleet_command(peer_name, options)
+    print(f"uu-shell: LazyTunnel SSH -> {peer_name}", file=sys.stderr)
+    os.execv(command[0], command)
+
+
+def add_fleet(args):
+    bundle = json.loads((Path.home() / ".config/lazytunnel-fleet/bundle.json").read_text())
+    target = args.fleet_peer or args.peer
+    if target not in bundle["aliases"]:
+        raise ValueError("device is not enrolled in this LazyTunnel account")
+    path = profile_path(args.peer)
+    profile = load(args.peer) if path.exists() else {"name": args.peer}
+    if args.device_id:
+        if not re.fullmatch(r"[A-Za-z0-9-]{1,80}", args.device_id):
+            raise ValueError("invalid UU device ID")
+        profile["device_id"] = args.device_id
+    profile.update(shell_transport="lazytunnel", fleet_peer=target,
+                   terminal_shell=args.terminal_shell)
+    content = json.dumps(profile, indent=2) + "\n"
+    if path.exists() and path.read_text() != content:
+        write_private(path.with_name(path.name + f".before-fleet.{time.time_ns()}"), path.read_text())
+    write_private(path, content)
+    print(f"Ready: uu-shell {args.peer} (LazyTunnel SSH; --native explicitly selects UU)")
 
 
 def shell(peer_name, options):
     peer = load(peer_name)
     _, transport = profile_route(peer)
+    if transport == "lazytunnel":
+        fleet_shell(peer.get("fleet_peer", peer_name), options)
+        return
     if transport == "ssh":
         os.execvp("ssh", ["ssh", f"uu-{peer_name}", *options])
         return
@@ -289,6 +344,17 @@ def main():
                    help="remote-side SSH target shown in diagnostics (default: preserve or 127.0.0.1)")
     sub.add_parser("key", help="create/reuse the dedicated key and print its public key")
     sub.add_parser("list", help="list configured peers")
+    p = sub.add_parser("add-fleet", help="select an existing LazyTunnel route; no new keys, carrier or desktop")
+    p.add_argument("peer", type=name)
+    p.add_argument("--fleet-peer", type=name)
+    p.add_argument("--device-id")
+    p.add_argument("--terminal-shell", choices=("powershell", "cmd", "zsh", "bash"), default="powershell")
+    p = sub.add_parser("fleet-shell", help="explicit LazyTunnel SSH shell, without transport fallback")
+    p.add_argument("peer", type=name)
+    p.add_argument("options", nargs=argparse.REMAINDER)
+    p = sub.add_parser("native-shell", help="explicit fresh native UU terminal")
+    p.add_argument("peer", type=name)
+    p.add_argument("options", nargs=argparse.REMAINDER)
     p = sub.add_parser("check", help="check mapped SSH and key authentication")
     p.add_argument("peer", type=name)
     p = sub.add_parser("terminal", help="UU native Terminal (requires terminal patch on peer)")
@@ -308,12 +374,24 @@ def main():
     args = parser.parse_args(argv)
     if args.command == "add":
         add(args)
+    elif args.command == "add-fleet":
+        add_fleet(args)
+    elif args.command == "fleet-shell":
+        fleet_shell(args.peer, args.options)
+    elif args.command == "native-shell":
+        terminal(args.peer, args.options, fresh_by_default=True)
     elif args.command == "key":
         print(ensure_key().with_suffix(".pub").read_text(), end="")
     elif args.command == "list":
         for path in sorted((Path.home() / ".config/uu-ssh/peers").glob("*.json")):
             peer = json.loads(path.read_text())
             via_ssh_host, shell_transport = profile_route(peer)
+            if shell_transport == "lazytunnel":
+                print(f"uu-shell {peer['name']}  shell=lazytunnel  lazy-{peer.get('fleet_peer', peer['name'])}")
+                continue
+            if "port" not in peer:
+                print(f"uu-shell {peer['name']}  shell=terminal (native UU only)")
+                continue
             via = f" via {via_ssh_host}" if via_ssh_host else ""
             target = mapping_target(peer.get("mapping_target", "127.0.0.1"))
             print(f"uu-{peer['name']}  {peer['user']}@127.0.0.1:{peer['port']}"
