@@ -90,6 +90,14 @@ including eight self routes. Six Windows-source checks initially exceeded the
 ten-second connection deadline and passed with a thirty-second deadline.
 This is point-in-time evidence, not an uptime or reboot guarantee.
 
+After deployment, a fresh `uu-shell` sweep also passed all 64 directed hostname
+checks without retry. Linux/macOS/Tiny11 routes commonly completed within
+0.8–4.3 seconds; routes into the physical Windows host took about 10–13 seconds,
+and routes originating there took 15.6–24.9 seconds. Reachability is verified;
+the Windows session-start delay remains a performance limitation. Each source
+also preserved `exit 7`. Editing a legacy UU mapping with `uu-ssh add` preserves
+an existing fleet default and native shell choice unless explicitly changed.
+
 The account's local UU list had seven other devices online and nine offline.
 Fresh native terminal checks were deliberately separate:
 

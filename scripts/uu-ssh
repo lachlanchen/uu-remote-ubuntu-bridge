@@ -129,7 +129,7 @@ def add(args):
         raise ValueError("jump host cannot be the peer alias itself")
     shell_transport = (args.shell_transport or
                        previous.get("shell_transport", "terminal"))
-    if shell_transport not in {"terminal", "ssh"}:
+    if shell_transport not in {"terminal", "ssh", "lazytunnel"}:
         raise ValueError(f"unsupported shell transport in peer profile: {shell_transport}")
     remote_target = args.mapping_target or previous.get("mapping_target", "127.0.0.1")
     remote_target = mapping_target(remote_target)
@@ -189,13 +189,15 @@ def add(args):
         ])
         fragment = "\n".join(fragment_lines) + "\n\n"
         write_private(target, fragment)
-        write_private(profile_path(args.peer), json.dumps({
+        updated = dict(previous)
+        updated.update({
             "name": args.peer, "port": args.port, "user": args.user,
             "device_id": args.device_id or previous.get("device_id", ""),
             "via_ssh_host": via_ssh_host,
             "shell_transport": shell_transport,
             "mapping_target": remote_target,
-        }, indent=2) + "\n")
+        })
+        write_private(profile_path(args.peer), json.dumps(updated, indent=2) + "\n")
     print(f"Ready: ssh uu-{args.peer}")
     mapping_location = f"SSH host {via_ssh_host}" if via_ssh_host else "this controller"
     print(f"UU mapping on {mapping_location}: 127.0.0.1:{args.port} -> "

@@ -89,6 +89,27 @@ class UUSSHTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "terminal picker"):
                 helper.terminal("lab", ["--session-id", "42"])
 
+    def test_mapping_edit_preserves_selected_fleet_and_native_shell(self):
+        self.add_peer()
+        bundle = self.home / ".config/lazytunnel-fleet/bundle.json"
+        bundle.parent.mkdir()
+        bundle.write_text(json.dumps({"aliases": ["other-lab"]}))
+        helper.add_fleet(argparse.Namespace(peer="lab", fleet_peer="other-lab",
+                                          device_id=None, terminal_shell="zsh"))
+        identity = self.key.read_bytes()
+        self.args.port = 22809
+        self.add_peer()
+        profile = helper.load("lab")
+        self.assertEqual(profile["shell_transport"], "lazytunnel")
+        self.assertEqual(profile["fleet_peer"], "other-lab")
+        self.assertEqual(profile["terminal_shell"], "zsh")
+        self.assertEqual(profile["port"], 22809)
+        self.assertEqual(self.key.read_bytes(), identity)
+        self.args.shell_transport = "terminal"
+        self.add_peer()
+        self.assertEqual(helper.load("lab")["shell_transport"], "terminal")
+        self.assertEqual(helper.load("lab")["terminal_shell"], "zsh")
+
     def test_openssh_parses_alias_and_preserves_original_global_scope(self):
         config = self.home / ".ssh/config"
         config.write_text("ServerAliveInterval 17\nHost original\n    HostName example.invalid\n")
