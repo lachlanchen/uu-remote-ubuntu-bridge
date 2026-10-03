@@ -18,14 +18,60 @@
 
 </div>
 
-Diese experimentelle Brücke führt den offiziellen Windows-Client in einem
-isolierten Wine-Präfix aus und überträgt die echte GNOME-Wayland-Sitzung über
-eine lokale RDP-Verbindung. Video, Maus, Tastatur, Wiederverbindung und
-Dienstwiederherstellung funktionieren.
+Diese experimentelle Brücke startet den offiziellen Windows-Client in einem
+isolierten Wine-Präfix und teilt den bestehenden GNOME-Desktop über lokales RDP
+oder den optionalen lokalen VNC-Relay für X11.
 
-Die aktuelle Version ist absichtlich auf UU Remote `4.33.0.8907`, Ubuntu
-24.04, GNOME 46 und Wine 11 festgelegt. Unbekannte Binärdateien werden niemals
-gepatcht.
+Die Basis ist x86-64 Ubuntu 24.04 mit GNOME 46 und Wine 11. Neuinstallationen
+bleiben auf UU `4.33.0.8907` festgelegt; für `4.42.1.2835` gibt es ein separates
+Manifest mit exakten Hashes und eigene Abnahmeprotokolle. Unbekannte Binärdateien
+werden nicht gepatcht.
+
+<!-- feature-status:start -->
+## Was funktioniert
+
+Stand: **2026-10-04**. Desktopsteuerung, Textzwischenablage und Diktat funktionieren
+auf getesteten oder vom Nutzer bestätigten Wegen. Das gilt nicht automatisch für
+jedes Gerät, jedes Tastaturlayout oder jede Funktion des Windows-Clients.
+
+| Funktion | Status | Umfang und Grenzen |
+| --- | --- | --- |
+| Bestehender Ubuntu-Desktop | Funktioniert | Bildübertragung und Wiederverbindung erhalten die ausgewählte Sitzung und offene Anwendungen. |
+| Maus | Funktioniert | Bewegung, Klicks, Tasten, Rad und Fokus auf getesteten Wegen. |
+| Physische Tastatur / Tastenkürzel | Funktioniert, clientabhängig | Buchstaben, Zusatztasten und Symbole; keine Garantie für alle US-, JIS- und Mac-Layouts. |
+| Handytastatur / Unicode | Auf getesteten Wegen nutzbar | Chinesisch, Satzzeichen, Emoji und mehrzeiliger Text; einzelne IMEs müssen geprüft werden. |
+| Fortlaufendes Diktat | Im Alltag bestätigt, Regressionstests vorhanden | Korrekturen der laufenden Eingabe erhalten frühere Nachrichten; Handytests unterscheiden sich je Release. |
+| Textzwischenablage in beide Richtungen | Funktioniert, wegabhängig | Nur Text. X11/VNC-Rückkanal optional, bis 60 KiB; keine Bilder oder Dateien. |
+| Derselbe Desktop über UU / RDP / RealVNC | Optional eingerichtet | Gemeinsames physisches X11-Backend; getrennte Standardsitzungen werden nicht automatisch vereint. |
+| Auflösung / Bildflächenanpassung | Konfigurierbar | Feste Größe oder optionale Übernahme stabiler X11/VNC-Größen; keine zusätzlichen virtuellen Monitore. |
+| Wiederherstellung / Systemstart | Bedingt | Überwachter Neustart und erhaltener Login; funktionierende GNOME-Anmeldung und Schlüsselbund erforderlich. Kein neuer Rechnerneustarttest bei 4.42. |
+| Natives UU-Terminal → Ubuntu-Shell | Adapter funktioniert, Kanal bedingt | UTF-8 und PTY-Größe; Hersteller-Versionsfehler, Verbindungsfehler und Einschränkungen beim Exitstatus bleiben. |
+| `uu-shell` | Mit eingerichtetem SSH geprüft | Explizit LazyTunnel, weitergeleitetes SSH oder natives Terminal; SSH-Erfolg belegt nicht den nativen UU-Kanal. |
+| UU-Portweiterleitung / SSH / SCP | Bedingt | Erfolgreiche Wege dokumentiert; Übernahme oder Schließen der Trägerverbindung kann sie unterbrechen. Kein VPN. |
+| Super Screen / zusätzliche virtuelle Monitore | Ungeprüft | Keine bestätigte Ubuntu-Bridge-Abnahme; normale Größenänderung ist kein Nachweis. |
+| Blickschutz / Privatsphäre-Bildschirm | Ungeprüft | Kein validiertes Linux-Backend zum Ausblenden physischer Bildschirme und Sperren lokaler Eingaben. Nicht als Datenschutzmaßnahme voraussetzen. |
+| Audio / Mikrofon | Eingeschränkt | Hostabhängig; manche Installationen verwenden absichtlich ein stummes Backend. |
+| Nativer Dateitransfer, Bild-/Dateizwischenablage, weitere Extras | Ungeprüft | Textkopieren ist kein Dateitransfer; SCP/SFTP über geprüftes SSH ist eine getrennte Möglichkeit. |
+
+Siehe [Nachweise und Grenzen](../docs/features.md) sowie die getrennten
+[RDP](../docs/releases/4.42.1.2835-acceptance.md)- und
+[X11](../docs/releases/4.42-x11-workstation-20261001.md)-Abnahmen. Der Mac-Controllertest
+für 4.42 prüfte kein fortlaufendes Diktat auf echten Handys. Die Zwischenablage des
+gemeinsamen Desktops unter XRDP 0.9.24 hat zusätzlich eine bekannte Einschränkung bei Nicht-BMP-Emoji.
+
+Für einen bereits eingerichteten Gegenrechner namens `lab`:
+
+```bash
+uu-shell --list
+uu-shell lab
+uu-shell --lazy lab hostname
+uu-shell --native lab
+```
+
+`lab` durch den eigenen Profilnamen ersetzen. `--lazy` benötigt eine LazyTunnel-
+Registrierung; `--native` fordert das eigene UU-Terminal an und kann unabhängig
+scheitern. Kein stiller Transportwechsel oder Desktop-Takeover. [Details](../docs/fleet-shell.md).
+<!-- feature-status:end -->
 
 ## Schnellinstallation
 

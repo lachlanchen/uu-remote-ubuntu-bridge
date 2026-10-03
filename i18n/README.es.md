@@ -18,13 +18,59 @@
 
 </div>
 
-Este puente experimental ejecuta el cliente oficial de Windows dentro de un
-prefijo Wine aislado y muestra la sesión GNOME Wayland real mediante un enlace
-RDP local. Funcionan vídeo, ratón, teclado, reconexión y recuperación del
-servicio.
+Este puente experimental ejecuta el cliente oficial de Windows en un prefijo
+Wine aislado y comparte el escritorio GNOME existente mediante RDP local o el
+enlace VNC local opcional para X11.
 
-La versión actual está bloqueada deliberadamente a UU Remote `4.33.0.8907`,
-Ubuntu 24.04, GNOME 46 y Wine 11. Un binario desconocido nunca se parchea.
+La base es Ubuntu 24.04 x86-64, GNOME 46 y Wine 11. Las instalaciones nuevas
+siguen fijadas a UU `4.33.0.8907`; `4.42.1.2835` tiene su propio manifiesto de
+hashes exactos y registros de aceptación. Nunca se parchean binarios desconocidos.
+
+<!-- feature-status:start -->
+## Qué funciona
+
+Revisado el **2026-10-04**. El control del escritorio, el portapapeles de texto y
+el dictado funcionan en rutas probadas o confirmadas por el usuario. Esto no
+garantiza todos los dispositivos, distribuciones de teclado ni funciones del cliente Windows.
+
+| Función | Estado | Alcance y límites |
+| --- | --- | --- |
+| Escritorio Ubuntu existente | Funciona | Vídeo y reconexión conservan la sesión elegida y las aplicaciones abiertas. |
+| Ratón | Funciona | Movimiento, clics, botones, rueda y foco en los enlaces probados. |
+| Teclado físico / atajos | Funciona, depende del cliente | Letras, modificadores y símbolos; sin garantía universal para distribuciones US, JIS y Mac. |
+| Teclado móvil / Unicode | Funciona en rutas probadas | Chino, puntuación, emoji y texto multilínea; cada IME requiere comprobación. |
+| Dictado continuo | Confirmado en uso diario y con pruebas de regresión | Las revisiones conservan los mensajes anteriores; las pruebas con móviles reales varían por versión. |
+| Portapapeles de texto bidireccional | Funciona, depende de la ruta | Solo texto. Retorno X11/VNC opcional, hasta 60 KiB; no cubre imágenes ni archivos. |
+| Mismo escritorio por UU / RDP / RealVNC | Configuración opcional | Backend X11 físico compartido; las sesiones separadas predeterminadas no se unifican solas. |
+| Resolución / ajuste del lienzo | Configurable | Tamaño fijo o seguimiento opcional del tamaño estable de X11/VNC; no crea pantallas virtuales adicionales. |
+| Recuperación / inicio al arrancar | Condicional | Reinicio supervisado y sesión de cuenta conservada; requiere acceso GNOME y llavero utilizables. La aceptación 4.42 no incluyó un nuevo reinicio del equipo. |
+| Terminal nativo UU → shell Ubuntu | Adaptador funcional, canal condicional | UTF-8 y tamaño PTY; persisten límites de versión, conexión y códigos de salida nativos. |
+| `uu-shell` | Verificado con SSH registrado | Selección explícita de LazyTunnel, SSH redirigido o terminal nativo; SSH no demuestra que funcione el canal nativo UU. |
+| Mapeo de puertos UU / SSH / SCP | Condicional | Hay rutas probadas; tomar el control o cerrar la conexión portadora puede interrumpirlas. No es una VPN. |
+| Super Screen / pantallas virtuales adicionales | Sin verificar | Sin aceptación del puente Ubuntu; redimensionar un escritorio no demuestra esta función. |
+| Antiespía / pantalla de privacidad | Sin verificar | No hay backend Linux validado que oculte monitores físicos y bloquee la entrada local. No confiar en él para proteger la privacidad. |
+| Audio / micrófono | Limitado | Depende del host; algunas instalaciones usan deliberadamente un backend silencioso. |
+| Transferencia nativa de archivos, portapapeles de imágenes/archivos y otros extras | Sin verificar | Copiar texto no transfiere archivos; SCP/SFTP sobre SSH verificado es otra opción. |
+
+Consulte las [pruebas y limitaciones](../docs/features.md) y las aceptaciones separadas
+de [RDP](../docs/releases/4.42.1.2835-acceptance.md) y
+[X11](../docs/releases/4.42-x11-workstation-20261001.md). La prueba con controlador Mac
+de 4.42 no validó dictado continuo desde un móvil real. El portapapeles del escritorio
+compartido con XRDP 0.9.24 también tiene una limitación documentada con emoji fuera del BMP.
+
+Para un equipo ya configurado llamado `lab`:
+
+```bash
+uu-shell --list
+uu-shell lab
+uu-shell --lazy lab hostname
+uu-shell --native lab
+```
+
+Sustituya `lab` por su perfil. `--lazy` requiere registro en LazyTunnel;
+`--native` solicita el terminal propio de UU y puede fallar por separado. No cambia
+de transporte ni toma el escritorio de forma oculta. [Detalles](../docs/fleet-shell.md).
+<!-- feature-status:end -->
 
 ## Instalación rápida
 

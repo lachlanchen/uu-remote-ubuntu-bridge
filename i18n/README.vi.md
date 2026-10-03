@@ -18,12 +18,59 @@
 
 </div>
 
-Cầu nối thử nghiệm này chạy ứng dụng Windows chính thức trong một Wine prefix
-riêng và chuyển tiếp phiên GNOME Wayland thật qua kết nối RDP cục bộ. Hình ảnh,
-chuột, bàn phím, kết nối lại và tự phục hồi dịch vụ đều hoạt động.
+Cầu nối thử nghiệm chạy ứng dụng Windows chính thức trong Wine prefix riêng,
+chia sẻ màn hình GNOME hiện có qua RDP cục bộ hoặc chuyển tiếp VNC cục bộ tùy
+chọn dành cho X11.
 
-Phiên bản hiện tại được khóa có chủ đích ở UU Remote `4.33.0.8907`, Ubuntu
-24.04, GNOME 46 và Wine 11. Công cụ không bao giờ vá tệp nhị phân chưa biết.
+Môi trường cơ sở là Ubuntu 24.04 x86-64, GNOME 46 và Wine 11. Cài đặt mới vẫn
+khóa ở UU `4.33.0.8907`; `4.42.1.2835` có manifest hash chính xác và hồ sơ nghiệm
+thu riêng. Công cụ không vá tệp nhị phân chưa biết.
+
+<!-- feature-status:start -->
+## Những tính năng đang hoạt động
+
+Cập nhật **2026-10-04**. Điều khiển màn hình, clipboard văn bản và nhập liệu bằng
+giọng nói hoạt động trên các đường đã thử nghiệm hoặc được người dùng xác nhận.
+Điều này không bảo đảm mọi thiết bị, bố cục bàn phím hay tính năng UU trên Windows.
+
+| Tính năng | Trạng thái | Phạm vi và giới hạn |
+| --- | --- | --- |
+| Màn hình Ubuntu hiện có | Hoạt động | Hình ảnh và kết nối lại giữ nguyên phiên đã chọn cùng các ứng dụng đang mở. |
+| Chuột | Hoạt động | Di chuyển, nhấp, nút, con lăn và tiêu điểm trên đường chuyển tiếp đã thử nghiệm. |
+| Bàn phím vật lý / phím tắt | Hoạt động, tùy máy điều khiển | Chữ, phím bổ trợ và ký hiệu; không bảo đảm mọi bố cục US/JIS/Mac. |
+| Bàn phím điện thoại / Unicode | Hoạt động trên đường đã thử | Tiếng Trung, dấu câu, emoji và văn bản nhiều dòng; từng IME cần kiểm tra riêng. |
+| Nhập giọng nói liên tục | Được xác nhận khi sử dụng, có kiểm thử hồi quy | Sửa phần đang nhập vẫn giữ thông điệp trước đó; phạm vi thử trên điện thoại thật tùy phiên bản. |
+| Clipboard văn bản hai chiều | Hoạt động, tùy đường kết nối | Chỉ văn bản. Chiều trả về X11/VNC là tùy chọn, tối đa 60 KiB; không gồm ảnh hoặc tệp. |
+| UU / RDP / RealVNC dùng chung màn hình | Cấu hình tùy chọn | Backend X11 vật lý dùng chung; các phiên mặc định riêng biệt không tự hợp nhất. |
+| Độ phân giải / khung hình | Có thể cấu hình | Kích thước cố định hoặc tùy chọn theo kích thước X11/VNC ổn định; không phải màn hình ảo bổ sung. |
+| Khôi phục / chạy sau khởi động | Có điều kiện | Dịch vụ được giám sát và giữ đăng nhập; cần phiên GNOME cùng keyring dùng được. Nghiệm thu 4.42 chưa thử khởi động lại máy. |
+| Terminal gốc UU → shell Ubuntu | Bộ chuyển đổi hoạt động, kênh có điều kiện | UTF-8 và đổi kích thước PTY; vẫn có giới hạn phiên bản, kết nối và mã thoát của kênh gốc. |
+| `uu-shell` | Đã kiểm tra với SSH đăng ký sẵn | Chọn rõ LazyTunnel, SSH qua ánh xạ cổng hoặc terminal gốc; SSH thành công không chứng minh kênh UU gốc. |
+| Ánh xạ cổng UU / SSH / SCP | Có điều kiện | Có đường đã thử thành công; giành quyền điều khiển hoặc đóng kết nối vận chuyển có thể làm gián đoạn. Không phải VPN. |
+| Super Screen / màn hình ảo bổ sung | Chưa xác minh | Chưa có nghiệm thu trên cầu nối Ubuntu; đổi kích thước màn hình thường không đủ chứng minh. |
+| Chống nhìn trộm / màn hình riêng tư | Chưa xác minh | Chưa có backend Linux được kiểm chứng để che màn hình vật lý và khóa đầu vào cục bộ. Không dựa vào đó để bảo vệ riêng tư. |
+| Âm thanh / micrô | Hạn chế | Tùy máy; một số cài đặt chủ động dùng backend im lặng. |
+| Truyền tệp gốc, clipboard ảnh/tệp và tính năng khác | Chưa xác minh | Sao chép văn bản không phải truyền tệp; SCP/SFTP qua SSH đã kiểm tra là lựa chọn riêng. |
+
+Xem [bằng chứng và giới hạn](../docs/features.md) cùng nghiệm thu riêng cho
+[RDP](../docs/releases/4.42.1.2835-acceptance.md) và
+[X11](../docs/releases/4.42-x11-workstation-20261001.md). Thử nghiệm máy điều khiển Mac
+4.42 chưa xác minh nhập giọng nói liên tục trên điện thoại thật. Clipboard của màn hình
+dùng chung qua XRDP 0.9.24 cũng có giới hạn đã ghi nhận với emoji ngoài BMP.
+
+Với máy ngang hàng đã cấu hình tên `lab`:
+
+```bash
+uu-shell --list
+uu-shell lab
+uu-shell --lazy lab hostname
+uu-shell --native lab
+```
+
+Thay `lab` bằng tên cấu hình của bạn. `--lazy` yêu cầu đăng ký LazyTunnel;
+`--native` yêu cầu terminal riêng của UU và có thể thất bại độc lập. Không âm thầm
+đổi đường hay giành quyền điều khiển màn hình. [Chi tiết](../docs/fleet-shell.md).
+<!-- feature-status:end -->
 
 ## Cài đặt nhanh
 

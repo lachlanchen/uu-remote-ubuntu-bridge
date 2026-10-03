@@ -28,16 +28,54 @@
 
 An experimental compatibility bridge that runs the official Windows UU client
 in an isolated Wine prefix, presents the real GNOME desktop through a
-local RDP relay, and makes mouse and keyboard control work normally.
+local RDP relay (or the optional local VNC relay on X11), with mouse, keyboard,
+semantic phone text and clipboard integration.
 
-| Capability | Validated result |
-| --- | --- |
-| Desktop video | Live GNOME session at `1920x1080` |
-| Mouse | Motion, buttons, wheel, focus, and clicks through UU |
-| Keyboard | Physical keys, shortcuts, and normalized phone IME text |
-| Recovery | User systemd restart, boot autostart, and DLL re-injection |
-| Stability | One UU server PID beyond the former four-minute failure window |
-| Authentication | Normal UU sign-in and separate GNOME RDP credential |
+<!-- feature-status:start -->
+## What works
+
+Reviewed **2026-10-04**. Everyday desktop control, text clipboard and dictation
+are working on tested or user-confirmed paths. **Working** describes those
+paths, not every device, keyboard layout or native Windows UU feature.
+
+| Feature | Status | Scope / limits |
+| --- | --- | --- |
+| Existing Ubuntu desktop | Working | Video and reconnect preserve the selected session and open apps. |
+| Mouse | Working | Movement, clicks, buttons, wheel and focus on tested relays. |
+| Physical keyboard / shortcuts | Working; client-dependent | Letters, modifiers and symbols; no universal US/JIS/Mac layout guarantee. |
+| Phone keyboard / Unicode | Working on tested paths | Chinese, punctuation, emoji and multiline text; individual IMEs still need checking. |
+| Continuous dictation | Working in reported use; regression-tested | Composition revisions preserve earlier messages; real-phone coverage varies by release. |
+| Text clipboard, both directions | Working; route-dependent | Text only. X11/VNC return is opt-in, up to 60 KiB; images/files are not covered. |
+| Same UU / RDP / RealVNC desktop | Optional setup | Shared physical X11 backend; separate default sessions are not automatically unified. |
+| Resolution / canvas fitting | Configurable | Fixed size or optional stable X11/VNC size following; not extra virtual displays. |
+| Recovery / boot startup | Conditional | Supervised restart and login retention; usable GNOME login/keyring required. No new reboot test in 4.42 acceptance. |
+| Native UU Terminal → Ubuntu shell | Adapter works; channel conditional | UTF-8 and PTY resize; vendor version/connection failures and native exit-status limitation remain. |
+| `uu-shell` | Verified with enrolled SSH | Explicit LazyTunnel, mapped SSH or native selection; SSH tests do not prove native UU works. |
+| UU port mapping / SSH / SCP | Conditional | Verified routes exist; takeover or closing the carrier can break them. Not a VPN. |
+| Super Screen / extra virtual displays | Unverified | No accepted Ubuntu-bridge test; ordinary desktop resizing is not proof. |
+| Anti-peep / privacy screen | Unverified | No validated Linux physical-screen blanking/input-lock backend. Do not rely on it for privacy. |
+| Audio / microphone | Limited | Host-dependent; some installations intentionally use silent audio. |
+| Native file transfer, image/file clipboard, other extras | Unverified | Text copy is not file transfer; SCP/SFTP over verified SSH is a separate option. |
+
+See [feature evidence and limitations](docs/features.md), including the separate
+[RDP](docs/releases/4.42.1.2835-acceptance.md) and
+[X11](docs/releases/4.42-x11-workstation-20261001.md) acceptance records. The
+4.42 Mac-controller run did not validate real-phone continuous dictation. The
+shared-desktop XRDP 0.9.24 clipboard also has a documented non-BMP emoji limitation.
+
+For an already configured peer named `lab`:
+
+```bash
+uu-shell --list
+uu-shell lab
+uu-shell --lazy lab hostname
+uu-shell --native lab
+```
+
+Replace `lab` with your peer. `--lazy` requires LazyTunnel enrollment;
+`--native` requests UU's own terminal and can fail independently. There is no
+silent fallback or desktop takeover. See [fleet shell details](docs/fleet-shell.md).
+<!-- feature-status:end -->
 
 > This is not a native UU Linux port and is not affiliated with NetEase. The
 > default fresh-install manifest is intentionally locked to UU Remote

@@ -19,12 +19,59 @@
 </div>
 
 Cette passerelle expérimentale exécute le client Windows officiel dans un
-préfixe Wine isolé et transmet la session GNOME Wayland réelle par une liaison
-RDP locale. La vidéo, la souris, le clavier, la reconnexion et la récupération
-du service sont prises en charge.
+préfixe Wine isolé et partage le bureau GNOME existant par RDP local ou par le
+relais VNC local facultatif pour X11.
 
-La version actuelle est volontairement limitée à UU Remote `4.33.0.8907`,
-Ubuntu 24.04, GNOME 46 et Wine 11. Aucun binaire inconnu n'est modifié.
+La base est Ubuntu 24.04 x86-64, GNOME 46 et Wine 11. Les nouvelles installations
+restent fixées à UU `4.33.0.8907` ; `4.42.1.2835` dispose d'un manifeste distinct
+avec des empreintes exactes et de ses propres validations. Aucun binaire inconnu
+n'est modifié.
+
+<!-- feature-status:start -->
+## Ce qui fonctionne
+
+Vérifié le **2026-10-04**. Le contrôle du bureau, le presse-papiers texte et la
+dictée fonctionnent sur des chemins testés ou confirmés par l'utilisateur. Cela
+ne garantit pas tous les appareils, dispositions de clavier ou fonctions du client Windows.
+
+| Fonction | État | Portée et limites |
+| --- | --- | --- |
+| Bureau Ubuntu existant | Fonctionne | Vidéo et reconnexion conservent la session choisie et les applications ouvertes. |
+| Souris | Fonctionne | Déplacement, clics, boutons, molette et focus sur les relais testés. |
+| Clavier physique / raccourcis | Fonctionne, selon le client | Lettres, modificateurs et symboles ; aucune garantie universelle pour les dispositions US, JIS et Mac. |
+| Clavier mobile / Unicode | Fonctionne sur les chemins testés | Chinois, ponctuation, emoji et texte multiligne ; chaque IME reste à vérifier. |
+| Dictée continue | Confirmée à l'usage, tests de régression | Les révisions conservent les messages antérieurs ; les essais sur téléphones réels varient selon la version. |
+| Presse-papiers texte bidirectionnel | Fonctionne, selon le chemin | Texte uniquement. Retour X11/VNC facultatif, jusqu'à 60 KiB ; images et fichiers exclus. |
+| Même bureau via UU / RDP / RealVNC | Configuration facultative | Backend X11 physique partagé ; les sessions distinctes par défaut ne sont pas fusionnées automatiquement. |
+| Résolution / ajustement du canevas | Configurable | Taille fixe ou suivi facultatif de la taille stable X11/VNC ; pas de moniteurs virtuels supplémentaires. |
+| Récupération / démarrage automatique | Conditionnel | Redémarrage supervisé et connexion conservée ; session GNOME et trousseau utilisables nécessaires. Aucun nouveau redémarrage machine dans la validation 4.42. |
+| Terminal natif UU → shell Ubuntu | Adaptateur fonctionnel, canal conditionnel | UTF-8 et taille PTY ; limites de version, de connexion et de code de sortie natif encore présentes. |
+| `uu-shell` | Vérifié avec SSH enregistré | Choix explicite : LazyTunnel, SSH redirigé ou terminal natif. Une réussite SSH ne valide pas le canal UU natif. |
+| Redirection de ports UU / SSH / SCP | Conditionnel | Des chemins sont validés ; une prise de contrôle ou fermeture du transport peut les couper. Ce n'est pas un VPN. |
+| Super Screen / écrans virtuels supplémentaires | Non vérifié | Aucune validation du pont Ubuntu ; un simple redimensionnement du bureau ne suffit pas. |
+| Anti-espionnage / écran de confidentialité | Non vérifié | Aucun backend Linux validé pour masquer l'écran physique et bloquer les entrées locales. Ne pas en dépendre pour la confidentialité. |
+| Audio / microphone | Limité | Selon l'hôte ; certaines installations utilisent volontairement un backend silencieux. |
+| Transfert natif de fichiers, presse-papiers images/fichiers, autres options | Non vérifié | Copier du texte ne transfère pas des fichiers ; SCP/SFTP sur SSH vérifié est une autre solution. |
+
+Voir les [preuves et limites](../docs/features.md) et les validations distinctes
+[RDP](../docs/releases/4.42.1.2835-acceptance.md) et
+[X11](../docs/releases/4.42-x11-workstation-20261001.md). Le test du contrôleur Mac
+4.42 n'a pas validé la dictée continue sur un vrai téléphone. Le presse-papiers du
+bureau partagé sous XRDP 0.9.24 présente aussi une limite documentée pour les emoji hors BMP.
+
+Pour un appareil déjà configuré nommé `lab` :
+
+```bash
+uu-shell --list
+uu-shell lab
+uu-shell --lazy lab hostname
+uu-shell --native lab
+```
+
+Remplacez `lab` par votre profil. `--lazy` nécessite un enregistrement LazyTunnel ;
+`--native` demande le terminal de UU et peut échouer indépendamment. Aucun repli
+silencieux ni prise de contrôle du bureau. [Détails](../docs/fleet-shell.md).
+<!-- feature-status:end -->
 
 ## Installation rapide
 
