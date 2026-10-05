@@ -99,6 +99,40 @@ class WineRegistryTests(unittest.TestCase):
                 text=True,
             )
 
+    def test_no_device_cleanup_produces_zero_shell_deletion_entries(self):
+        # Start=3 still needs the cleaner's service-disable step; Start=4 is
+        # already clean. Neither case should ask Wine to delete an empty key.
+        for start in (3, 4):
+            with self.subTest(start=start), tempfile.TemporaryDirectory() as temporary:
+                prefix = self.write_registry(
+                    Path(temporary),
+                    r"""
+[System\\ControlSet001\\Services\\winebth] 1
+"Start"=dword:0000000START
+
+[System\\ControlSet001\\Enum\\WINEBTH\\RADIO\\HCI0] 1
+"DeviceDesc"="Bluetooth radio"
+""".replace("START", str(start)),
+                )
+                registry = prefix / "system.reg"
+                original = registry.read_bytes()
+                plan = subprocess.run(
+                    [str(INSPECTOR), "plan", str(prefix)],
+                    check=True,
+                    capture_output=True,
+                ).stdout
+                # Exercise the same mapfile contract used by the cleaner:
+                # one stray newline becomes one (empty) deletion target.
+                entries = subprocess.run(
+                    ["bash", "-c", 'mapfile -t keys; printf "%s" "${#keys[@]}"'],
+                    input=plan,
+                    check=True,
+                    capture_output=True,
+                ).stdout
+                self.assertEqual(b"0", entries)
+                self.assertEqual(b"", plan)
+                self.assertEqual(original, registry.read_bytes())
+
     def test_disabled_service_does_not_hide_accumulated_bluetooth_devices(self):
         with tempfile.TemporaryDirectory() as temporary:
             prefix = self.write_registry(

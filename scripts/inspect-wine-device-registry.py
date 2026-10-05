@@ -240,7 +240,9 @@ def main() -> int:
         return 1
 
     if args.command == "plan":
-        print("\n".join(delete_keys))
+        # Bash mapfile treats even one blank line as a deletion target.
+        if delete_keys:
+            print("\n".join(delete_keys))
         return 0
 
     if args.command == "preflight":
