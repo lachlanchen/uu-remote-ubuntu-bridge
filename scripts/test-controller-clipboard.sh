@@ -190,18 +190,23 @@ done
 grep -q 'fixture clipboard ready' "$temporary_dir/gameviewer-fixture.log"
 expected=$'Mac controller 中文\nsecond line'
 observed=""
+observed_primary=""
 for _ in {1..80}; do
     observed="$(DISPLAY="$host_display" timeout 0.2 \
         xclip -selection clipboard -out 2>/dev/null || true)"
-    [[ "$observed" == "$expected" ]] && break
+    # The native helper starts CLIPBOARD and PRIMARY owners sequentially.
+    # Seeing CLIPBOARD is not yet proof that PRIMARY has taken ownership.
+    if [[ "$observed" == "$expected" ]]; then
+        observed_primary="$(DISPLAY="$host_display" timeout 0.5 \
+            xclip -selection primary -out 2>/dev/null || true)"
+        [[ "$observed_primary" == "$expected" ]] && break
+    fi
     sleep 0.05
 done
 [[ "$observed" == "$expected" ]] || {
     printf 'GameViewer-owned Unicode text did not reach X11 exactly\n' >&2
     exit 1
 }
-observed_primary="$(DISPLAY="$host_display" timeout 0.5 \
-    xclip -selection primary -out 2>/dev/null || true)"
 [[ "$observed_primary" == "$expected" ]] || {
     printf 'GameViewer-owned Unicode text did not reach PRIMARY exactly\n' >&2
     exit 1

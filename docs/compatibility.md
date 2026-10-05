@@ -16,6 +16,21 @@ remote input, account sign-in, or controller connectivity works.
 | SSH-only/headless server with no logged-in GNOME desktop | No desktop for this bridge to share |
 | Another desktop, distribution, or architecture | Not covered by the validated installation path |
 
+## Community ports under review
+
+The [5 October 2026 fork review](fork-review-20261005.md) covers all seven
+public forks, including 22.04 compatibility and a 26.04 preview. These are
+source-review findings, not an expansion of the accepted installation path.
+
+| Community work | Evidence boundary |
+| --- | --- |
+| Ubuntu 22.04 — bysanhz | Dependency and GNOME CLI compatibility changes; a focused rebase and live host acceptance are still needed |
+| Ubuntu 26.04 — cnsunfishegg | Experimental port and packaging; documented X11/Quickshell controller checks do not establish GNOME 50 Wayland or full input/reboot acceptance |
+
+The existing 24.04 preflight and accepted runtime remain unchanged. Consult the
+review for pinned fork sources, already merged contributions and scoped PR
+requests before trying a community port on a separate test machine.
+
 ## ARM VPS (issue #12)
 
 The reported Oracle VPS uses an aarch64 Neoverse-N1 CPU. The Ubuntu version and
