@@ -66,6 +66,15 @@ Local validation after the fix:
 - The production bridge stayed active with the same process and restart count.
   No end-to-end 22.04/26.04 test or production cleanup was attempted.
 
+The first PR CI run passed the unit suite but failed the existing isolated
+clipboard fixture's `PRIMARY` assertion. Review found that the helper publishes
+`CLIPBOARD` and `PRIMARY` sequentially, while the fixture waited for the first
+selection and read the second only once. The fixture now waits for both exact
+values within its existing bounded retry loop. Both assertions, owner-filter,
+failure-path and cleanup checks remain; no production clipboard code changed.
+The first failure's temporary runner files were not uploaded, so this identifies
+and fixes a real test race without claiming an exhaustive diagnosis of that run.
+
 ## Ubuntu 26.04: promising work, distinct acceptance still needed
 
 The fork's
