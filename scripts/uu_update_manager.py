@@ -1193,6 +1193,51 @@ class Manager:
         }
         self.queue_task("upstream-release", identity, details)
 
+    def vnc_relay_health(self, settings: dict[str, str]) -> tuple[list[str], int | None]:
+        """Inspect the configured relay, without requiring unused RDP processes."""
+        issues: list[str] = []
+        port = settings.get("UURB_DESKTOP_VNC_PORT", "")
+        shared = bool(port)
+        if not port:
+            log = Path.home() / ".local/state/uu-remote-bridge/desktop-x11vnc.log"
+            if log.is_file():
+                with log.open("rb") as stream:
+                    stream.seek(max(0, log.stat().st_size - 65536))
+                    tail = stream.read(65536).decode(errors="replace")
+                matches = re.findall(r"^PORT=(\d+)$", tail, re.M)
+                port = matches[-1] if matches else ""
+        if not port.isdigit() or not 5900 <= int(port) <= 5999:
+            return ["vnc-relay-port-unresolved"], None
+        port_number = int(port)
+        server_pattern = (
+            rf"^(/usr/bin/)?x11vnc .* -rfbport {port_number}( |$)"
+            if shared else r"^/usr/bin/x11vnc .* -autoport 5922( |$)"
+        )
+        server = command_output(
+            ["pgrep", "-u", str(os.getuid()), "-f", server_pattern], timeout=15
+        )
+        pids = {line.strip() for line in server.stdout.splitlines() if line.strip().isdigit()}
+        if server.returncode != 0 or not pids:
+            issues.append("vnc-server-missing")
+        else:
+            listener = command_output(
+                ["ss", "-H", "-ltnp", f"sport = :{port_number}"], timeout=15
+            )
+            if listener.returncode != 0 or not any(
+                f"127.0.0.1:{port_number}" in line.split()
+                and any(f"pid={pid}," in line for pid in pids)
+                for line in listener.stdout.splitlines()
+            ):
+                issues.append("vnc-listener-owner-mismatch")
+        viewer = command_output(
+            ["pgrep", "-u", str(os.getuid()), "-f",
+             rf"^/usr/bin/vncviewer .*127\.0\.0\.1:({port_number}|{port_number - 5900})( |$)"],
+            timeout=15,
+        )
+        if viewer.returncode != 0 or not viewer.stdout.strip():
+            issues.append("vnc-viewer-missing")
+        return issues, port_number
+
     def health(self) -> dict[str, Any]:
         issues: list[str] = []
         service = command_output(
@@ -1232,47 +1277,59 @@ class Manager:
             active_age_seconds is None or active_age_seconds <= 15 * 60
         ):
             issues.append("bridge-restart-storm")
-        for label, pattern in (
-            ("uu-server-missing", r"GameViewerServer\.exe"),
-            ("freerdp-relay-missing", r"sdl-freerdp\.exe"),
-        ):
+        bridge_environment = Path.home() / ".config/uu-remote-bridge/environment"
+        settings: dict[str, str] = {}
+        if bridge_environment.is_file():
+            for line in bridge_environment.read_text(encoding="utf-8").splitlines():
+                key, separator, value = line.partition("=")
+                if separator and key in {
+                    "UURB_RDP_PORT", "UURB_DESKTOP_RELAY", "UURB_DESKTOP_VNC_PORT"
+                }:
+                    settings[key] = value.strip()
+        desktop_relay = settings.get("UURB_DESKTOP_RELAY", "rdp")
+        rdp_port = settings.get("UURB_RDP_PORT", "3390")
+        if not rdp_port.isdigit() or not 1024 <= int(rdp_port) <= 65535:
+            rdp_port = "3390"
+        processes = [("uu-server-missing", r"GameViewerServer\.exe")]
+        if desktop_relay == "rdp":
+            processes.append(("freerdp-relay-missing", r"sdl-freerdp\.exe"))
+        for label, pattern in processes:
             process = command_output(
                 ["pgrep", "-u", str(os.getuid()), "-f", pattern], timeout=15
             )
             if process.returncode != 0:
                 issues.append(label)
 
-        bridge_environment = Path.home() / ".config/uu-remote-bridge/environment"
-        rdp_port = "3390"
-        if bridge_environment.is_file():
-            for line in bridge_environment.read_text(encoding="utf-8").splitlines():
-                if line.startswith("UURB_RDP_PORT="):
-                    candidate = line.split("=", 1)[1].strip()
-                    if candidate.isdigit() and 1024 <= int(candidate) <= 65535:
-                        rdp_port = candidate
-        relay = command_output(
-            [
-                "pgrep",
-                "-u",
-                str(os.getuid()),
-                "-f",
-                f"gnome-remote-desktop-daemon --rdp-port {rdp_port}",
-            ],
-            timeout=15,
-        )
-        relay_pids = {
-            line.strip()
-            for line in relay.stdout.splitlines()
-            if line.strip().isdigit()
-        }
-        if relay.returncode != 0 or not relay_pids:
-            issues.append("gnome-rdp-relay-missing")
-        else:
-            listener = command_output(
-                ["ss", "-H", "-ltnp", f"sport = :{rdp_port}"], timeout=15
+        vnc_port = None
+        if desktop_relay == "vnc":
+            relay_issues, vnc_port = self.vnc_relay_health(settings)
+            issues.extend(relay_issues)
+        elif desktop_relay == "rdp":
+            relay = command_output(
+                [
+                    "pgrep",
+                    "-u",
+                    str(os.getuid()),
+                    "-f",
+                    f"gnome-remote-desktop-daemon --rdp-port {rdp_port}",
+                ],
+                timeout=15,
             )
-            if not any(f"pid={pid}," in listener.stdout for pid in relay_pids):
-                issues.append("rdp-listener-owner-mismatch")
+            relay_pids = {
+                line.strip()
+                for line in relay.stdout.splitlines()
+                if line.strip().isdigit()
+            }
+            if relay.returncode != 0 or not relay_pids:
+                issues.append("gnome-rdp-relay-missing")
+            else:
+                listener = command_output(
+                    ["ss", "-H", "-ltnp", f"sport = :{rdp_port}"], timeout=15
+                )
+                if not any(f"pid={pid}," in listener.stdout for pid in relay_pids):
+                    issues.append("rdp-listener-owner-mismatch")
+        else:
+            issues.append("unsupported-desktop-relay")
 
         manifest = (
             Path.home()
@@ -1287,6 +1344,8 @@ class Manager:
             "restart_count": restart_count,
             "active_age_seconds": active_age_seconds,
             "rdp_port": int(rdp_port),
+            "desktop_relay": desktop_relay,
+            "vnc_port": vnc_port,
         }
 
     def restart_bridge(self) -> dict[str, Any]:

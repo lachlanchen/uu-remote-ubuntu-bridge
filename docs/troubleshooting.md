@@ -404,8 +404,11 @@ confirm that mismatch, enable the opt-in process-local filter:
 
 The verifier must report `default -> INTERFACE`. The setting is resolved at
 service start and the existing supervisor compares it with Ubuntu's preferred
-interface every ten seconds. A genuine change causes one complete relay
-restart on the new route; no second loop or service is added. It is fail-open
+interface about every ten seconds. Three consecutive checks must agree on the
+same replacement interface before a complete relay restart on the new route;
+an absent route or return to the original interface clears the pending change.
+This reduces restarts from brief route fluctuations; no second loop or service
+is added. It is fail-open
 if no usable default exists, and it does not modify host routes or other
 applications. To restore UU's original all-adapter view:
 

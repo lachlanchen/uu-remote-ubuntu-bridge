@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -886,6 +887,93 @@ class UpdateManagerTests(unittest.TestCase):
                 f"{os.getuid()}/bus",
                 first_command,
             )
+
+    def vnc_health(self, listener=None, *, server=True, viewer=True, port="5922"):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = root / "home"
+            environment = home / ".config/uu-remote-bridge/environment"
+            environment.parent.mkdir(parents=True)
+            environment.write_text(
+                "UURB_DESKTOP_RELAY=vnc\n" +
+                (f"UURB_DESKTOP_VNC_PORT={port}\n" if port is not None else "")
+            )
+            manifest = home / ".local/share/wineprefixes/uu-remote/compat/release-manifest.json"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text("{}\n")
+            if port is None:
+                log = home / ".local/state/uu-remote-bridge/desktop-x11vnc.log"
+                log.parent.mkdir(parents=True)
+                log.write_text("PORT=5922\nPORT=5923\n")
+            selected = "5923" if port is None else port
+            if listener is None:
+                listener = f'LISTEN 0 10 127.0.0.1:{selected} *:* users:(("x11vnc",pid=103,fd=15))\n'
+            commands = []
+
+            def output(command, **kwargs):
+                commands.append(command)
+                if "show" in command:
+                    value = "ActiveState=active\nNRestarts=0\nActiveEnterTimestampMonotonic=1000000000\n"
+                elif command[0] == "ss":
+                    value = listener
+                elif command[0] == "pgrep":
+                    pattern = command[-1]
+                    self.assertNotIn("freerdp", pattern)
+                    self.assertNotIn("gnome-remote-desktop", pattern)
+                    if "x11vnc" in pattern:
+                        value = "103\n" if server else ""
+                    elif "vncviewer" in pattern:
+                        value = "104\n" if viewer else ""
+                    else:
+                        self.assertIn("GameViewerServer", pattern)
+                        value = "101\n"
+                else:
+                    raise AssertionError(f"Unexpected command: {command}")
+                return subprocess.CompletedProcess(command, 0 if value else 1, value, "")
+
+            with patch.object(Path, "home", return_value=home), patch(
+                "uu_update_manager.command_output", side_effect=output
+            ), patch("uu_update_manager.time.monotonic", return_value=10_000):
+                result = Manager(self.config(root / "state")).health()
+            return result, commands
+
+    def test_health_accepts_vnc_without_unused_rdp_processes(self) -> None:
+        result, commands = self.vnc_health()
+        self.assertTrue(result["healthy"], result)
+        self.assertEqual(result["desktop_relay"], "vnc")
+        self.assertEqual(result["vnc_port"], 5922)
+        pattern = next(c[-1] for c in commands if c[0] == "pgrep" and "vncviewer" in c[-1])
+        for address in ["127.0.0.1:5922", "127.0.0.1:22"]:
+            self.assertRegex(f"/usr/bin/vncviewer -FullScreen {address}", pattern)
+        self.assertIsNone(re.search(pattern, "/usr/bin/vncviewer 127.0.0.1:5923"))
+
+    def test_vnc_health_rejects_wrong_owner_or_nonloopback_listener(self) -> None:
+        for listener in [
+            'LISTEN 0 10 127.0.0.1:5922 *:* users:(("other",pid=999,fd=15))\n',
+            'LISTEN 0 10 0.0.0.0:5922 *:* users:(("x11vnc",pid=103,fd=15))\n',
+            'LISTEN 0 10 127.0.0.1:5923 *:* users:(("x11vnc",pid=103,fd=15))\n',
+            '',
+        ]:
+            with self.subTest(listener=listener):
+                result, _ = self.vnc_health(listener)
+                self.assertIn("vnc-listener-owner-mismatch", result["issues"])
+                self.assertFalse(result["healthy"])
+
+    def test_vnc_health_detects_missing_server_or_viewer(self) -> None:
+        for missing in ["server", "viewer"]:
+            with self.subTest(missing=missing):
+                result, _ = self.vnc_health(**{missing: False})
+                self.assertIn(f"vnc-{missing}-missing", result["issues"])
+                self.assertFalse(result["healthy"])
+
+    def test_vnc_health_reads_latest_managed_port_and_rejects_invalid_ports(self) -> None:
+        result, _ = self.vnc_health(port=None)
+        self.assertTrue(result["healthy"], result)
+        self.assertEqual(result["vnc_port"], 5923)
+        for port in ["invalid", "59000", "22"]:
+            with self.subTest(port=port):
+                result, _ = self.vnc_health(port=port)
+                self.assertIn("vnc-relay-port-unresolved", result["issues"])
 
     def test_indeterminate_service_probe_never_restarts_or_reinstalls(self) -> None:
         class IndeterminateManager(Manager):

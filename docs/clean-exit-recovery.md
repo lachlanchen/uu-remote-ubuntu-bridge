@@ -36,6 +36,51 @@ claim an OOM, a vendor crash, or lost login without separate evidence.
 This closes the verified restart gap; it cannot guarantee connectivity during
 power loss, provider outages, invalid credentials, or physical network failure.
 
+## Brief route changes (October 2026)
+
+A subsequent outage matched two NetworkManager default-route changes:
+Ethernet to Wi-Fi, then back about two minutes later. The bridge's own logs
+identified both restarts as route-change requests, and systemd recovered the
+service normally. That evidence identifies the immediate interruption trigger;
+it does not identify why the upstream route changed or establish a vendor crash.
+Another observed transition lasted about one minute. NetworkManager reported
+site/local connectivity followed by global connectivity, without a matching
+kernel Ethernet link-down event. Do not infer a bad cable or disable network
+connectivity checks from that evidence alone.
+
+With `UURB_NETWORK_INTERFACE=default`, the existing supervisor now requires the
+same replacement interface for **three consecutive route checks** before
+restarting. Checks retain their existing cadence (40 supervisor iterations,
+nominally about ten seconds). An absent route, failed route probe, return to
+the original interface, or a different candidate resets the pending decision.
+This suppresses short flaps but adds roughly two check intervals before a
+genuine switch. A sustained outage or the two-minute incident can still require
+a reconnect. Explicit adapter selection and `all` mode are unchanged.
+
+No extra watcher, connectivity probe, routing rule, account change or desktop
+restart is required by this guard. Tests run the actual Bash decision function
+against synthetic route sequences. They do not interrupt production networking.
+If the launcher is atomically staged while UU is connected, the running Bash
+supervisor keeps its old function until the next normal bridge start. Record
+that deferred activation; do not rewrite the full runtime digest or describe
+the staged fix as already live.
+
+## Maintenance checks for a shared VNC desktop
+
+The updater's health check must follow `UURB_DESKTOP_RELAY`, just as the runtime
+verifier does. Previously it always required FreeRDP and GNOME RDP processes,
+which could classify a working VNC relay as unhealthy. VNC mode now checks the
+configured x11vnc process, its owned loopback listener, and a viewer connected
+to that port. For a bridge-managed VNC server it reads the last reported port
+from the bounded tail of the relay log. Missing processes, wrong listener
+ownership, non-loopback binding, or unresolved ports remain failures.
+
+This changes diagnostics only. It does not switch relay modes, alter the
+default no-restart maintenance policy, or prove client keyboard/clipboard
+acceptance without a real client test. The RDP checks remain in use for RDP
+mode. Updating the standalone maintenance helper takes effect on its next
+invocation and does not require restarting the working UU desktop.
+
 ## Recovery and checks
 
 ```bash

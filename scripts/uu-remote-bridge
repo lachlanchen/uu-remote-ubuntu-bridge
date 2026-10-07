@@ -350,6 +350,26 @@ default_network_interface() {
         ' | /usr/bin/sort -n -k1,1 | /usr/bin/awk 'NR == 1 {print $2}'
 }
 
+# Called by the existing supervisor once per route check. Its pending variables
+# are local to supervise_server (Bash dynamic scope), not persistent state.
+# Do not tear down a working desktop for one transient NetworkManager decision.
+route_change_requires_restart() {
+    local candidate="$1"
+
+    if [[ -z "$candidate" || "$candidate" == "$active_network_interface" ]]; then
+        pending_network_interface=""
+        pending_network_checks=0
+        return 1
+    fi
+    if [[ "$candidate" == "$pending_network_interface" ]]; then
+        pending_network_checks=$((pending_network_checks + 1))
+    else
+        pending_network_interface="$candidate"
+        pending_network_checks=1
+    fi
+    ((pending_network_checks >= 3))
+}
+
 resolve_cursor_size() {
     local -a display_environment
     local detected=""
@@ -1527,6 +1547,8 @@ supervise_server() {
     local health_checks=0
     local missing_checks=0
     local network_route_checks=0
+    local pending_network_interface=""
+    local pending_network_checks=0
     local current_desktop_resolution
     local pending_resolution=""
     local pending_resolution_checks=0
@@ -1605,11 +1627,9 @@ supervise_server() {
             network_route_checks=$((network_route_checks + 1))
             if ((network_route_checks >= 40)); then
                 network_route_checks=0
-                current_default_interface="$(default_network_interface)"
-                if [[ -n "$current_default_interface" && \
-                      "$current_default_interface" != \
-                      "$active_network_interface" ]]; then
-                    log "Default network interface changed from $active_network_interface to $current_default_interface; restarting UU on the preferred route."
+                current_default_interface="$(default_network_interface || true)"
+                if route_change_requires_restart "$current_default_interface"; then
+                    log "Default network interface changed from $active_network_interface to $current_default_interface for 3 consecutive checks; restarting UU on the preferred route."
                     return 1
                 fi
             fi
