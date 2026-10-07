@@ -10,6 +10,7 @@ if [[ $# == 0 || ${1:-} == -h || ${1:-} == --help ]]; then
         '       uu-shell --lazy PEER [SSH arguments...]' \
         '       uu-shell --native PEER [UU terminal options...]' \
         '       uu-shell --list' \
+        '       uu-shell --check PEER' \
         'Example: uu-shell lab' \
         'Uses the transport explicitly selected by uu-ssh add.' \
         'Native UU Terminal requests a fresh session by default.' \
@@ -25,5 +26,6 @@ case "$1" in
     --lazy) shift; exec "$helper" fleet-shell "$@" ;;
     --native) shift; exec "$helper" native-shell "$@" ;;
     --list) shift; exec "$helper" list "$@" ;;
+    --check) shift; exec "$helper" check "$@" ;;
 esac
 exec "$helper" shell "$@"

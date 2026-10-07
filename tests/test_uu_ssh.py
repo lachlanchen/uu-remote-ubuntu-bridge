@@ -6,9 +6,13 @@ import importlib.machinery
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
+import signal
 import subprocess
+import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -239,7 +243,7 @@ class UUSSHTests(unittest.TestCase):
         connection = mock.MagicMock()
         connection.__enter__.return_value.recv.return_value = b"SSH-2.0-OpenSSH\r\n"
         with mock.patch.object(helper.socket, "create_connection", return_value=connection):
-            with mock.patch.object(helper.subprocess, "run", return_value=argparse.Namespace(returncode=0)) as run:
+            with mock.patch.object(helper, "run_check_command", return_value=0) as run:
                 with contextlib.redirect_stdout(io.StringIO()):
                     self.assertEqual(helper.check("lab"), 0)
                 command = run.call_args.args[0]
@@ -251,14 +255,14 @@ class UUSSHTests(unittest.TestCase):
                 self.assertIn("ConnectionAttempts=1", command)
                 self.assertIn("NumberOfPasswordPrompts=0", command)
                 self.assertEqual(command[-2:], ["uu-lab", "hostname; id -un; uname -s"])
-                self.assertEqual(run.call_args.kwargs["timeout"], 15)
+                self.assertEqual(run.call_args.args[1], 15)
 
     def test_jump_host_check_skips_local_socket_probe(self):
         self.args.via_ssh_host = "glassagent-mac"
         self.args.shell_transport = "ssh"
         self.add_peer()
         with mock.patch.object(helper.socket, "create_connection") as connect:
-            with mock.patch.object(helper.subprocess, "run", return_value=argparse.Namespace(returncode=0)) as run:
+            with mock.patch.object(helper, "run_check_command", return_value=0) as run:
                 with contextlib.redirect_stdout(io.StringIO()) as output:
                     self.assertEqual(helper.check("lab"), 0)
                 connect.assert_not_called()
@@ -308,12 +312,66 @@ class UUSSHTests(unittest.TestCase):
         connection = mock.MagicMock()
         connection.__enter__.return_value.recv.return_value = b"SSH-2.0-OpenSSH\r\n"
         with mock.patch.object(helper.socket, "create_connection", return_value=connection):
-            with mock.patch.object(helper.subprocess, "run", side_effect=subprocess.TimeoutExpired("ssh", 15)) as run:
+            with mock.patch.object(helper, "run_check_command", side_effect=subprocess.TimeoutExpired("ssh", 15)) as run:
                 with mock.patch.object(helper.os, "execv") as execute:
                     with contextlib.redirect_stdout(io.StringIO()), self.assertRaisesRegex(ValueError, "timed out after 15 seconds"):
                         helper.check("lab")
                     self.assertEqual(run.call_count, 1)
                     execute.assert_not_called()
+
+    def test_fleet_timeout_is_actionable_without_fallback(self):
+        with mock.patch.object(helper, "load", return_value={"shell_transport": "lazytunnel"}), \
+             mock.patch.object(helper, "fleet_command", return_value=["fake-ssh"]), \
+             mock.patch.object(helper, "run_check_command", side_effect=subprocess.TimeoutExpired("fake-ssh", 45)) as run, \
+             mock.patch.object(helper, "terminal") as native:
+            with contextlib.redirect_stdout(io.StringIO()), self.assertRaisesRegex(ValueError, "LazyTunnel SSH.*45 seconds"):
+                helper.check("lab")
+            run.assert_called_once_with(["fake-ssh"], 45)
+            native.assert_not_called()
+
+
+class BoundedCheckTests(unittest.TestCase):
+    def test_preserves_nonzero_status(self):
+        self.assertEqual(helper.run_check_command([sys.executable, "-c", "raise SystemExit(7)"], 5), 7)
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "uses procfs to distinguish a killed child from a zombie")
+    def test_timeout_cleans_proxy_descendant_but_not_unrelated_process(self):
+        with tempfile.TemporaryDirectory(prefix="uu-check-timeout-") as folder:
+            ready = Path(folder) / "child.pid"
+            child = ("import os,signal,time;from pathlib import Path;"
+                     "signal.signal(signal.SIGTERM,signal.SIG_IGN);"
+                     f"Path({str(ready)!r}).write_text(str(os.getpid()));time.sleep(60)")
+            parent = (f"import subprocess,sys,time;subprocess.Popen([sys.executable,'-c',{child!r}]);"
+                      "time.sleep(60)")
+            unrelated = subprocess.Popen([sys.executable, "-c", "import time;time.sleep(60)"], start_new_session=True)
+            try:
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    helper.run_check_command([sys.executable, "-c", parent], 1)
+                self.assertIsNone(unrelated.poll())
+                self.assertTrue(ready.exists())
+                pid = int(ready.read_text())
+                deadline = time.monotonic() + 2
+                while time.monotonic() < deadline:
+                    stat = Path(f"/proc/{pid}/stat")
+                    if not stat.exists() or stat.read_text().split(") ", 1)[1].startswith("Z"):
+                        break
+                    time.sleep(.02)
+                else:
+                    os.kill(pid, signal.SIGKILL)
+                    self.fail("timed-out SSH proxy remained running")
+            finally:
+                unrelated.terminate()
+                unrelated.wait(timeout=5)
+
+    def test_keyboard_interrupt_cleans_only_its_group(self):
+        process = mock.Mock(pid=12345)
+        process.wait.side_effect = [KeyboardInterrupt(), 0, 0]
+        with mock.patch.object(helper.subprocess, "Popen", return_value=process) as start, \
+             mock.patch.object(helper.os, "killpg") as kill:
+            with self.assertRaises(KeyboardInterrupt):
+                helper.run_check_command(["fake-ssh"], 45)
+            start.assert_called_once_with(["fake-ssh"], start_new_session=True)
+            self.assertEqual(kill.call_args_list, [mock.call(12345, signal.SIGTERM), mock.call(12345, signal.SIGKILL)])
 
 
 if __name__ == "__main__":

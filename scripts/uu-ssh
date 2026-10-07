@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -206,12 +207,48 @@ def add(args):
     print(f"Public key to authorize on the peer: {key}.pub")
 
 
+def run_check_command(command, timeout):
+    """Bound only this diagnostic, including its nested OpenSSH proxy processes."""
+    process = subprocess.Popen(command, start_new_session=True)
+    try:
+        return process.wait(timeout=timeout)
+    except (subprocess.TimeoutExpired, KeyboardInterrupt):
+        # A ProxyCommand can outlive its parent SSH process. Own a fresh process
+        # group rather than killing by executable name or touching any carrier.
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            pass
+        finally:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait()
+        raise
+
+
+def checked_route(peer, command, timeout, transport):
+    try:
+        return run_check_command(command, timeout)
+    except subprocess.TimeoutExpired as error:
+        raise ValueError(
+            f"uu-{peer}: {transport} authentication/command check timed out after {timeout} seconds. "
+            "Only this diagnostic and its SSH proxies were stopped; existing shells, "
+            "carriers and desktops were left running. No transport fallback was attempted."
+        ) from error
+
+
 def check(peer):
     profile = load(peer)
     if profile_route(profile)[1] == "lazytunnel":
         command = fleet_command(profile.get("fleet_peer", peer), ["-o", "BatchMode=yes", "hostname"])
         print(f"uu-{peer}: checking the explicitly selected LazyTunnel SSH route", flush=True)
-        return subprocess.run(command, timeout=45).returncode
+        return checked_route(peer, command, 45, "LazyTunnel SSH")
     if "port" not in profile:
         raise ValueError("no UU port mapping is configured; this profile has native Terminal only")
     via_ssh_host, _ = profile_route(profile)
@@ -235,19 +272,13 @@ def check(peer):
                 "Coordinate mapping activation separately; do not restart the desktop."
             ) from error
         print(f"uu-{peer}: SSH transport responds; checking key authentication", flush=True)
-    try:
-        return subprocess.run([
+    return checked_route(peer, [
             "ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes",
             "-o", "PreferredAuthentications=publickey", "-o", "ForwardAgent=no",
             "-o", "ClearAllForwardings=yes", "-o", "ConnectionAttempts=1",
             "-o", "NumberOfPasswordPrompts=0", "-o", "ConnectTimeout=5",
             f"uu-{peer}", "hostname; id -un; uname -s",
-        ], timeout=15).returncode
-    except subprocess.TimeoutExpired as error:
-        raise ValueError(
-            f"uu-{peer}: SSH authentication/command check timed out after 15 seconds. "
-            "Only this diagnostic process was stopped; no UU recovery or desktop action was taken."
-        ) from error
+        ], 15, "mapped SSH")
 
 
 def terminal(peer_name, options, fresh_by_default=False):
@@ -357,7 +388,7 @@ def main():
     p = sub.add_parser("native-shell", help="explicit fresh native UU terminal")
     p.add_argument("peer", type=name)
     p.add_argument("options", nargs=argparse.REMAINDER)
-    p = sub.add_parser("check", help="check mapped SSH and key authentication")
+    p = sub.add_parser("check", help="check the selected LazyTunnel or mapped SSH route and key authentication")
     p.add_argument("peer", type=name)
     p = sub.add_parser("terminal", help="UU native Terminal (requires terminal patch on peer)")
     p.add_argument("peer", type=name)
@@ -419,6 +450,9 @@ def main():
 if __name__ == "__main__":
     try:
         sys.exit(main())
+    except KeyboardInterrupt:
+        print("uu-ssh: cancelled", file=sys.stderr)
+        sys.exit(130)
     except (OSError, ValueError, argparse.ArgumentTypeError,
             subprocess.CalledProcessError) as error:
         print(f"uu-ssh: {error}", file=sys.stderr)

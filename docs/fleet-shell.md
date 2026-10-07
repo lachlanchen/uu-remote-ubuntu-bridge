@@ -11,6 +11,7 @@ uu-shell lab                 # transport selected in the private profile
 uu-shell --lazy lab          # explicitly use enrolled LazyTunnel SSH
 uu-shell --lazy lab hostname
 uu-shell --native lab        # explicitly use UU's vendor terminal
+uu-shell --check lab         # bounded SSH health check (Linux/macOS)
 ```
 
 The LazyTunnel route prints `uu-shell: LazyTunnel SSH -> lab` on stderr. It uses
@@ -123,3 +124,50 @@ session flags instead of silently ignoring them. No vendor binary, version
 check, controller-ownership gate, or healthy desktop was patched to conceal a
 failed compatibility test. Offline devices require a reachable powered-on
 endpoint before shell acceptance or enrollment can be completed.
+
+## Recheck and bounded diagnostics — 7 October 2026
+
+The initial check reached all eight enrolled devices from the Ubuntu controller
+and returned their expected hostnames (about 0.75–2.01 seconds). The second
+Ubuntu could also reach the controller. An allocated SSH PTY returned Chinese,
+Japanese and punctuation correctly and preserved an intentional `exit 7`.
+An SCP archive upload and download also matched SHA-256 byte for byte.
+Later checks encountered intermittent setup delays, including one SSH banner
+timeout and a command probe stopped at 65 seconds. Subsequent checks passed.
+The cloud relay was running, and the second Ubuntu had normal CPU/memory load.
+These observations do not establish the cause of that intermittent delay or
+prove uninterrupted network availability.
+
+The native UU checks gave a different result. Session enumeration returned
+`No active sessions`, but creating a terminal returned `Client version too low`
+with status 6. Both Ubuntu installations reported **4.42.0.2770**. A successful
+session-list query is therefore not a terminal acceptance test, and that
+generic error alone does not prove that an application upgrade is necessary.
+Both installed local Linux PTY brokers independently produced exact Chinese,
+Japanese and symbol output, then closed the disposable shell normally. That
+isolates the observed rejection to vendor terminal startup before the working
+Linux adapter is reached; the exact vendor compatibility condition remains
+unverified. LazyTunnel remains the explicit default for enrolled profiles.
+
+On Linux/macOS, use a bounded check without opening a UU desktop or terminal:
+
+```sh
+uu-shell --check lab
+# Equivalent:
+uu-ssh check lab
+```
+
+The existing fleet-check timeout used to raise an uncaught Python exception.
+Its `subprocess.run` timeout could also leave a nested OpenSSH proxy behind.
+The check now owns a separate process group, reports a concise timeout, and
+stops only its diagnostic and proxies on timeout or Ctrl+C. Deadlines remain
+45 seconds for fleet SSH and 15 seconds for mapped-SSH authentication/command
+checks (plus at most two seconds for cleanup). Interactive shells have no such
+deadline; their transport, signals and SSH exit status remain unchanged.
+There is no retry loop, carrier restart, fallback or desktop takeover.
+
+Regression tests include a real sleeping proxy child that ignores SIGTERM,
+an unrelated process that must remain alive, status 7, and cancellation. This
+is a shell-helper-only update with private rollback copies. It is not a full
+UU binary promotion or a repair of the vendor's native terminal compatibility
+gate. Existing accepted desktop/runtime fingerprints remain untouched.

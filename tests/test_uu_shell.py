@@ -65,6 +65,11 @@ class UUShellTests(unittest.TestCase):
             with self.subTest(relative=relative):
                 self.assertIn("uu-shell", (ROOT / relative).read_text())
 
+    def test_check_delegates_without_opening_a_terminal(self):
+        result = self.run_shell("--check", "lab")
+        self.assertEqual(result.returncode, 17)
+        self.assertEqual(result.stdout.split(b"\0")[:-1], [b"check", b"lab"])
+
 
 if __name__ == "__main__":
     unittest.main()
