@@ -138,7 +138,8 @@ The cloud relay was running, and the second Ubuntu had normal CPU/memory load.
 These observations do not establish the cause of that intermittent delay or
 prove uninterrupted network availability.
 
-The native UU checks gave a different result. Session enumeration returned
+The native UU checks from the Linux/Wine CLI gave a different result. Session
+enumeration returned
 `No active sessions`, but creating a terminal returned `Client version too low`
 with status 6. Both Ubuntu installations reported **4.42.0.2770**. A successful
 session-list query is therefore not a terminal acceptance test, and that
@@ -148,6 +149,8 @@ Japanese and symbol output, then closed the disposable shell normally. That
 isolates the observed rejection to vendor terminal startup before the working
 Linux adapter is reached; the exact vendor compatibility condition remains
 unverified. LazyTunnel remains the explicit default for enrolled profiles.
+This CLI result does not establish failure of every Windows/macOS/mobile UU
+GUI terminal client.
 
 On Linux/macOS, use a bounded check without opening a UU desktop or terminal:
 
