@@ -585,7 +585,8 @@ check, descriptor protection, and unattended boot dependency chain.
 ```bash
 uu-remote status
 uu-remote restart
-uu-remote stop
+uu-remote stop        # quit completely: stops UU and frees its memory (until the next `uu-remote open`)
+uu-remote autostart [on|off|status]  # start the background service at login or not
 uu-remote logs
 uu-remote login       # one-time sign-in or account recovery on this desktop
 uu-remote repair-registry  # bounded repair for a “finding routes” cold-start stall
