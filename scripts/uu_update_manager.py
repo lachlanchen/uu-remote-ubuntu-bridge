@@ -44,6 +44,8 @@ REQUIRED_PROMOTION_ACCEPTANCE_FLAGS = (
 )
 MINIMUM_PROMOTION_STABILITY_SECONDS = 270
 MAXIMUM_PROMOTION_STABILITY_SECONDS = 1800
+SYSTEMD_RESTART_MESSAGE_ID = "5eb03494b6584870a536b337290809b3"
+RESTART_WINDOW_SECONDS = 15 * 60
 
 
 class UpdateError(RuntimeError):
@@ -1238,6 +1240,43 @@ class Manager:
             issues.append("vnc-viewer-missing")
         return issues, port_number
 
+    def recent_restart_count(self) -> int | None:
+        """Count actual recent restarts, never the lifetime NRestarts total.
+
+        Three journal records suffice for the storm threshold. Query only
+        this boot/unit/message and validate monotonic timestamps as well, so
+        old events and wall-clock changes cannot manufacture a storm.
+        """
+        try:
+            result = command_output(
+                [
+                    "journalctl", "--user", "--boot=0", "--since=-15min",
+                    "--no-pager", "--quiet", "--lines=3", "--output=json",
+                    "--output-fields=__MONOTONIC_TIMESTAMP,MESSAGE_ID,USER_UNIT",
+                    f"MESSAGE_ID={SYSTEMD_RESTART_MESSAGE_ID}",
+                    "USER_UNIT=uu-remote-bridge.service",
+                ],
+                timeout=15,
+            )
+            if result.returncode != 0:
+                return None
+            now = time.monotonic()
+            timestamps: set[int] = set()
+            for line in result.stdout.splitlines():
+                record = json.loads(line)
+                if (
+                    record.get("MESSAGE_ID") != SYSTEMD_RESTART_MESSAGE_ID
+                    or record.get("USER_UNIT") != "uu-remote-bridge.service"
+                ):
+                    continue
+                timestamp = int(record["__MONOTONIC_TIMESTAMP"])
+                if 0 <= now - timestamp / 1_000_000 <= RESTART_WINDOW_SECONDS:
+                    timestamps.add(timestamp)
+            return len(timestamps)
+        except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError, AttributeError):
+            # An unavailable journal is unknown evidence, not a restart storm.
+            return None
+
     def health(self) -> dict[str, Any]:
         issues: list[str] = []
         service = command_output(
@@ -1273,9 +1312,8 @@ class Manager:
         active_age_seconds = (
             max(0.0, time.monotonic() - active_since) if active_since else None
         )
-        if restart_count >= 3 and (
-            active_age_seconds is None or active_age_seconds <= 15 * 60
-        ):
+        recent_restarts = self.recent_restart_count()
+        if recent_restarts is not None and recent_restarts >= 3:
             issues.append("bridge-restart-storm")
         bridge_environment = Path.home() / ".config/uu-remote-bridge/environment"
         settings: dict[str, str] = {}
@@ -1342,6 +1380,8 @@ class Manager:
             "healthy": not issues,
             "issues": issues,
             "restart_count": restart_count,
+            "recent_restart_count": recent_restarts,
+            "restart_window_seconds": RESTART_WINDOW_SECONDS,
             "active_age_seconds": active_age_seconds,
             "rdp_port": int(rdp_port),
             "desktop_relay": desktop_relay,
@@ -2296,6 +2336,38 @@ class Manager:
         self.pending_path.unlink(missing_ok=True)
         self.write_status(phase, active_task=task["id"], message=message)
 
+    def retire_recovered_health_task(self, task: dict[str, Any]) -> bool:
+        """Recheck an unstarted repair before consuming agent quota later.
+
+        Retain evidence in task.json. Never abandon an agent's existing work
+        or a release/promotion, and never restart the desktop to recheck it.
+        """
+        if (
+            task.get("kind") != "runtime-health"
+            or task.get("attempts") != 0
+            or task.get("thread_id")
+        ):
+            return False
+        first = self.health()
+        if not first["healthy"] or first.get("recent_restart_count") is None:
+            return False
+        time.sleep(20)
+        confirmed = self.health()
+        if not confirmed["healthy"] or confirmed.get("recent_restart_count") is None:
+            return False
+        task["phase"] = "recovered-before-repair"
+        task["completed_at"] = utc_now()
+        task["recovery_health"] = confirmed
+        task.pop("next_retry_epoch", None)
+        self.save_task(task)
+        self.pending_path.unlink()
+        self.write_status(
+            "healthy", bridge_health=confirmed, active_task=None,
+            next_retry_at=None, recovered_task=task["id"],
+            message="unstarted runtime repair retired after two healthy checks; evidence retained",
+        )
+        return True
+
     def monitor(self) -> None:
         if self.recover_interrupted_promotion():
             return
@@ -2305,6 +2377,8 @@ class Manager:
             return
         if task.get("kind") == "approved-promotion":
             self.run_promotion(task)
+            return
+        if self.retire_recovered_health_task(task):
             return
         task_model = task.get("codex_model")
         if task_model and task_model != self.config.codex_model:

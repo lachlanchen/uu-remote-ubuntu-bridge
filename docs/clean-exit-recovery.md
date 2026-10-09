@@ -83,6 +83,53 @@ invocation and does not require restarting the working UU desktop.
 
 ## Recovery and checks
 
+### Already recovered: avoid repairing a healthy desktop
+
+On 2026-10-10 an operator reported UU unavailable, then reported it back before
+any service change. The same bridge PID had remained active since the previous
+day. Live IPC, exact patched-binary checks, account device listing, the shared
+desktop relay and input/clipboard helpers passed. There was no matching bridge
+restart, kernel OOM or logged default-interface change in the inspected window.
+The daily installer download had timed out separately. These observations do
+**not** establish a cause for the brief remote connection failure, or prove
+that an updater timeout took the desktop offline. Do not restart the working
+desktop or claim a network/hardware diagnosis from them.
+
+The investigation did establish a maintenance false positive: systemd's
+`NRestarts` had reached 12 over time, and a single restart the day before was
+classified as a storm simply because the service was young again. The resulting
+unstarted repair remained queued after the runtime recovered.
+
+- Keep `restart_count` as lifetime diagnostic information. Detect a storm only
+  from at least three scheduled-restart journal events in the last 15 minutes.
+  Match systemd's structured message ID, the exact user unit and current boot;
+  validate monotonic timestamps and read at most three records. The returned
+  `recent_restart_count` saturates at three. An unavailable journal is `null`,
+  never proof of a storm. Rotated or unavailable logs can miss a real storm;
+  service/process/listener failures are still checked independently.
+- Before resuming a queued `runtime-health` repair with zero attempts and no
+  agent thread, require two healthy probes 20 seconds apart with available
+  restart evidence. Mark it `recovered-before-repair`, retain its private
+  `tasks/<id>/task.json`, context and checkout, and remove only its pending queue
+  marker. Release tasks, promotions and already-started repair work remain.
+- Use the existing maintenance timer. This adds no background process and
+  does not restart UU, RDP, VNC, GNOME or the current desktop.
+
+The maintenance helper can be atomically updated while UU is connected; the
+next invocation uses the fix. Back up the helper and private state first. A
+successful local health probe is not a substitute for real-client mouse,
+Chinese dictation and clipboard acceptance, and cannot guarantee vendor or
+Internet availability.
+
+For this incident, the complete local suite passed (212 tests, two opt-in
+tests skipped). The deployed maintenance helper reported zero recent restarts
+and healthy relay components while the lifetime count remained 12. The daily
+update check succeeded on retry; the endpoint then reported a release older
+than the approved installed baseline, so it correctly skipped download and
+downgrade. No UU upgrade or runtime restart was needed.
+
+### Commands
+
 ```bash
 systemctl --user show uu-remote-bridge.service \
   -p ActiveState -p SubState -p Result -p ExecMainStatus -p NRestarts -p Restart

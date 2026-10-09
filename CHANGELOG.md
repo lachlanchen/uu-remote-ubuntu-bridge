@@ -8,6 +8,10 @@ locked by the release manifest.
 
 ### Fixed
 
+- detect restart storms from bounded, current-boot journal events within the
+  last 15 minutes, rather than treating systemd's lifetime restart total as a
+  recent failure; recheck unstarted runtime-health repairs after recovery and
+  retain their evidence without launching unnecessary repair agents
 - select the accepted UU 4.42.1.2835 manifest for fresh installs and preserve
   the installed manifest on ordinary reinstalls; download the moving vendor
   endpoint with one fresh, hash-verified request rather than resuming or mixing
