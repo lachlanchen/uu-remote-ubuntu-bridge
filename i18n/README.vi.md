@@ -22,9 +22,7 @@ Cầu nối thử nghiệm chạy ứng dụng Windows chính thức trong Wine 
 chia sẻ màn hình GNOME hiện có qua RDP cục bộ hoặc chuyển tiếp VNC cục bộ tùy
 chọn dành cho X11.
 
-Môi trường cơ sở là Ubuntu 24.04 x86-64, GNOME 46 và Wine 11. Cài đặt mới vẫn
-khóa ở UU `4.33.0.8907`; `4.42.1.2835` có manifest hash chính xác và hồ sơ nghiệm
-thu riêng. Công cụ không vá tệp nhị phân chưa biết.
+Môi trường cơ sở là Ubuntu 24.04 x86-64, GNOME 46 và Wine 11. Cài đặt mới dùng UU `4.42.1.2835` đã được kiểm chứng với mã băm chính xác và hồ sơ nghiệm thu. Cài lại thông thường giữ nguyên phiên bản đã cài. Công cụ không vá tệp nhị phân chưa biết.
 
 <!-- feature-status:start -->
 ## Những tính năng đang hoạt động
@@ -77,6 +75,8 @@ Thay `lab` bằng tên cấu hình của bạn. `--lazy` yêu cầu đăng ký L
 ```bash
 ./install.sh
 ```
+
+Bản cài đặt mới dùng manifest **4.42.1.2835** đã được kiểm chứng; cài lại thông thường giữ nguyên phiên bản đã cài. Liên kết FreeRDP nightly cố định hiện trả về lỗi 404, nên cài mới với RDP mặc định cần một tệp khách có sẵn với mã băm khớp hoàn toàn. Với màn hình X11/XRDP, dùng `./install.sh --desktop-relay vnc` để tránh phụ thuộc này. Xem [khôi phục tải xuống và dọn biểu tượng khởi chạy trùng lặp](../docs/fresh-install-recovery.md).
 
 Trình cài đặt có tính lặp an toàn sẽ cài các gói phụ thuộc, kiểm tra hash, biên
 dịch thành phần tương thích, cấu hình GNOME Remote Desktop, lưu mật khẩu RDP

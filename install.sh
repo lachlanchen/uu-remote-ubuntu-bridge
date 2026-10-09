@@ -6,6 +6,8 @@ umask 077
 repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/runtime-settings.sh
 source "$repo_dir/scripts/runtime-settings.sh"
+# shellcheck source=scripts/installer-download.sh
+source "$repo_dir/scripts/installer-download.sh"
 bridge_user="${USER:-$(id -un)}"
 wine_prefix="${WINEPREFIX:-$HOME/.local/share/wineprefixes/uu-remote}"
 config_dir="$HOME/.config/uu-remote-bridge"
@@ -23,7 +25,7 @@ systemctl_user=(
 )
 uu_dir="$wine_prefix/drive_c/Program Files/Netease/GameViewer"
 uu_bin="$uu_dir/bin"
-release_manifest="${UURB_RELEASE_MANIFEST:-$repo_dir/patches/uu-remote-4.33.0.8907.json}"
+release_manifest="${UURB_RELEASE_MANIFEST:-}"
 installed_manifest="$wine_prefix/compat/release-manifest.json"
 runtime_digest_file="$wine_prefix/compat/.runtime-source-sha256"
 server_exe=''
@@ -105,7 +107,8 @@ usage: ./install.sh [options]
   --check-host          read-only OS/CPU compatibility check; no installation
   --uu-installer PATH    use a previously downloaded audited installer
   --release-manifest PATH
-                         use an approved release manifest
+                         use an approved release manifest (fresh: 4.42.1.2835;
+                         ordinary reinstall: preserve the installed manifest)
   --rdp-port PORT        local GNOME RDP relay port (default: 3390)
   --resolution WxH       relay resolution (default: 1920x1080)
   --follow-desktop-resolution off|on
@@ -287,6 +290,8 @@ done
 if [[ "$check_host_only" == true ]]; then
     exit 0
 fi
+release_manifest="$(select_install_manifest "$release_manifest" \
+    "$installed_manifest" "$uu_dir/GameViewer.exe" "$repo_dir")"
 if [[ $EUID -eq 0 ]]; then
     printf 'Run this installer as the desktop user, not as root.\n' >&2
     exit 1
@@ -485,45 +490,6 @@ stop_wine_prefix() {
     "$repo_dir/scripts/stop-wine-prefix" "$wine_prefix" "$wineserver_bin"
 }
 
-download_verified() {
-    local url="$1"
-    local expected="$2"
-    local destination="$3"
-    local attempt
-
-    if [[ -f "$destination" ]] &&
-       printf '%s  %s\n' "$expected" "$destination" | sha256sum -c - \
-           >/dev/null 2>&1; then
-        return
-    fi
-
-    mkdir -p "$(dirname -- "$destination")"
-    for attempt in 1 2; do
-        if command -v aria2c >/dev/null 2>&1; then
-            aria2c --allow-overwrite=true --auto-file-renaming=false \
-                --continue=true --max-connection-per-server=8 \
-                --max-tries=5 --min-split-size=1M --retry-wait=2 --split=8 \
-                --dir="$(dirname -- "$destination")" \
-                --out="$(basename -- "$destination").part" "$url"
-        else
-            curl --continue-at - --fail --location --retry 3 \
-                --output "$destination.part" "$url"
-        fi
-        if printf '%s  %s\n' "$expected" "$destination.part" | \
-            sha256sum -c -; then
-            mv "$destination.part" "$destination"
-            rm -f "$destination.part.aria2"
-            return
-        fi
-        rm -f "$destination.part" "$destination.part.aria2"
-        printf 'download hash mismatch; retrying %s (%s/2)\n' \
-            "$url" "$attempt" >&2
-    done
-
-    printf 'download verification failed: %s\n' "$url" >&2
-    exit 1
-}
-
 if [[ "$skip_packages" == false ]]; then
     install_packages
 fi
@@ -573,6 +539,20 @@ export WINEPREFIX="$wine_prefix"
 export WINEDEBUG=-all
 export WINEDLLOVERRIDES='winedbg.exe=d;mscoree,mshtml='
 
+# Resolve required downloads before stopping an existing working bridge.
+if [[ ! -f "$uu_dir/GameViewer.exe" || "$upgrade_existing" == true ]]; then
+    if [[ -z "$uu_installer" ]]; then
+        uu_installer="$repo_dir/build/downloads/$uu_installer_filename"
+        download_verified "$uu_download_url" "$uu_installer_sha256" "$uu_installer"
+    else
+        uu_installer="$(realpath "$uu_installer")"
+    fi
+    printf '%s  %s\n' "$uu_installer_sha256" "$uu_installer" | sha256sum -c -
+fi
+if [[ "$desktop_relay" == rdp ]]; then
+    "$repo_dir/scripts/build-winpr.sh" --download-client-only
+fi
+
 bridge_was_active=false
 if [[ "$prefix_only" == false ]] &&
    "${systemctl_user[@]}" is-active --quiet uu-remote-bridge.service; then
@@ -614,16 +594,6 @@ if [[ ! -f "$uu_dir/GameViewer.exe" || "$upgrade_existing" == true ]]; then
     if [[ ! -f "$uu_dir/GameViewer.exe" ]]; then
         fresh_install=true
     fi
-    mkdir -p "$repo_dir/build/downloads"
-    if [[ -z "$uu_installer" ]]; then
-        uu_installer="$repo_dir/build/downloads/$uu_installer_filename"
-        download_verified "$uu_download_url" "$uu_installer_sha256" \
-            "$uu_installer"
-    else
-        uu_installer="$(realpath "$uu_installer")"
-    fi
-    printf '%s  %s\n' "$uu_installer_sha256" "$uu_installer" | \
-        sha256sum -c -
     mkdir -p "$wine_prefix"
     if [[ "$fresh_install" == true ]]; then
         "$wine_bin" wineboot -u
@@ -683,7 +653,9 @@ if [[ -e "$terminal_proxy_install" ]] &&
     printf 'Refusing to replace an unknown GameViewer bin/powershell.exe.\n' >&2
     exit 1
 fi
-install -m 0644 "$release_manifest" "$installed_manifest"
+if [[ ! "$release_manifest" -ef "$installed_manifest" ]]; then
+    install -m 0644 "$release_manifest" "$installed_manifest"
+fi
 install -m 0755 \
     "$compat_build/uu-cursor-guard.dll" \
     "$compat_build/uu-input-bridge.dll" \
@@ -865,6 +837,10 @@ if [[ -d "$HOME/Desktop" ]]; then
             >/dev/null 2>&1 || true
     fi
 fi
+# Wine's vendor shortcuts bypass the bridge environment. Archive only visible
+# UU entries proven to belong to this prefix; retain hidden protocol handlers.
+"$python_bin" "$repo_dir/scripts/archive-wine-launchers.py" \
+    --wine-prefix "$wine_prefix" --apply
 if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database "$HOME/.local/share/applications" \
         >/dev/null 2>&1 || true

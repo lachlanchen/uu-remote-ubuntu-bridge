@@ -22,10 +22,7 @@ Diese experimentelle Brücke startet den offiziellen Windows-Client in einem
 isolierten Wine-Präfix und teilt den bestehenden GNOME-Desktop über lokales RDP
 oder den optionalen lokalen VNC-Relay für X11.
 
-Die Basis ist x86-64 Ubuntu 24.04 mit GNOME 46 und Wine 11. Neuinstallationen
-bleiben auf UU `4.33.0.8907` festgelegt; für `4.42.1.2835` gibt es ein separates
-Manifest mit exakten Hashes und eigene Abnahmeprotokolle. Unbekannte Binärdateien
-werden nicht gepatcht.
+Die Basis ist x86-64 Ubuntu 24.04 mit GNOME 46 und Wine 11. Neuinstallationen verwenden das abgenommene UU `4.42.1.2835` mit exakten Hashes und Abnahmeprotokollen. Normale Neuinstallationen eines bestehenden Systems behalten dessen installierte Version. Unbekannte Binärdateien werden nicht gepatcht.
 
 <!-- feature-status:start -->
 ## Was funktioniert
@@ -78,6 +75,8 @@ scheitern. Kein stiller Transportwechsel oder Desktop-Takeover. [Details](../doc
 ```bash
 ./install.sh
 ```
+
+Neue Installationen verwenden das geprüfte Manifest **4.42.1.2835**; bei einer normalen Neuinstallation bleibt die installierte Version erhalten. Der festgelegte FreeRDP-Nightly-Link liefert derzeit 404. Eine neue Installation mit dem standardmäßigen RDP-Relay benötigt deshalb einen vorhandenen Client mit exakt passendem Hash. Für X11/XRDP-Desktops umgeht `./install.sh --desktop-relay vnc` diese Abhängigkeit. Siehe [Download-Reparatur und Bereinigung doppelter Starter](../docs/fresh-install-recovery.md).
 
 Das idempotente Installationsskript installiert Abhängigkeiten, prüft alle
 Artefakte, kompiliert die Kompatibilitätskomponenten, richtet GNOME Remote

@@ -8,6 +8,16 @@ locked by the release manifest.
 
 ### Fixed
 
+- select the accepted UU 4.42.1.2835 manifest for fresh installs and preserve
+  the installed manifest on ordinary reinstalls; download the moving vendor
+  endpoint with one fresh, hash-verified request rather than resuming or mixing
+  ranged downloads (#15)
+- check required installer/FreeRDP client downloads before stopping the bridge;
+  explain pruned Jenkins artifacts and support an exact-hash local FreeRDP
+  client override; the durable default RDP download remains unresolved (#16)
+- archive only visible vendor shortcuts proven to belong to the selected Wine
+  prefix, including their paired Desktop links; keep the canonical launcher,
+  hidden protocol handlers and other prefixes untouched (#17)
 - avoid downloading or installing unused FreeRDP/libei dependencies for the
   VNC relay; an expired pinned nightly URL no longer blocks VNC-only refreshes
 - add an opt-in, owner-filtered X11 host-to-Wine text clipboard return path;

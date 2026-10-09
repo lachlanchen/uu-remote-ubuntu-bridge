@@ -10,7 +10,7 @@
 
 [![Ubuntu 24.04](https://img.shields.io/badge/Ubuntu-24.04-E95420?logo=ubuntu&logoColor=white)](https://ubuntu.com/)
 [![GNOME 46](https://img.shields.io/badge/GNOME-46-4A86CF?logo=gnome&logoColor=white)](https://www.gnome.org/)
-[![UU Remote](https://img.shields.io/badge/UU_Remote-4.33.0.8907-00A870)](https://uuyc.163.com/)
+[![UU Remote](https://img.shields.io/badge/UU_Remote-4.42.1.2835-00A870)](https://uuyc.163.com/)
 [![Wine 11](https://img.shields.io/badge/Wine-11.0-800000?logo=wine&logoColor=white)](https://www.winehq.org/)
 [![Patch policy](https://img.shields.io/badge/Patches-fail--closed-1F883D)](docs/security.md)
 [![License MIT](https://img.shields.io/badge/License-MIT-2F81F7)](LICENSE)
@@ -79,7 +79,8 @@ silent fallback or desktop takeover. See [fleet shell details](docs/fleet-shell.
 
 > This is not a native UU Linux port and is not affiliated with NetEase. The
 > default fresh-install manifest is intentionally locked to UU Remote
-> `4.33.0.8907`. Newer releases have separate exact-hash manifests.
+> `4.42.1.2835`. A plain reinstall preserves the installed manifest; other
+> releases require an explicit exact-hash manifest.
 
 The [4.42.1.2835 workstation upgrade](docs/releases/4.42.1.2835-acceptance.md)
 passed physical-desktop video, mouse, English typing, bidirectional Chinese
@@ -147,6 +148,8 @@ Run from the logged-in Ubuntu GNOME desktop session:
 ```bash
 ./install.sh
 ```
+
+Fresh installs use the accepted **4.42.1.2835** manifest; ordinary reinstalls preserve the installed release. The pinned FreeRDP nightly currently returns 404, so a fresh default RDP install needs an existing exact-hash client. For an X11/XRDP desktop, `./install.sh --desktop-relay vnc` avoids that dependency. See [download recovery and duplicate-launcher cleanup](docs/fresh-install-recovery.md).
 
 The one installer:
 

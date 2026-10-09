@@ -21,9 +21,7 @@
 这个实验性桥接器在独立 Wine 前缀中运行官方 Windows 客户端，通过本机 RDP
 中继或 X11 上可选的本机 VNC 中继共享现有 GNOME 桌面。
 
-基础环境为 x86-64 Ubuntu 24.04、GNOME 46 和 Wine 11。全新安装仍锁定
-UU `4.33.0.8907`；`4.42.1.2835` 有独立的精确哈希清单及验收记录。
-未知二进制文件会被拒绝，不会直接套用旧补丁。
+基础环境为 x86-64 Ubuntu 24.04、GNOME 46 和 Wine 11。全新安装使用已验收的 UU `4.42.1.2835`，并核对精确哈希及验收记录。普通重装保留已安装版本。未知二进制文件会被拒绝，不会直接套用旧补丁。
 
 UU 只从网易官方域名 [uuyc.163.com](https://uuyc.163.com/) 下载。官方页面
 目前没有列出 Linux 被控端；本桥使用官方 Windows 客户端并核对安装包完整哈希。
@@ -87,6 +85,8 @@ uu-shell --native lab
 ```bash
 ./install.sh
 ```
+
+全新安装使用已验收的 **4.42.1.2835** 清单；普通重装保留已安装版本。目前固定的 FreeRDP nightly 链接返回 404，因此全新默认 RDP 安装需要已有的、哈希完全匹配的客户端。对于 X11/XRDP 桌面，可用 `./install.sh --desktop-relay vnc` 避开此依赖。详见[下载恢复与重复启动器清理](../docs/fresh-install-recovery.md)。
 
 这个幂等安装脚本会安装依赖、校验上游文件、编译所有兼容组件、配置 GNOME
 Remote Desktop、把 RDP 密码保存到 GNOME Keyring，并启动用户级 systemd

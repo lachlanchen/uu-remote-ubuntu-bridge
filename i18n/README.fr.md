@@ -22,10 +22,7 @@ Cette passerelle expérimentale exécute le client Windows officiel dans un
 préfixe Wine isolé et partage le bureau GNOME existant par RDP local ou par le
 relais VNC local facultatif pour X11.
 
-La base est Ubuntu 24.04 x86-64, GNOME 46 et Wine 11. Les nouvelles installations
-restent fixées à UU `4.33.0.8907` ; `4.42.1.2835` dispose d'un manifeste distinct
-avec des empreintes exactes et de ses propres validations. Aucun binaire inconnu
-n'est modifié.
+La base est Ubuntu 24.04 x86-64, GNOME 46 et Wine 11. Les nouvelles installations utilisent UU `4.42.1.2835`, validé avec des empreintes exactes et des comptes rendus de tests. Une réinstallation ordinaire conserve la version installée. Aucun binaire inconnu n’est modifié.
 
 <!-- feature-status:start -->
 ## Ce qui fonctionne
@@ -78,6 +75,8 @@ silencieux ni prise de contrôle du bureau. [Détails](../docs/fleet-shell.md).
 ```bash
 ./install.sh
 ```
+
+Les nouvelles installations utilisent le manifeste validé **4.42.1.2835** ; une réinstallation ordinaire conserve la version installée. Le lien FreeRDP nightly fixé renvoie actuellement une erreur 404 : une nouvelle installation RDP nécessite donc un client existant dont le hash correspond exactement. Pour un bureau X11/XRDP, `./install.sh --desktop-relay vnc` évite cette dépendance. Voir la [récupération des téléchargements et le nettoyage des lanceurs en double](../docs/fresh-install-recovery.md).
 
 Le programme d'installation idempotent installe les dépendances, vérifie les
 artefacts, compile les composants de compatibilité, configure GNOME Remote

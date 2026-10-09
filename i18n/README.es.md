@@ -22,9 +22,7 @@ Este puente experimental ejecuta el cliente oficial de Windows en un prefijo
 Wine aislado y comparte el escritorio GNOME existente mediante RDP local o el
 enlace VNC local opcional para X11.
 
-La base es Ubuntu 24.04 x86-64, GNOME 46 y Wine 11. Las instalaciones nuevas
-siguen fijadas a UU `4.33.0.8907`; `4.42.1.2835` tiene su propio manifiesto de
-hashes exactos y registros de aceptación. Nunca se parchean binarios desconocidos.
+La base es Ubuntu 24.04 x86-64, GNOME 46 y Wine 11. Las instalaciones nuevas usan UU `4.42.1.2835`, validado con hashes exactos y registros de aceptación. Una reinstalación normal conserva la versión instalada. Nunca se parchean binarios desconocidos.
 
 <!-- feature-status:start -->
 ## Qué funciona
@@ -77,6 +75,8 @@ de transporte ni toma el escritorio de forma oculta. [Detalles](../docs/fleet-sh
 ```bash
 ./install.sh
 ```
+
+Las instalaciones nuevas usan el manifiesto validado **4.42.1.2835**; una reinstalación normal conserva la versión instalada. El enlace fijo de FreeRDP nightly devuelve actualmente 404, por lo que una instalación nueva con RDP necesita un cliente existente cuyo hash coincida exactamente. En escritorios X11/XRDP, `./install.sh --desktop-relay vnc` evita esa dependencia. Consulta la [recuperación de descargas y limpieza de lanzadores duplicados](../docs/fresh-install-recovery.md).
 
 El instalador idempotente instala dependencias, verifica todos los artefactos,
 compila el código de compatibilidad, configura GNOME Remote Desktop, guarda la
