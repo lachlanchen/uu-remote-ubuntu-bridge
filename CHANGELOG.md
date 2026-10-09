@@ -8,6 +8,15 @@ locked by the release manifest.
 
 ### Fixed
 
+- fix the windowed UU viewer: popups no longer render as black rectangles
+  and the separate remote-control window is no longer cropped, because the
+  viewer now exports the region of the UU windows connected to the largest
+  one instead of a single window; it zooms to the size of the viewer window
+  (so it adapts to any monitor), opens maximized, and gives its window a
+  `UU-Remote` class so desktops do not show it under the system TigerVNC
+  launcher; the whole private screen, which is the live desktop relay, is
+  never exported: a missing UU window is brought back or the viewer closes;
+  the viewer also asks for JPEG quality level 9
 - avoid downloading or installing unused FreeRDP/libei dependencies for the
   VNC relay; an expired pinned nightly URL no longer blocks VNC-only refreshes
 - add an opt-in, owner-filtered X11 host-to-Wine text clipboard return path;

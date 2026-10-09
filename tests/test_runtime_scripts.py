@@ -22,6 +22,52 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("preserving the installed UU product and maintenance timers", source)
         self.assertIn('if [[ "$runtime_only" != true ]]; then\n    refresh_updater_runtime', source)
 
+    def run_console_function(self, name, *arguments, stdin=""):
+        console = REPOSITORY / "scripts" / "uu-remote-console"
+        script = (
+            'source <(sed -n "/^%s() {/,/^}/p" "$1"); shift; %s "$@"'
+            % (name, name)
+        )
+        result = subprocess.run(
+            ["bash", "-c", script, "bash", str(console), *arguments],
+            input=stdin, text=True, capture_output=True, check=True,
+        )
+        return result.stdout.strip()
+
+    @staticmethod
+    def window_geometry(x, y, width, height):
+        return "WINDOW=1\nX=%d\nY=%d\nWIDTH=%d\nHEIGHT=%d\nSCREEN=0\n" % (
+            x, y, width, height)
+
+    def test_window_region_follows_only_connected_uu_windows(self):
+        def region(*windows):
+            return self.run_console_function(
+                "region_of_windows", "1920", "1080", stdin="".join(windows))
+
+        main = self.window_geometry(500, 200, 920, 680)
+        popup = self.window_geometry(1300, 400, 400, 200)
+        toast = self.window_geometry(1560, 900, 300, 120)
+
+        self.assertEqual(region(main), "920x680+500+200")
+        # Popups and the remote-control view overlap the main window.
+        self.assertEqual(region(main, popup), "1200x680+500+200")
+        # A distant window would stretch the region over the desktop relay.
+        self.assertEqual(region(toast, main, popup), "1200x680+500+200")
+        self.assertEqual(
+            region(self.window_geometry(-50, -20, 300, 200)), "250x180+0+0")
+        self.assertEqual(region(self.window_geometry(0, 0, 30, 30)), "")
+        self.assertEqual(region(), "")
+
+    def test_viewer_zoom_fits_the_window_it_is_shown_in(self):
+        def zoom(*sizes):
+            return self.run_console_function("fit_scale", *map(str, sizes))
+
+        # Window width, window height, region width, region height.
+        self.assertEqual(zoom(1440, 789, 920, 680), "1.15")
+        self.assertEqual(zoom(1000, 600, 1500, 900), "0.66")
+        self.assertEqual(zoom(5000, 3000, 920, 680), "3.00")
+        self.assertEqual(zoom(100, 100, 1500, 900), "0.25")
+
     def test_all_shell_entrypoints_parse(self):
         scripts = [REPOSITORY / "install.sh", REPOSITORY / "uninstall.sh"]
         scripts.extend(sorted((REPOSITORY / "scripts").glob("*.sh")))
@@ -412,14 +458,35 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("ExecStart=%h/.local/bin/uu-remote-console serve", unit)
         self.assertIn("NoNewPrivileges=yes", unit)
         self.assertIn("Exec=@EXEC@", desktop)
-        self.assertIn("StartupWMClass=TigerVNC Viewer", desktop)
+        self.assertIn("StartupWMClass=UU-Remote", desktop)
         self.assertNotIn("noVNC", desktop)
+        # The viewer window is retagged to that class: the system TigerVNC
+        # launcher claims "TigerVNC Viewer" as well, so GNOME showed the UU
+        # window under the TigerVNC icon and menu.
+        self.assertIn("retag_viewer", console)
+        self.assertIn("--classname uu-remote --class UU-Remote", console)
+        self.assertIn("find_viewer_window", console)
         self.assertIn('"$desktop_entry" "$HOME/.local/bin/uu-remote"', installer)
         self.assertIn('exec "$console_bin" window "$@"', command)
         self.assertNotIn("activate_physical_client", command)
         self.assertNotIn("open-client", command)
         self.assertIn('exec "$console_bin" open "$@"', command)
-        self.assertIn('-id "$client_window"', console)
+        # A clipped root view shows popups and the remote-control window;
+        # -id renders popups black and -sid crops other top-level windows.
+        self.assertNotIn('-id "$client_window"', console)
+        self.assertNotIn('-sid "$client_window"', console)
+        self.assertIn('view_args=(-clip "$region")', console)
+        self.assertIn('x11vnc_remote "clip:$region"', console)
+        self.assertIn("track_window_region", console)
+        # The zoom follows the viewer window, not the whole (multi-monitor)
+        # X screen, and the viewer opens maximized to fill its monitor.
+        self.assertIn('x11vnc_remote "scale:$scale"', console)
+        self.assertIn("-Maximize=1", console)
+        self.assertNotIn("window_scale", console)
+        # Outside the UU windows the private screen is the live desktop
+        # relay, which forwards the mouse to the real desktop: never export
+        # the whole screen.
+        self.assertIn("Never export the whole screen", console)
         self.assertIn("/usr/bin/flock -n 9", console)
         self.assertIn("activate_existing_window", console)
         self.assertIn("cleanup_window", console)
