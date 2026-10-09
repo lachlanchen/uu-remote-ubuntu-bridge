@@ -123,9 +123,10 @@ Internet availability.
 
 For this incident, the complete local suite passed (212 tests, two opt-in
 tests skipped). The deployed maintenance helper reported zero recent restarts
-and healthy relay components while the lifetime count remained 12. A manual
-retry of the daily update check succeeded and verified the already-installed
-release's installer hash. No UU upgrade or runtime restart was needed.
+and healthy relay components while the lifetime count remained 12. The daily
+update check succeeded on retry; the endpoint then reported a release older
+than the approved installed baseline, so it correctly skipped download and
+downgrade. No UU upgrade or runtime restart was needed.
 
 ### Commands
 
