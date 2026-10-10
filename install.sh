@@ -823,12 +823,22 @@ from pathlib import Path
 
 template, destination, executable = map(Path, sys.argv[1:])
 escaped = str(executable).replace("\\", "\\\\").replace(" ", "\\ ")
-rendered = template.read_text(encoding="ascii").replace(
-    "@EXEC@", f"{escaped} open"
-)
-destination.write_text(rendered, encoding="ascii")
+rendered = template.read_text(encoding="utf-8").replace("@EXEC@", escaped)
+destination.write_text(rendered, encoding="utf-8")
 PY
 chmod 0644 "$desktop_entry"
+manage_entry="$HOME/.local/share/applications/uu-remote-manage.desktop"
+"$python_bin" - "$repo_dir/desktop/uu-remote-manage.desktop.in" \
+    "$manage_entry" "$HOME/.local/bin/uu-remote" <<'PY'
+import sys
+from pathlib import Path
+
+template, destination, executable = map(Path, sys.argv[1:])
+escaped = str(executable).replace("\\", "\\\\").replace(" ", "\\ ")
+rendered = template.read_text(encoding="utf-8").replace("@EXEC@", escaped)
+destination.write_text(rendered, encoding="utf-8")
+PY
+chmod 0644 "$manage_entry"
 if [[ -d "$HOME/Desktop" ]]; then
     desktop_shortcut="$HOME/Desktop/UU Remote.desktop"
     install -m 0755 "$desktop_entry" "$desktop_shortcut"

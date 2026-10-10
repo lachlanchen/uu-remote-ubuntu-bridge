@@ -58,6 +58,7 @@ runtime_files=(
     systemd/uu-shared-physical-vnc.service
     systemd/uu-remote-console.service
     desktop/uu-remote.desktop.in
+    desktop/uu-remote-manage.desktop.in
 )
 release_manifests=(patches/uu-remote-*.json)
 

@@ -4,10 +4,26 @@ Version=1.0
 Name=UU Remote
 GenericName=Remote Desktop
 Comment=Open the UU Remote management window
-Exec=@EXEC@
+Exec=@EXEC@ open
 Icon=024B_GameViewer.0
 Terminal=false
 Categories=Network;RemoteAccess;
 StartupNotify=true
 StartupWMClass=TigerVNC Viewer
 Keywords=UU;Remote;Desktop;
+Actions=Quit;AutostartOn;AutostartOff;
+
+[Desktop Action Quit]
+Name=Quit UU Remote completely
+Name[zh_CN]=完全退出 UU Remote(释放内存和资源)
+Exec=@EXEC@ stop
+
+[Desktop Action AutostartOn]
+Name=Start UU Remote at login
+Name[zh_CN]=开启开机自启
+Exec=@EXEC@ autostart on
+
+[Desktop Action AutostartOff]
+Name=Do not start UU Remote at login
+Name[zh_CN]=关闭开机自启
+Exec=@EXEC@ autostart off

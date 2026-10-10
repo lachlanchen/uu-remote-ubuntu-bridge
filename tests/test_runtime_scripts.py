@@ -379,6 +379,38 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn('"$service_name"', launcher)
         self.assertNotIn("systemctl restart xrdp", launcher)
 
+    def test_launcher_can_quit_completely_and_toggle_autostart(self):
+        command = (REPOSITORY / "scripts" / "uu-remote").read_text()
+        installer = (REPOSITORY / "install.sh").read_text()
+        uninstaller = (REPOSITORY / "uninstall.sh").read_text()
+        digest = (REPOSITORY / "scripts" / "runtime-source-digest").read_text()
+        desktop = (
+            REPOSITORY / "desktop" / "uu-remote.desktop.in"
+        ).read_text()
+        manage = (
+            REPOSITORY / "desktop" / "uu-remote-manage.desktop.in"
+        ).read_text()
+
+        # Closing the viewer window leaves the bridge service running, so the
+        # launcher offers a complete quit and a start-at-login switch.
+        self.assertIn("Actions=Quit;AutostartOn;AutostartOff;", desktop)
+        self.assertIn("Exec=@EXEC@ open", desktop)
+        self.assertIn("Exec=@EXEC@ stop", desktop)
+        self.assertIn("Exec=@EXEC@ autostart on", desktop)
+        self.assertIn("Exec=@EXEC@ autostart off", desktop)
+        self.assertIn(".replace(\"@EXEC@\", escaped)", installer)
+        self.assertIn("enable uu-remote-bridge.service", command)
+        self.assertIn("disable uu-remote-bridge.service", command)
+        self.assertIn("is-enabled uu-remote-bridge.service", command)
+        # A visible launcher entry reaches the same choices on desktops that
+        # do not show the right-click actions.
+        self.assertIn("Exec=@EXEC@ manage", manage)
+        self.assertIn("manage)", command)
+        self.assertIn("zenity", command)
+        self.assertIn("desktop/uu-remote-manage.desktop.in", digest)
+        self.assertIn("uu-remote-manage.desktop", installer)
+        self.assertIn("uu-remote-manage.desktop", uninstaller)
+
     def test_windowed_app_is_default_and_console_remains_loopback_only(self):
         console = (REPOSITORY / "scripts" / "uu-remote-console").read_text()
         command = (REPOSITORY / "scripts" / "uu-remote").read_text()
