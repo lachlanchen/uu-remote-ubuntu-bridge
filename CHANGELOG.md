@@ -22,15 +22,19 @@ locked by the release manifest.
 - archive only visible vendor shortcuts proven to belong to the selected Wine
   prefix, including their paired Desktop links; keep the canonical launcher,
   hidden protocol handlers and other prefixes untouched (#17)
-- fix the windowed UU viewer: popups no longer render as black rectangles
-  and the separate remote-control window is no longer cropped, because the
-  viewer now exports the region of the UU windows connected to the largest
-  one instead of a single window; it zooms to the size of the viewer window
-  (so it adapts to any monitor), opens maximized, and gives its window a
-  `UU-Remote` class so desktops do not show it under the system TigerVNC
-  launcher; the whole private screen, which is the live desktop relay, is
-  never exported: a missing UU window is brought back or the viewer closes;
-  the viewer also asks for JPEG quality level 9
+- add an experimental, opt-in region mode for the windowed UU viewer
+  (`UURB_EXPERIMENTAL_WINDOW_REGION=1`, kept across reinstalls): popups no
+  longer render as black rectangles and the separate remote-control window is no
+  longer cropped, because the viewer exports the largest rectangle the visible
+  UU windows cover completely instead of one window; it zooms to the size of the
+  viewer window and opens maximized. The desktop relay underneath is never
+  exported or reachable: a window that moves, shrinks, closes or is minimized
+  stops the x11vnc server, which closes the viewer, and the viewer reopens on the
+  new region; the whole private screen is never exported. The default keeps
+  showing the main window only (`-id`)
+- give the viewer window its own `UU-Remote` class so desktops do not show it
+  under the system TigerVNC launcher; the viewer also asks for JPEG quality
+  level 9 in the experimental mode
 - avoid downloading or installing unused FreeRDP/libei dependencies for the
   VNC relay; an expired pinned nightly URL no longer blocks VNC-only refreshes
 - add an opt-in, owner-filtered X11 host-to-Wine text clipboard return path;

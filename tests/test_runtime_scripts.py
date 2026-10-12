@@ -34,30 +34,6 @@ class RuntimeScriptTests(unittest.TestCase):
         )
         return result.stdout.strip()
 
-    @staticmethod
-    def window_geometry(x, y, width, height):
-        return "WINDOW=1\nX=%d\nY=%d\nWIDTH=%d\nHEIGHT=%d\nSCREEN=0\n" % (
-            x, y, width, height)
-
-    def test_window_region_follows_only_connected_uu_windows(self):
-        def region(*windows):
-            return self.run_console_function(
-                "region_of_windows", "1920", "1080", stdin="".join(windows))
-
-        main = self.window_geometry(500, 200, 920, 680)
-        popup = self.window_geometry(1300, 400, 400, 200)
-        toast = self.window_geometry(1560, 900, 300, 120)
-
-        self.assertEqual(region(main), "920x680+500+200")
-        # Popups and the remote-control view overlap the main window.
-        self.assertEqual(region(main, popup), "1200x680+500+200")
-        # A distant window would stretch the region over the desktop relay.
-        self.assertEqual(region(toast, main, popup), "1200x680+500+200")
-        self.assertEqual(
-            region(self.window_geometry(-50, -20, 300, 200)), "250x180+0+0")
-        self.assertEqual(region(self.window_geometry(0, 0, 30, 30)), "")
-        self.assertEqual(region(), "")
-
     def test_viewer_zoom_fits_the_window_it_is_shown_in(self):
         def zoom(*sizes):
             return self.run_console_function("fit_scale", *map(str, sizes))
@@ -471,12 +447,14 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertNotIn("activate_physical_client", command)
         self.assertNotIn("open-client", command)
         self.assertIn('exec "$console_bin" open "$@"', command)
-        # A clipped root view shows popups and the remote-control window;
-        # -id renders popups black and -sid crops other top-level windows.
-        self.assertNotIn('-id "$client_window"', console)
-        self.assertNotIn('-sid "$client_window"', console)
+        # The default is unchanged: the main window only. The experimental
+        # region mode (UURB_EXPERIMENTAL_WINDOW_REGION=1) exports a clipped
+        # view of the UU windows and is covered by
+        # tests/test_window_region_isolation.py.
+        self.assertIn('view_args=(-id "$client_window")', console)
         self.assertIn('view_args=(-clip "$region")', console)
-        self.assertIn('x11vnc_remote "clip:$region"', console)
+        self.assertNotIn('-sid "$client_window"', console)
+        self.assertIn('experimental_window_region" == 1', console)
         self.assertIn("track_window_region", console)
         # The zoom follows the viewer window, not the whole (multi-monitor)
         # X screen, and the viewer opens maximized to fill its monitor.
@@ -486,7 +464,8 @@ class RuntimeScriptTests(unittest.TestCase):
         # Outside the UU windows the private screen is the live desktop
         # relay, which forwards the mouse to the real desktop: never export
         # the whole screen.
-        self.assertIn("Never export the whole screen", console)
+        self.assertIn("the whole screen is never exported", console)
+        self.assertIn("UURB_EXPERIMENTAL_WINDOW_REGION=1", installer)
         self.assertIn("/usr/bin/flock -n 9", console)
         self.assertIn("activate_existing_window", console)
         self.assertIn("cleanup_window", console)

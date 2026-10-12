@@ -596,6 +596,16 @@ scripts/verify.sh --quick
 scripts/verify.sh
 ```
 
+The viewer window shows the UU main window. To also see UU's popups and the
+remote-control window, and have the picture follow the viewer window's size,
+add `UURB_EXPERIMENTAL_WINDOW_REGION=1` to `~/.config/uu-remote-bridge/environment`
+(a reinstall keeps it) and reopen the window. This is experimental and off by
+default. It exports only the largest rectangle that the visible UU windows
+cover completely, so the live desktop relay underneath is never shown and never
+receives the viewer's mouse; when a UU window moves, shrinks, closes or a larger
+one appears, the viewer closes and reopens on the new region. A popup that
+sticks out of the main window is cropped to what the rectangle covers.
+
 The full verifier waits 270 seconds and proves the same server PID crosses
 UU's former four-minute failure interval. It also confirms that the installed
 runtime was built from the current checkout, the current cold start completed
