@@ -103,6 +103,13 @@ restart XRDP and does not become eligible from a health failure.
 
 ## New upstream release workflow
 
+Runtime health repairs are rechecked before starting an agent, even if a
+quota backoff is pending. An unstarted task is retired only after two healthy
+checks 20 seconds apart; its evidence remains private. Already-started repair
+threads and release/promotion tasks are not retired by this check. Restart-storm
+detection counts actual scheduled restarts during the last 15 minutes, rather
+than the lifetime systemd counter. See [recovery diagnostics](clean-exit-recovery.md#already-recovered-avoid-repairing-a-healthy-desktop).
+
 When the official endpoint reports a numerically newer build:
 
 1. Download into `~/.local/state/uu-remote-updater/downloads` with a 1 GiB

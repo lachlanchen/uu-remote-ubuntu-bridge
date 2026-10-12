@@ -21,9 +21,7 @@
 這個實驗性橋接器在獨立 Wine 前綴中執行官方 Windows 用戶端，透過本機 RDP
 中繼或 X11 上選用的本機 VNC 中繼分享現有 GNOME 桌面。
 
-基礎環境為 x86-64 Ubuntu 24.04、GNOME 46 和 Wine 11。全新安裝仍鎖定
-UU `4.33.0.8907`；`4.42.1.2835` 有獨立的精確雜湊清單及驗收紀錄。
-未知二進位檔會被拒絕，不會直接套用舊補丁。
+基礎環境為 x86-64 Ubuntu 24.04、GNOME 46 和 Wine 11。全新安裝使用已驗收的 UU `4.42.1.2835`，並核對精確雜湊及驗收紀錄。一般重新安裝會保留已安裝版本。未知二進位檔會被拒絕，不會直接套用舊補丁。
 
 <!-- feature-status:start -->
 ## 哪些功能可以用
@@ -74,6 +72,8 @@ uu-shell --native lab
 ```bash
 ./install.sh
 ```
+
+全新安裝使用已驗收的 **4.42.1.2835** 清單；一般重新安裝會保留已安裝版本。目前固定的 FreeRDP nightly 連結回傳 404，因此全新預設 RDP 安裝需要既有且雜湊完全相符的用戶端。X11/XRDP 桌面可用 `./install.sh --desktop-relay vnc` 避開此相依項目。詳見[下載復原與重複啟動器清理](../docs/fresh-install-recovery.md)。
 
 這個冪等安裝腳本會安裝相依套件、驗證上游檔案、編譯相容元件、設定 GNOME
 Remote Desktop、將 RDP 密碼保存到 GNOME Keyring，並啟動使用者層級

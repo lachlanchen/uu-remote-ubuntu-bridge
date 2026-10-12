@@ -8,6 +8,20 @@ locked by the release manifest.
 
 ### Fixed
 
+- detect restart storms from bounded, current-boot journal events within the
+  last 15 minutes, rather than treating systemd's lifetime restart total as a
+  recent failure; recheck unstarted runtime-health repairs after recovery and
+  retain their evidence without launching unnecessary repair agents
+- select the accepted UU 4.42.1.2835 manifest for fresh installs and preserve
+  the installed manifest on ordinary reinstalls; download the moving vendor
+  endpoint with one fresh, hash-verified request rather than resuming or mixing
+  ranged downloads (#15)
+- check required installer/FreeRDP client downloads before stopping the bridge;
+  explain pruned Jenkins artifacts and support an exact-hash local FreeRDP
+  client override; the durable default RDP download remains unresolved (#16)
+- archive only visible vendor shortcuts proven to belong to the selected Wine
+  prefix, including their paired Desktop links; keep the canonical launcher,
+  hidden protocol handlers and other prefixes untouched (#17)
 - fix the windowed UU viewer: popups no longer render as black rectangles
   and the separate remote-control window is no longer cropped, because the
   viewer now exports the region of the UU windows connected to the largest

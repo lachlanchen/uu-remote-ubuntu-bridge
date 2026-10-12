@@ -19,6 +19,7 @@ sys.path.insert(0, str(REPO_DIR / "scripts"))
 from uu_update_manager import (
     Config,
     Manager,
+    SYSTEMD_RESTART_MESSAGE_ID,
     codex_budget_from_rate_limits,
     promotion_acceptance,
     release_version,
@@ -818,6 +819,7 @@ class UpdateManagerTests(unittest.TestCase):
                 subprocess.CompletedProcess(
                     [], 0, "ActiveState=active\nNRestarts=64\n", ""
                 ),
+                subprocess.CompletedProcess([], 0, self.restart_records(9900, 9950, 9990), ""),
                 subprocess.CompletedProcess([], 0, "101\n", ""),
                 subprocess.CompletedProcess([], 0, "102\n", ""),
                 subprocess.CompletedProcess([], 0, "103\n", ""),
@@ -828,6 +830,8 @@ class UpdateManagerTests(unittest.TestCase):
 
             with patch.object(Path, "home", return_value=home), patch(
                 "uu_update_manager.command_output", side_effect=responses
+            ), patch(
+                "uu_update_manager.time.monotonic", return_value=10_000
             ):
                 health = Manager(self.config(root / "state")).health()
 
@@ -835,6 +839,7 @@ class UpdateManagerTests(unittest.TestCase):
             self.assertIn("bridge-restart-storm", health["issues"])
             self.assertIn("rdp-listener-owner-mismatch", health["issues"])
             self.assertEqual(64, health["restart_count"])
+            self.assertEqual(3, health["recent_restart_count"])
             self.assertEqual(3391, health["rdp_port"])
 
     def test_health_accepts_the_real_listener_among_old_relay_processes(
@@ -860,6 +865,7 @@ class UpdateManagerTests(unittest.TestCase):
                     ),
                     "",
                 ),
+                subprocess.CompletedProcess([], 0, "", ""),
                 subprocess.CompletedProcess([], 0, "101\n", ""),
                 subprocess.CompletedProcess([], 0, "102\n", ""),
                 subprocess.CompletedProcess([], 0, "10\n20\n", ""),
@@ -888,7 +894,8 @@ class UpdateManagerTests(unittest.TestCase):
                 first_command,
             )
 
-    def vnc_health(self, listener=None, *, server=True, viewer=True, port="5922"):
+    def vnc_health(self, listener=None, *, server=True, viewer=True, port="5922",
+                   lifetime_restarts=0, recent_restarts="", active_since=1000):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             home = root / "home"
@@ -913,7 +920,10 @@ class UpdateManagerTests(unittest.TestCase):
             def output(command, **kwargs):
                 commands.append(command)
                 if "show" in command:
-                    value = "ActiveState=active\nNRestarts=0\nActiveEnterTimestampMonotonic=1000000000\n"
+                    value = (f"ActiveState=active\nNRestarts={lifetime_restarts}\n"
+                             f"ActiveEnterTimestampMonotonic={active_since * 1_000_000}\n")
+                elif command[0] == "journalctl":
+                    value = recent_restarts
                 elif command[0] == "ss":
                     value = listener
                 elif command[0] == "pgrep":
@@ -936,6 +946,104 @@ class UpdateManagerTests(unittest.TestCase):
             ), patch("uu_update_manager.time.monotonic", return_value=10_000):
                 result = Manager(self.config(root / "state")).health()
             return result, commands
+
+    @staticmethod
+    def restart_records(*timestamps, unit="uu-remote-bridge.service",
+                        message_id=SYSTEMD_RESTART_MESSAGE_ID):
+        return "\n".join(json.dumps({
+            "USER_UNIT": unit, "MESSAGE_ID": message_id,
+            "__MONOTONIC_TIMESTAMP": str(int(stamp * 1_000_000)),
+        }) for stamp in timestamps)
+
+    def test_lifetime_restart_count_after_one_new_restart_is_not_a_storm(self):
+        result, _ = self.vnc_health(
+            lifetime_restarts=64, active_since=9900,
+            recent_restarts=self.restart_records(9900),
+        )
+        self.assertTrue(result["healthy"], result)
+        self.assertEqual(1, result["recent_restart_count"])
+        self.assertEqual(64, result["restart_count"])
+        self.assertLess(result["active_age_seconds"], 900)
+
+    def test_recent_restarts_are_bounded_current_unit_evidence(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            manager = Manager(self.config(Path(temporary)))
+            cases = [
+                (self.restart_records(9900, 9950, 9990), 3),
+                (self.restart_records(9000, 9900, 9900, 10001), 1),
+                (self.restart_records(9990, unit="another.service"), 0),
+                (self.restart_records(9990, message_id="unrelated"), 0),
+                ("", 0), ("malformed", None), ("{}", 0),
+                ('{"MESSAGE_ID":"' + SYSTEMD_RESTART_MESSAGE_ID +
+                 '","USER_UNIT":"uu-remote-bridge.service"}', None),
+            ]
+            for records, expected in cases:
+                with self.subTest(records=records), patch(
+                    "uu_update_manager.command_output",
+                    return_value=subprocess.CompletedProcess([], 0, records, ""),
+                ) as output, patch("uu_update_manager.time.monotonic", return_value=10_000):
+                    self.assertEqual(expected, manager.recent_restart_count())
+                    command = output.call_args.args[0]
+                    for arg in ["--boot=0", "--since=-15min", "--lines=3",
+                                "USER_UNIT=uu-remote-bridge.service"]:
+                        self.assertIn(arg, command)
+            with patch("uu_update_manager.command_output",
+                       return_value=subprocess.CompletedProcess([], 1, "", "denied")):
+                self.assertIsNone(manager.recent_restart_count())
+            with patch("uu_update_manager.command_output",
+                       side_effect=subprocess.TimeoutExpired("journalctl", 15)):
+                self.assertIsNone(manager.recent_restart_count())
+
+    def test_unstarted_recovered_task_is_retained_without_launching_codex(self):
+        healthy = {"healthy": True, "issues": [], "recent_restart_count": 0}
+        with tempfile.TemporaryDirectory() as temporary:
+            manager = Manager(self.config(Path(temporary)))
+            task = {"id": "recovered", "kind": "runtime-health", "attempts": 0,
+                    "thread_id": None, "phase": "codex-budget-deferred",
+                    "next_retry_epoch": 9999999999, "details": {"evidence": "keep"}}
+            manager.save_task(task)
+            with patch.object(manager, "health", return_value=healthy) as health, patch(
+                "uu_update_manager.time.sleep"
+            ), patch.object(manager, "run_codex", side_effect=AssertionError("no agent")), patch(
+                "uu_update_manager.workspace_sandbox_probe", side_effect=AssertionError("no sandbox")
+            ):
+                manager.monitor()
+            self.assertEqual(2, health.call_count)
+            self.assertFalse(manager.pending_path.exists())
+            retained = json.loads((manager.tasks_dir / "recovered/task.json").read_text())
+            self.assertEqual("recovered-before-repair", retained["phase"])
+            self.assertEqual({"evidence": "keep"}, retained["details"])
+            self.assertEqual(0, retained["attempts"])
+            status = json.loads(manager.status_path.read_text())
+            self.assertEqual("healthy", status["phase"])
+            self.assertIsNone(status["active_task"])
+            self.assertIsNone(status["next_retry_at"])
+
+    def test_recovery_never_retires_existing_work_or_release_tasks(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            manager = Manager(self.config(Path(temporary)))
+            for extra in [{"attempts": 1}, {"thread_id": "existing"},
+                          {"kind": "upstream-release"}, {"kind": "approved-promotion"}]:
+                task = {"id": "keep", "kind": "runtime-health", "attempts": 0, **extra}
+                manager.save_task(task)
+                before = manager.pending_path.read_bytes()
+                with patch.object(manager, "health", side_effect=AssertionError("no recheck")):
+                    self.assertFalse(manager.retire_recovered_health_task(task))
+                self.assertEqual(before, manager.pending_path.read_bytes())
+
+    def test_recovery_requires_two_healthy_checks_and_known_restart_evidence(self):
+        healthy = {"healthy": True, "issues": [], "recent_restart_count": 0}
+        unhealthy = {"healthy": False, "issues": ["uu-server-missing"], "recent_restart_count": 0}
+        unknown = {**healthy, "recent_restart_count": None}
+        for results in [[unhealthy], [unknown], [healthy, unhealthy], [healthy, unknown]]:
+            with self.subTest(results=results), tempfile.TemporaryDirectory() as temporary:
+                manager = Manager(self.config(Path(temporary)))
+                task = {"id": "keep", "kind": "runtime-health", "attempts": 0}
+                manager.save_task(task)
+                before = manager.pending_path.read_bytes()
+                with patch.object(manager, "health", side_effect=results), patch("uu_update_manager.time.sleep"):
+                    self.assertFalse(manager.retire_recovered_health_task(task))
+                self.assertEqual(before, manager.pending_path.read_bytes())
 
     def test_health_accepts_vnc_without_unused_rdp_processes(self) -> None:
         result, commands = self.vnc_health()
