@@ -12,6 +12,7 @@ bridge_xauthority_file="$bridge_runtime_dir/Xauthority"
 bridge_display_file="$bridge_runtime_dir/private-display"
 bridge_focus_file="$bridge_runtime_dir/console-focus"
 window_lock_file="$runtime_dir/window.lock"
+window_restart_file="$runtime_dir/window.restart"
 script_path="$(readlink -f "$0")"
 systemctl_user=(
     /usr/bin/env
@@ -31,6 +32,11 @@ saved_vnc_port="$(saved_setting UURB_CONSOLE_VNC_PORT)"
 saved_web_port="$(saved_setting UURB_CONSOLE_WEB_PORT)"
 vnc_port="${UURB_CONSOLE_VNC_PORT:-${saved_vnc_port:-5920}}"
 web_port="${UURB_CONSOLE_WEB_PORT:-${saved_web_port:-6080}}"
+# Experimental: show the UU popups and the remote-control window in the viewer
+# (see open_window). Off unless this is exactly 1, in the environment or in
+# the saved environment file; the default shows the main window only (-id).
+saved_window_region="$(saved_setting UURB_EXPERIMENTAL_WINDOW_REGION)"
+experimental_window_region="${UURB_EXPERIMENTAL_WINDOW_REGION:-${saved_window_region:-0}}"
 relay_vnc_port="${UURB_RELAY_VNC_PORT:-5922}"
 relay_vnc_auth_file="${UURB_RELAY_VNC_AUTH_FILE:-$config_dir/relay-vnc.pass}"
 novnc_root="${UURB_NOVNC_ROOT:-/usr/share/novnc}"
@@ -40,6 +46,9 @@ bridge_xauthority=""
 vnc_pid=""
 websockify_pid=""
 window_vnc_pid=""
+window_remote_channel=""
+region_tracker_pid=""
+viewer_retag_pid=""
 relay_focus_pid=""
 
 notify_error() {
@@ -238,12 +247,20 @@ cleanup_server() {
 
 cleanup_window() {
     trap - EXIT INT TERM HUP
+    if [[ -n "$region_tracker_pid" ]]; then
+        kill "$region_tracker_pid" >/dev/null 2>&1 || true
+        wait "$region_tracker_pid" 2>/dev/null || true
+    fi
+    if [[ -n "$viewer_retag_pid" ]]; then
+        kill "$viewer_retag_pid" >/dev/null 2>&1 || true
+        wait "$viewer_retag_pid" 2>/dev/null || true
+    fi
     if [[ -n "$window_vnc_pid" ]]; then
         kill "$window_vnc_pid" >/dev/null 2>&1 || true
         wait "$window_vnc_pid" 2>/dev/null || true
     fi
     release_client || true
-    rm -f "$runtime_dir/window.port"
+    rm -f "$runtime_dir/window.port" "$window_restart_file"
 }
 
 restore_private_focus() {
@@ -332,16 +349,7 @@ activate_existing_window() {
     local window=""
 
     [[ -n "${DISPLAY:-}" ]] || return 1
-    while read -r candidate; do
-        if [[ "$(
-            /usr/bin/xdotool getwindowname "$candidate" 2>/dev/null || true
-        )" == 'UU Remote - TigerVNC' ]]; then
-            window="$candidate"
-        fi
-    done < <(
-        /usr/bin/xdotool search --class 'TigerVNC Viewer' 2>/dev/null || true
-    )
-    [[ -n "$window" ]] || return 1
+    window="$(find_viewer_window)" || return 1
     /usr/bin/xdotool windowactivate --sync "$window" >/dev/null 2>&1
 }
 
@@ -494,12 +502,342 @@ serve_relay_vnc() {
     done
 }
 
+# Filter xdpyinfo output on stdin down to "WIDTH HEIGHT".
+display_size() {
+    /usr/bin/awk '/dimensions:/ {
+        split($2, size, "x"); print size[1], size[2]; exit }'
+}
+
+# Reduce the `xdotool getwindowgeometry --shell` records on stdin to the
+# largest WxH+X+Y rectangle that the visible UU windows cover completely,
+# clamped to the screen size given as $1 and $2. Outside the UU windows the
+# private screen is the live desktop relay, which forwards the mouse to the
+# real desktop, so the exported region must not contain a single pixel that no
+# UU window covers: a bounding box of overlapping windows can (an L-shaped
+# overlap leaves a hole), this rectangle cannot. The remote-control view and
+# popups are separate top-level windows, so a rectangle inside their union can
+# be larger than the main window alone. Only the 6 largest windows are
+# considered, which keeps the search tiny.
+# With the region currently exported as $3, a second word says whether the
+# windows still cover all of it ("covered") or not any more ("stale").
+covered_region() {
+    /usr/bin/awk -F= -v root_w="$1" -v root_h="$2" -v clip="${3:-}" '
+        $1 == "X" { x = $2 }
+        $1 == "Y" { y = $2 }
+        $1 == "WIDTH" { w = $2 }
+        $1 == "HEIGHT" {
+            h = $2
+            if (w >= 40 && h >= 40) {
+                x2 = x + w; y2 = y + h
+                if (x < 0) x = 0
+                if (y < 0) y = 0
+                if (x2 > root_w) x2 = root_w
+                if (y2 > root_h) y2 = root_h
+                if (x2 > x && y2 > y) {
+                    n++
+                    left[n] = x; top[n] = y; right[n] = x2; bottom[n] = y2
+                    area[n] = (x2 - x) * (y2 - y)
+                    order[n] = n
+                }
+            }
+        }
+        function unique_sorted(raw, count, sorted,    i, j, key, total, last) {
+            for (i = 2; i <= count; i++) {
+                key = raw[i]
+                for (j = i - 1; j >= 1 && raw[j] > key; j--) raw[j + 1] = raw[j]
+                raw[j + 1] = key
+            }
+            total = 0
+            for (i = 1; i <= count; i++) {
+                if (i == 1 || raw[i] != last) sorted[++total] = raw[i]
+                last = raw[i]
+            }
+            return total
+        }
+        END {
+            if (!n) exit
+            for (i = 2; i <= n; i++) {
+                key = order[i]
+                for (j = i - 1; j >= 1 && area[order[j]] < area[key]; j--)
+                    order[j + 1] = order[j]
+                order[j + 1] = key
+            }
+            if (n > 6) n = 6
+            nx = 0; ny = 0
+            for (k = 1; k <= n; k++) {
+                i = order[k]
+                raw_x[++nx] = left[i] + 0; raw_x[++nx] = right[i] + 0
+                raw_y[++ny] = top[i] + 0; raw_y[++ny] = bottom[i] + 0
+            }
+            have_clip = (clip ~ /^[0-9]+x[0-9]+\+[0-9]+\+[0-9]+$/)
+            if (have_clip) {
+                split(clip, c, /[x+]/)
+                clip_l = c[3] + 0; clip_t = c[4] + 0
+                clip_r = clip_l + c[1]; clip_b = clip_t + c[2]
+                raw_x[++nx] = clip_l; raw_x[++nx] = clip_r
+                raw_y[++ny] = clip_t; raw_y[++ny] = clip_b
+            }
+            mx = unique_sorted(raw_x, nx, ux)
+            my = unique_sorted(raw_y, ny, uy)
+            # Cell (a, b) lies between grid lines a, a+1 and b, b+1. pre[] holds
+            # running totals of the cells that no UU window covers.
+            for (a = 0; a < mx; a++) pre[a, 0] = 0
+            for (b = 0; b < my; b++) pre[0, b] = 0
+            for (a = 1; a < mx; a++) {
+                for (b = 1; b < my; b++) {
+                    hole = 1
+                    for (k = 1; k <= n && hole; k++) {
+                        i = order[k]
+                        if (left[i] <= ux[a] && ux[a + 1] <= right[i] &&
+                            top[i] <= uy[b] && uy[b + 1] <= bottom[i]) hole = 0
+                    }
+                    pre[a, b] = hole + pre[a - 1, b] + pre[a, b - 1] - pre[a - 1, b - 1]
+                }
+            }
+            best = -1
+            for (i = 1; i < mx; i++) {
+                for (j = i + 1; j <= mx; j++) {
+                    for (k = 1; k < my; k++) {
+                        for (l = k + 1; l <= my; l++) {
+                            holes = pre[j - 1, l - 1] - pre[i - 1, l - 1]
+                            holes += pre[i - 1, k - 1] - pre[j - 1, k - 1]
+                            if (holes) continue
+                            size = (ux[j] - ux[i]) * (uy[l] - uy[k])
+                            if (size > best) {
+                                best = size
+                                bi = i; bj = j; bk = k; bl = l
+                            }
+                        }
+                    }
+                }
+            }
+            if (best < 0) exit
+            printf "%dx%d+%d+%d", ux[bj] - ux[bi], uy[bl] - uy[bk], ux[bi], uy[bk]
+            if (have_clip) {
+                for (a = 1; a <= mx; a++) {
+                    if (ux[a] == clip_l) ci = a
+                    if (ux[a] == clip_r) cj = a
+                }
+                for (b = 1; b <= my; b++) {
+                    if (uy[b] == clip_t) ck = b
+                    if (uy[b] == clip_b) cl = b
+                }
+                holes = pre[cj - 1, cl - 1] - pre[ci - 1, cl - 1]
+                holes += pre[ci - 1, ck - 1] - pre[cj - 1, ck - 1]
+                printf " %s", holes ? "stale" : "covered"
+            }
+            printf "\n"
+        }'
+}
+
+# Print the geometry records of the visible UU windows on the private display.
+uu_window_geometry() {
+    /usr/bin/env DISPLAY="$bridge_display" XAUTHORITY="$bridge_xauthority" \
+        /usr/bin/xdotool search --onlyvisible --class 'gameviewer.exe' \
+        getwindowgeometry --shell %@ 2>/dev/null || true
+}
+
+# Print covered_region for the visible UU windows: $1 and $2 are the screen
+# size and $3 the region currently exported, if any. The bridge display is
+# already known here: this runs several times a second while the window is
+# open, so it does not look the display up again.
+window_region() {
+    uu_window_geometry | covered_region "$@"
+}
+
+# Print the id of the local UU viewer window. Its class is retagged once
+# (retag_viewer), so both the TigerVNC class and the UU one are accepted.
+find_viewer_window() {
+    local window
+
+    while read -r window; do
+        if [[ "$(
+            /usr/bin/xdotool getwindowname "$window" 2>/dev/null || true
+        )" == 'UU Remote - TigerVNC' ]]; then
+            printf '%s\n' "$window"
+            return 0
+        fi
+    done < <(
+        /usr/bin/xdotool search --class '^(TigerVNC Viewer|UU-Remote)$' \
+            2>/dev/null || true
+    )
+    return 1
+}
+
+# Give the viewer window its own class, matching StartupWMClass in the
+# launcher: the system TigerVNC launcher claims "TigerVNC Viewer" as well, so
+# GNOME showed the UU window under the TigerVNC icon and menu.
+retag_viewer() {
+    /usr/bin/xdotool set_window --classname uu-remote --class UU-Remote \
+        "$1" >/dev/null 2>&1
+}
+
+# Print "WIDTH HEIGHT" of the local UU viewer window, which is where the
+# picture ends up. Its size follows the monitor, maximize and full screen.
+viewer_size() {
+    local window
+
+    window="$(find_viewer_window)" || return 1
+    /usr/bin/xdotool getwindowgeometry --shell "$window" 2>/dev/null | \
+        /usr/bin/awk -F= '
+        $1 == "WIDTH" { w = $2 }
+        $1 == "HEIGHT" { h = $2 }
+        END { if (w > 0 && h > 0) print w, h }'
+}
+
+# Print the largest zoom (0.25-3, two decimals) at which a $3 x $4 region
+# fits inside a $1 x $2 window. The 4 pixels cover x11vnc rounding the scaled
+# width up to a multiple of 4, which would otherwise add a scroll bar.
+fit_scale() {
+    /usr/bin/awk -v win_w="$1" -v win_h="$2" \
+        -v width="$3" -v height="$4" 'BEGIN {
+            scale = (win_w - 4) / width
+            fit_h = (win_h - 4) / height
+            if (fit_h < scale) scale = fit_h
+            if (scale > 3) scale = 3
+            if (scale < 0.25) scale = 0.25
+            printf "%.2f\n", int(scale * 100) / 100
+        }'
+}
+
+# Run an x11vnc remote-control option against the window's server.
+x11vnc_control() {
+    /usr/bin/env -u WAYLAND_DISPLAY XDG_SESSION_TYPE=x11 \
+        X11VNC_REMOTE="$window_remote_channel" \
+        DISPLAY="$bridge_display" XAUTHORITY="$bridge_xauthority" \
+        /usr/bin/x11vnc "$@" 2>/dev/null
+}
+
+# Send one "key:value" command to the window's x11vnc server and wait until a
+# query shows it took effect. x11vnc silently drops a command that arrives
+# while it is still busy, so a sent command is not an applied one.
+x11vnc_remote() {
+    local answer
+    local attempt
+
+    for attempt in 1 2 3 4 5 6 7 8; do
+        x11vnc_control -R "$1" >/dev/null || return 1
+        sleep 0.1
+        answer="$(x11vnc_control -Q "${1%%:*}" | /usr/bin/tail -n 1)"
+        [[ "$answer" == "ans=$1" ]] && return 0
+    done
+    return 1
+}
+
+# Watch the exported region while the viewer is open, and the zoom against the
+# size of the local viewer window. Runs until the x11vnc server exits.
+#
+# A region is never changed in place: x11vnc 0.9.16 keeps mapping the viewer's
+# pointer to the origin of the region it started with after -clip is changed,
+# so a click could land on the desktop relay. Instead, as soon as the visible
+# UU windows stop covering the exported region completely (a window moved,
+# shrank, closed or was minimized), or a better region exists (a larger window
+# appeared), the x11vnc server is stopped. That cuts the picture and every
+# input at once and closes the viewer; open_window then starts both again on
+# the new region. Only the zoom is changed in place, which x11vnc applies
+# correctly.
+track_window_region() {
+    local answer=""
+    local current="$1"
+    local current_h=""
+    local current_scale="1.00"
+    local region=""
+    local scale=""
+    local state=""
+    local tick=0
+    local win_h=""
+    local win_size=""
+    local win_w=""
+
+    while kill -0 "$window_vnc_pid" >/dev/null 2>&1; do
+        sleep 0.15
+        answer="$(window_region "$2" "$3" "$current" || true)"
+        read -r region state <<<"$answer"
+        if [[ -z "$region" || "$state" == stale || "$region" != "$current" ]]; then
+            : >"$window_restart_file"
+            kill "$window_vnc_pid" >/dev/null 2>&1 || true
+            return 0
+        fi
+        tick=$((tick + 1))
+        ((tick % 3 == 0)) || continue
+        win_size="$(viewer_size || true)"
+        [[ -n "$win_size" ]] || continue
+        read -r win_w win_h <<<"$win_size"
+        current_h="${current#*x}"
+        current_h="${current_h%%+*}"
+        scale="$(fit_scale "$win_w" "$win_h" "${current%%x*}" "$current_h")"
+        # The viewer resizes its window to the picture when they matched, so
+        # only follow real changes or a picture that no longer fits, or the
+        # zoom would creep down by itself.
+        if /usr/bin/awk -v new="$scale" -v old="$current_scale" \
+                -v width="${current%%x*}" -v height="$current_h" \
+                -v win_w="$win_w" -v win_h="$win_h" 'BEGIN {
+                change = new - old
+                if (change < 0) change = -change
+                shown_w = int((int(old * width + 0.000001) + 3) / 4) * 4
+                shown_h = int(old * height + 0.000001)
+                too_big = new < old && (shown_w > win_w || shown_h > win_h)
+                exit !(change / old >= 0.03 || too_big)
+            }' && x11vnc_remote "scale:$scale"; then
+            current_scale="$scale"
+        fi
+    done
+}
+
+# Give the new viewer window its own class once it exists (see retag_viewer).
+retag_new_viewer() {
+    local attempt
+    local viewer
+
+    for attempt in {1..100}; do
+        viewer="$(find_viewer_window || true)"
+        if [[ -n "$viewer" ]]; then
+            retag_viewer "$viewer"
+            return 0
+        fi
+        sleep 0.1
+    done
+}
+
+# Set region, root_w and root_h (locals of the caller) to the region the
+# visible UU windows cover completely, waiting for the window that was
+# minimized when the last viewer closed to come back. Fails if there is none:
+# outside the UU windows the screen is the live desktop relay, which forwards
+# the mouse to the real desktop, so the whole screen is never exported.
+find_window_region() {
+    local attempt
+
+    region=""
+    read -r root_w root_h < <(
+        /usr/bin/env DISPLAY="$bridge_display" \
+            XAUTHORITY="$bridge_xauthority" \
+            /usr/bin/xdpyinfo 2>/dev/null | display_size
+    ) || true
+    [[ "$root_w" =~ ^[0-9]+$ && "$root_h" =~ ^[0-9]+$ ]] || return 1
+    for attempt in {1..50}; do
+        region="$(window_region "$root_w" "$root_h" || true)"
+        [[ -n "$region" ]] && return 0
+        if ((attempt == 20)); then
+            focus_client || true
+        fi
+        sleep 0.1
+    done
+    return 1
+}
+
 open_window() {
     local client_window=""
     local command
+    local pid
     local ready=false
+    local region=""
+    local restarts=0
+    local root_h=""
+    local root_w=""
     local viewer_status=0
     local window_port=""
+    local -a view_args=()
+    local -a viewer_args=()
 
     if [[ -z "${DISPLAY:-}" ]]; then
         notify_error 'Open UU Remote from a logged-in graphical desktop.'
@@ -548,51 +886,98 @@ open_window() {
     trap 'exit 143' TERM HUP
     focus_client
 
-    /usr/bin/env -u WAYLAND_DISPLAY XDG_SESSION_TYPE=x11 \
-        /usr/bin/x11vnc \
-        -display "$bridge_display" \
-        -auth "$bridge_xauthority" \
-        -id "$client_window" \
-        -rfbport "$window_port" \
-        -listen 127.0.0.1 \
-        -localhost \
-        -no6 \
-        -nopw \
-        -forever \
-        -shared \
-        -noxdamage \
-        -nowf \
-        -noscr \
-        -desktop 'UU Remote' \
-        -quiet \
-        >>"$state_dir/window-x11vnc.log" 2>&1 &
-    window_vnc_pid=$!
+    # One pass per exported region. Only the experimental mode runs more than
+    # one: track_window_region stops x11vnc when the region must change.
+    while true; do
+        rm -f "$window_restart_file"
+        if [[ "$experimental_window_region" == 1 ]]; then
+            # Experimental: export the rectangle the visible UU windows cover
+            # completely, instead of one window. -id shows popups as black
+            # rectangles, and -sid crops the remote-control window to the main
+            # window. The zoom follows the viewer window, because the viewer
+            # can only shrink the picture and its window size depends on the
+            # monitor it opens on.
+            if ! find_window_region; then
+                notify_error 'The UU window is not visible yet. Try again.'
+                return 1
+            fi
+            view_args=(-clip "$region")
+            viewer_args=(-Maximize=1 -QualityLevel=9)
+        else
+            view_args=(-id "$client_window")
+        fi
+        window_remote_channel="UU_REMOTE_WINDOW_$window_port"
+        /usr/bin/env -u WAYLAND_DISPLAY XDG_SESSION_TYPE=x11 \
+            X11VNC_REMOTE="$window_remote_channel" \
+            /usr/bin/x11vnc \
+            -display "$bridge_display" \
+            -auth "$bridge_xauthority" \
+            "${view_args[@]}" \
+            -rfbport "$window_port" \
+            -listen 127.0.0.1 \
+            -localhost \
+            -no6 \
+            -nopw \
+            -forever \
+            -shared \
+            -noxdamage \
+            -nowf \
+            -noscr \
+            -desktop 'UU Remote' \
+            -quiet \
+            >>"$state_dir/window-x11vnc.log" 2>&1 &
+        window_vnc_pid=$!
 
-    for _ in {1..80}; do
-        if listener_present "$window_port" &&
-           kill -0 "$window_vnc_pid" >/dev/null 2>&1; then
-            ready=true
+        ready=false
+        for _ in {1..80}; do
+            if listener_present "$window_port" &&
+               kill -0 "$window_vnc_pid" >/dev/null 2>&1; then
+                ready=true
+                break
+            fi
+            kill -0 "$window_vnc_pid" >/dev/null 2>&1 || break
+            sleep 0.1
+        done
+        if [[ "$ready" != true ]]; then
+            notify_error 'The UU management window could not be exposed locally.'
+            return 1
+        fi
+
+        if [[ "$experimental_window_region" == 1 ]]; then
+            track_window_region "$region" "$root_w" "$root_h" &
+            region_tracker_pid=$!
+        fi
+        retag_new_viewer &
+        viewer_retag_pid=$!
+
+        set +e
+        /usr/bin/vncviewer \
+            -Shared=1 \
+            "${viewer_args[@]}" \
+            -RemoteResize=0 \
+            -ReconnectOnError=0 \
+            -AlertOnFatalError=0 \
+            -SecurityTypes=None \
+            "127.0.0.1::$window_port" \
+            >>"$state_dir/window-viewer.log" 2>&1
+        viewer_status=$?
+        set -e
+
+        for pid in "$region_tracker_pid" "$viewer_retag_pid" "$window_vnc_pid"; do
+            [[ -n "$pid" ]] || continue
+            kill "$pid" >/dev/null 2>&1 || true
+            wait "$pid" 2>/dev/null || true
+        done
+        region_tracker_pid=""
+        viewer_retag_pid=""
+        window_vnc_pid=""
+        [[ -e "$window_restart_file" ]] || break
+        # Do not follow windows that keep changing forever.
+        restarts=$((restarts + 1))
+        if ((restarts > 30)); then
             break
         fi
-        kill -0 "$window_vnc_pid" >/dev/null 2>&1 || break
-        sleep 0.1
     done
-    if [[ "$ready" != true ]]; then
-        notify_error 'The UU management window could not be exposed locally.'
-        return 1
-    fi
-
-    set +e
-    /usr/bin/vncviewer \
-        -Shared=1 \
-        -RemoteResize=0 \
-        -ReconnectOnError=0 \
-        -AlertOnFatalError=0 \
-        -SecurityTypes=None \
-        "127.0.0.1::$window_port" \
-        >>"$state_dir/window-viewer.log" 2>&1
-    viewer_status=$?
-    set -e
     return "$viewer_status"
 }
 

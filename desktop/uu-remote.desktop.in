@@ -9,5 +9,5 @@ Icon=024B_GameViewer.0
 Terminal=false
 Categories=Network;RemoteAccess;
 StartupNotify=true
-StartupWMClass=TigerVNC Viewer
+StartupWMClass=UU-Remote
 Keywords=UU;Remote;Desktop;

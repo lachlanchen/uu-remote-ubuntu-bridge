@@ -22,6 +22,28 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("preserving the installed UU product and maintenance timers", source)
         self.assertIn('if [[ "$runtime_only" != true ]]; then\n    refresh_updater_runtime', source)
 
+    def run_console_function(self, name, *arguments, stdin=""):
+        console = REPOSITORY / "scripts" / "uu-remote-console"
+        script = (
+            'source <(sed -n "/^%s() {/,/^}/p" "$1"); shift; %s "$@"'
+            % (name, name)
+        )
+        result = subprocess.run(
+            ["bash", "-c", script, "bash", str(console), *arguments],
+            input=stdin, text=True, capture_output=True, check=True,
+        )
+        return result.stdout.strip()
+
+    def test_viewer_zoom_fits_the_window_it_is_shown_in(self):
+        def zoom(*sizes):
+            return self.run_console_function("fit_scale", *map(str, sizes))
+
+        # Window width, window height, region width, region height.
+        self.assertEqual(zoom(1440, 789, 920, 680), "1.15")
+        self.assertEqual(zoom(1000, 600, 1500, 900), "0.66")
+        self.assertEqual(zoom(5000, 3000, 920, 680), "3.00")
+        self.assertEqual(zoom(100, 100, 1500, 900), "0.25")
+
     def test_all_shell_entrypoints_parse(self):
         scripts = [REPOSITORY / "install.sh", REPOSITORY / "uninstall.sh"]
         scripts.extend(sorted((REPOSITORY / "scripts").glob("*.sh")))
@@ -412,14 +434,38 @@ class RuntimeScriptTests(unittest.TestCase):
         self.assertIn("ExecStart=%h/.local/bin/uu-remote-console serve", unit)
         self.assertIn("NoNewPrivileges=yes", unit)
         self.assertIn("Exec=@EXEC@", desktop)
-        self.assertIn("StartupWMClass=TigerVNC Viewer", desktop)
+        self.assertIn("StartupWMClass=UU-Remote", desktop)
         self.assertNotIn("noVNC", desktop)
+        # The viewer window is retagged to that class: the system TigerVNC
+        # launcher claims "TigerVNC Viewer" as well, so GNOME showed the UU
+        # window under the TigerVNC icon and menu.
+        self.assertIn("retag_viewer", console)
+        self.assertIn("--classname uu-remote --class UU-Remote", console)
+        self.assertIn("find_viewer_window", console)
         self.assertIn('"$desktop_entry" "$HOME/.local/bin/uu-remote"', installer)
         self.assertIn('exec "$console_bin" window "$@"', command)
         self.assertNotIn("activate_physical_client", command)
         self.assertNotIn("open-client", command)
         self.assertIn('exec "$console_bin" open "$@"', command)
-        self.assertIn('-id "$client_window"', console)
+        # The default is unchanged: the main window only. The experimental
+        # region mode (UURB_EXPERIMENTAL_WINDOW_REGION=1) exports a clipped
+        # view of the UU windows and is covered by
+        # tests/test_window_region_isolation.py.
+        self.assertIn('view_args=(-id "$client_window")', console)
+        self.assertIn('view_args=(-clip "$region")', console)
+        self.assertNotIn('-sid "$client_window"', console)
+        self.assertIn('experimental_window_region" == 1', console)
+        self.assertIn("track_window_region", console)
+        # The zoom follows the viewer window, not the whole (multi-monitor)
+        # X screen, and the viewer opens maximized to fill its monitor.
+        self.assertIn('x11vnc_remote "scale:$scale"', console)
+        self.assertIn("-Maximize=1", console)
+        self.assertNotIn("window_scale", console)
+        # Outside the UU windows the private screen is the live desktop
+        # relay, which forwards the mouse to the real desktop: never export
+        # the whole screen.
+        self.assertIn("the whole screen is never exported", console)
+        self.assertIn("UURB_EXPERIMENTAL_WINDOW_REGION=1", installer)
         self.assertIn("/usr/bin/flock -n 9", console)
         self.assertIn("activate_existing_window", console)
         self.assertIn("cleanup_window", console)

@@ -70,6 +70,7 @@ saved_cursor_guard="$(saved_setting UURB_CURSOR_GUARD)"
 saved_cursor_size="$(saved_setting UURB_CURSOR_SIZE)"
 saved_console_vnc_port="$(saved_setting UURB_CONSOLE_VNC_PORT)"
 saved_console_web_port="$(saved_setting UURB_CONSOLE_WEB_PORT)"
+saved_window_region="$(saved_setting UURB_EXPERIMENTAL_WINDOW_REGION)"
 rdp_port="${UURB_RDP_PORT:-${saved_rdp_port:-3390}}"
 resolution="${UURB_RESOLUTION:-${saved_resolution:-1920x1080}}"
 follow_desktop_resolution="${UURB_FOLLOW_DESKTOP_RESOLUTION:-${saved_follow_desktop_resolution:-off}}"
@@ -777,6 +778,10 @@ printf 'UURB_CONSOLE_VNC_PORT=%s\n' \
     "$console_vnc_port" >>"$environment_tmp"
 printf 'UURB_CONSOLE_WEB_PORT=%s\n' \
     "$console_web_port" >>"$environment_tmp"
+if [[ "$saved_window_region" == 1 ]]; then
+    # An opt-in made in the environment file survives a reinstall.
+    printf 'UURB_EXPERIMENTAL_WINDOW_REGION=1\n' >>"$environment_tmp"
+fi
 chmod 0600 "$environment_tmp"
 mv "$environment_tmp" "$environment_file"
 install -m 0755 "$repo_dir/scripts/uu-remote-bridge" \
