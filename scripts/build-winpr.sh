@@ -20,9 +20,9 @@ build_checksums="$output_dir/.build-sha256"
 # Jenkins prunes old nightly artifacts. Keep the Windows client and the
 # separately-built WinPR runtime on the exact same reviewed source revision.
 # Do not follow lastSuccessfulBuild: a replacement needs separate acceptance.
-freerdp_commit='168925dac792142f6d0b66e7e2d568a3d439521c'
-sdl_url='https://ci.freerdp.com/job/freerdp-nightly-windows/arch=win64,label=vs2017/2064/artifact/install/bin/sdl-freerdp.exe'
-sdl_sha256='b384347b6d0dd1e0c9912d18f5993b4e30643470e2a627e112debb34e8710762'
+freerdp_commit='5c8aac73cd293d44022c5ccfe36fd6f266b17098'
+sdl_url='https://ci.freerdp.com/job/freerdp-nightly-windows/arch=win64,label=vs2017/2101/artifact/install/bin/sdl-freerdp.exe'
+sdl_sha256='0976457fbbb27b970de1aaf92a48474e1168efc3230ae271c7d0dc56e2bda2fd'
 openssl_url='https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-openssl-3.6.3-1-any.pkg.tar.zst'
 openssl_sha256='82de7ff886112374ffae9e7b3c843c82342e198543fb024790416ef56434fe9f'
 cjson_url='https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-cjson-1.7.19-1-any.pkg.tar.zst'

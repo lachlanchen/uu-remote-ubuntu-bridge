@@ -495,7 +495,7 @@ if [[ "$desktop_relay" == vnc ]]; then
     printf 'INFO  FreeRDP is not used by the configured VNC relay\n'
 elif [[ -f "$freerdp" ]] && \
    [[ "$(sha256sum "$freerdp" | awk '{print $1}')" == \
-      b384347b6d0dd1e0c9912d18f5993b4e30643470e2a627e112debb34e8710762 ]]; then
+      0976457fbbb27b970de1aaf92a48474e1168efc3230ae271c7d0dc56e2bda2fd ]]; then
     pass 'pinned Windows FreeRDP SDL client is installed'
 else
     fail 'Windows FreeRDP SDL client verification failed'

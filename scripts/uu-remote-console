@@ -548,11 +548,12 @@ open_window() {
     trap 'exit 143' TERM HUP
     focus_client
 
+    # Uses -sid instead of -id "$client_window" to capture popup modal dialogs
     /usr/bin/env -u WAYLAND_DISPLAY XDG_SESSION_TYPE=x11 \
         /usr/bin/x11vnc \
         -display "$bridge_display" \
         -auth "$bridge_xauthority" \
-        -id "$client_window" \
+        -sid "$client_window" \
         -rfbport "$window_port" \
         -listen 127.0.0.1 \
         -localhost \

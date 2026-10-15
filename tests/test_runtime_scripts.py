@@ -756,9 +756,9 @@ terminal_bridge_pid= host_clipboard_pid=
         builder = (REPOSITORY / "scripts" / "build-winpr.sh").read_text()
         verifier = (REPOSITORY / "scripts" / "verify.sh").read_text()
 
-        self.assertIn("168925dac792142f6d0b66e7e2d568a3d439521c", builder)
-        self.assertIn("/2064/artifact/install/bin/sdl-freerdp.exe", builder)
-        expected = "b384347b6d0dd1e0c9912d18f5993b4e30643470e2a627e112debb34e8710762"
+        self.assertIn("5c8aac73cd293d44022c5ccfe36fd6f266b17098", builder)
+        self.assertIn("/2101/artifact/install/bin/sdl-freerdp.exe", builder)
+        expected = "0976457fbbb27b970de1aaf92a48474e1168efc3230ae271c7d0dc56e2bda2fd"
         self.assertIn(expected, builder)
         self.assertIn(expected, verifier)
 

@@ -100,24 +100,11 @@ case "${1:-open}" in
         ;;
     login)
         shift || true
-        if [[ -z "${DISPLAY:-}" ]]; then
-            notify_error 'Run account login from a visible desktop terminal.'
+        if [[ ! -x "$console_bin" ]]; then
+            notify_error 'The UU Remote console helper is not installed.'
             exit 1
         fi
-        if [[ ! -f "$app_dir/GameViewer.exe" ]]; then
-            notify_error 'UU Remote is not installed in the bridge Wine prefix.'
-            exit 1
-        fi
-        "${systemctl_user[@]}" stop uu-remote-bridge.service
-        "$wine_stop_bin" "$WINEPREFIX" "$wineserver_bin"
-        restart_bridge() {
-            "$wine_stop_bin" "$WINEPREFIX" "$wineserver_bin" || true
-            "${systemctl_user[@]}" start uu-remote-bridge.service
-        }
-        trap restart_bridge EXIT
-        cd "$app_dir"
-        "$wine_bin" GameViewer.exe "$@" >>"$state_dir/client.log" 2>&1
-        exit 0
+        exec "$console_bin" window "$@"
         ;;
     open)
         shift || true
