@@ -715,10 +715,12 @@ terminal_bridge_pid= host_clipboard_pid=
         self.assertIn("534c4f470d0a1a0a", verifier)
         self.assertIn("server_log_pattern='log_*.slog'", verifier)
         self.assertIn("structured_release_ipc_ready", verifier)
-        self.assertIn('"$wine_bin" "$uuyc_cli" version', verifier)
+        self.assertIn('local cli_version_argument=version', verifier)
+        self.assertIn('"$wine_bin" "$uuyc_cli" "$cli_version_argument"', verifier)
         self.assertIn('"$wine_bin" "$uuyc_cli" echo "$nonce"', verifier)
         self.assertIn('[[ "$cli_version" == "$reported_version" ]]', verifier)
-        self.assertIn('[[ "$ipc_reply" == "$nonce" ]]', verifier)
+        self.assertIn('local expected_reply="$nonce"', verifier)
+        self.assertIn('[[ "$ipc_reply" == "$expected_reply" ]]', verifier)
 
     def test_verifier_supports_the_application_profile_network_namespace(self):
         verifier = (REPOSITORY / "scripts" / "verify.sh").read_text()
