@@ -33,7 +33,7 @@ uuyc_cli="$wine_prefix/drive_c/Program Files/Netease/GameViewer/bin/uuyc-cli.exe
 devcon="$wine_prefix/drive_c/Program Files/Netease/GameViewer/bin/drivers/devcon.exe"
 devcon_backup="$devcon.uu-original"
 case "$release_version" in
-    4.33.0.8907|4.34.0.8979|4.39.1.1375|4.39.2.1561|4.40.1.2090|4.42.1.2835)
+    4.33.0.8907|4.34.0.8979|4.39.1.1375|4.39.2.1561|4.40.1.2090|4.42.1.2835|4.44.1.3978)
         devcon_original_sha256='46731d6ea59dd9b63ad641c79646bb5ff64e1b877a1226536e3fe34d1ab4ee10'
         ;;
     *)
@@ -281,7 +281,7 @@ server_startup_ready() {
     [[ "$modified" =~ ^[0-9]+$ ]] || return 1
     ((modified >= service_start_epoch)) || return 1
     case "$release_version" in
-        4.39.1.1375|4.39.2.1561|4.40.1.2090|4.42.1.2835)
+        4.39.1.1375|4.39.2.1561|4.40.1.2090|4.42.1.2835|4.44.1.3978)
             signature="$(
                 /usr/bin/od -An -tx1 -N8 "$latest_server_log" 2>/dev/null |
                     /usr/bin/tr -d '[:space:]'
@@ -301,15 +301,23 @@ server_startup_ready() {
 
 structured_release_ipc_ready() {
     local cli_version
+    local cli_version_argument=version
     local private_display
     local ipc_reply
     local attempt
     local nonce="uurb-ready-$$-$RANDOM"
+    local expected_reply="$nonce"
 
     case "$release_version" in
-        4.39.1.1375|4.39.2.1561|4.40.1.2090|4.42.1.2835) ;;
+        4.39.1.1375|4.39.2.1561|4.40.1.2090|4.42.1.2835|4.44.1.3978) ;;
         *) return 0 ;;
     esac
+    # 4.44's `version` subcommand now prints multiple diagnostic fields.
+    # The global flag reports the CLI's exact version; echo still proves IPC.
+    if [[ "$release_version" == 4.44.1.3978 ]]; then
+        cli_version_argument=--version
+        expected_reply="echo: $nonce"
+    fi
     [[ -x "$wine_bin" && -f "$uuyc_cli" ]] || return 1
     private_display="$(cat "$private_display_file" 2>/dev/null || true)"
     [[ "$private_display" == :* && -r "$bridge_xauthority_file" ]] || return 1
@@ -320,7 +328,7 @@ structured_release_ipc_ready() {
             "WINEPREFIX=$wine_prefix" \
             WINEDEBUG=-all \
             WINEDLLOVERRIDES='upgrade.exe=d;winedbg.exe=d;mscoree,mshtml=' \
-            "$wine_bin" "$uuyc_cli" version 2>/dev/null |
+            "$wine_bin" "$uuyc_cli" "$cli_version_argument" 2>/dev/null |
             /usr/bin/tr -d '\r' | /usr/bin/tail -n 1
     )"
     [[ "$cli_version" == "$reported_version" ]] || return 1
@@ -336,7 +344,7 @@ structured_release_ipc_ready() {
                 "$wine_bin" "$uuyc_cli" echo "$nonce" 2>/dev/null |
                 /usr/bin/tr -d '\r' | /usr/bin/tail -n 1
         )" || ipc_reply=''
-        [[ "$ipc_reply" == "$nonce" ]] && return 0
+        [[ "$ipc_reply" == "$expected_reply" ]] && return 0
         sleep 0.5
     done
     return 1
@@ -414,7 +422,7 @@ service_start_epoch="$(date -d "$service_started_at" +%s 2>/dev/null || true)"
 latest_server_log=''
 server_log_pattern='log_*.txt'
 case "$release_version" in
-    4.39.1.1375|4.39.2.1561|4.40.1.2090|4.42.1.2835) server_log_pattern='log_*.slog' ;;
+    4.39.1.1375|4.39.2.1561|4.40.1.2090|4.42.1.2835|4.44.1.3978) server_log_pattern='log_*.slog' ;;
 esac
 for _ in {1..240}; do
     latest_server_log="$(
