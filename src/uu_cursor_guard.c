@@ -23,6 +23,7 @@ static HCURSOR fallback_cursor;
 static UINT fallback_cursor_width;
 static UINT fallback_cursor_height;
 static HANDLE log_file = INVALID_HANDLE_VALUE;
+static SRWLOCK log_lock = SRWLOCK_INIT;
 static volatile LONG hidden_cursor_count;
 
 static void write_log(const char *message)
@@ -31,7 +32,10 @@ static void write_log(const char *message)
 
     if (log_file == INVALID_HANDLE_VALUE)
         return;
+    /* Wine's append handle can overwrite records from concurrent callers. */
+    AcquireSRWLockExclusive(&log_lock);
     WriteFile(log_file, message, (DWORD)strlen(message), &written, NULL);
+    ReleaseSRWLockExclusive(&log_lock);
 }
 
 static void default_log_path(wchar_t *path)
