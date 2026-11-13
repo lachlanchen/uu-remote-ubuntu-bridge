@@ -153,6 +153,7 @@ input_broker_exe="$compat_dir/uu-input-broker.exe"
 x11_input_helper="$compat_dir/uu-x11-input"
 x11_clipboard_helper="$compat_dir/uu-x11-clipboard"
 wine_clipboard_bridge_exe="$compat_dir/uu-wine-clipboard-bridge.exe"
+clipboard_guard_dll="$compat_dir/uu-clipboard-guard.dll"
 network_filter="$compat_dir/uu-network-filter.so"
 input_injector_exe="$compat_dir/uu-injector.exe"
 service_control_exe="$compat_dir/uu-service-control.exe"
@@ -1517,6 +1518,7 @@ fi
     >/dev/null 2>&1 || true
 
 bootstrap_account() {
+    local attempt clipboard_guard_windows_path
     /opt/wine-stable/bin/wine "$service_control_exe" \
         GameViewerService 133 \
         >>"$state_dir/service-control.log" 2>&1 || true
@@ -1528,6 +1530,23 @@ bootstrap_account() {
     # terminate the GUI IPC client, and make the server destroy its room.
     # The relay focus supervisor safely keeps this window behind the desktop.
     sleep 1
+    if [[ "${UURB_HOST_CLIPBOARD:-off}" == on && -f "$clipboard_guard_dll" ]] &&
+            clipboard_guard_windows_path="$(
+                /usr/bin/timeout 5 /opt/wine-stable/bin/winepath -w "$clipboard_guard_dll" \
+                    2>>"$state_dir/clipboard-guard-injector.log"
+            )" && [[ -n "$clipboard_guard_windows_path" ]]; then
+        # One bounded startup attachment, not a periodic injection loop.
+        # The DLL independently rejects unreviewed vendor builds. Failure
+        # leaves remote access available; verify.sh reports missing support.
+        for attempt in {1..8}; do
+            if /usr/bin/timeout 15 /opt/wine-stable/bin/wine "$input_injector_exe" \
+                "$clipboard_guard_windows_path" GameViewer.exe \
+                >>"$state_dir/clipboard-guard-injector.log" 2>&1; then
+                break
+            fi
+            sleep 0.25
+        done
+    fi
     /usr/bin/xdotool windowactivate --sync "$relay_window_id" \
         >/dev/null 2>&1 || true
 }

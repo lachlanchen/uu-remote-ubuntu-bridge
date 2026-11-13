@@ -173,10 +173,47 @@ to refresh a running Wine application's clipboard. In a reported outbound
 Chinese failure, the private X11 selection contained valid Unicode while the
 Win32 clipboard still contained question marks. A direct Unicode write
 preserved Chinese, Japanese, emoji, and quotes at the Win32 boundary. This
-change does not set a global Wine ANSI code page or reinterpret UTF-8 as
-legacy `CF_TEXT`. A remote client that requests a lossy ANSI format still
-needs separate investigation; local Unicode validation alone is not proof
-of that client's paste result.
+change does not set a global Wine ANSI code page. Local Unicode validation
+alone is not proof of the remote client's paste result.
+
+#### UU 4.44 mobile export
+
+UU 4.44.1.3978 has a separate text-only export path that explicitly requests
+`CF_TEXT`, even when `CF_UNICODETEXT` is available. With Wine's Western ANSI
+code page, that read replaces Chinese, Japanese and emoji with question marks.
+The same path then decodes its byte string as ANSI before sending UTF-8.
+Correcting only the initial read produces mojibake such as `ä¸­` for `中`.
+
+When host clipboard forwarding is enabled, the launcher attaches
+`uu-clipboard-guard.dll` to `GameViewer.exe` during account bootstrap. For
+the reviewed mobile export only, it reads the Unicode clipboard, builds a
+bounded UTF-8 snapshot, and tells that export's following conversion to
+decode the snapshot as UTF-8. Both the length probe and actual conversion
+use the same encoding. UU queues this conversion through a Qt callback on its
+GUI thread: it is no longer on the original clipboard reader's call stack.
+A per-thread marker survives that boundary and is consumed after conversion;
+the temporary clipboard allocation is released on `CloseClipboard`.
+
+The guard checks the executable's PE metadata and instruction signatures,
+the clipboard-read call site, the conversion call sites, and the corresponding
+reader or queued-callback stack frame. It leaves unrelated ANSI clipboard consumers and code-page
+conversions unchanged. It does not modify the vendor executable on disk,
+inject paste keystrokes, change keyboard layouts, or record copied text.
+Only initialization and bounded result metadata are logged.
+
+The currently reviewed build is **4.44.1.3978**. An unknown build is left
+unmodified and reported as unreviewed; `verify.sh` fails the mobile-clipboard
+check when the outbound helper is active but its guard is absent or lacks a
+fresh success receipt. A future UU upgrade needs this export path reviewed
+again before its clipboard support can be accepted. The installer includes
+the guard and bootstrap attachment, so it is reapplied after reboot or a
+normal bridge restart. No periodic injection service is added.
+
+The guard is an interoperability correction, not general file/image clipboard
+support. Verify a fresh Ubuntu → mobile copy after installation, including
+`中文测试 日本語 😀 “引号”`, a second copy, and multiline text. Also check
+mobile → Ubuntu paste and dictation. Do not treat a successful local test as
+confirmation of every mobile client or its clipboard permissions.
 
 When enabled, the private VNC viewer's ClientCutText channel is disabled;
 the existing authenticated GameViewer companion still supplies the inbound
@@ -193,6 +230,8 @@ UURB_TEST_X11=1 UURB_TEST_WINE=1 python3 -m unittest discover \
   -s tests -p test_host_clipboard.py -v
 UURB_TEST_WINE=1 python3 -m unittest discover \
   -s tests -p test_host_clipboard_win32.py -v
+UURB_TEST_WINE=1 python3 -m unittest discover \
+  -s tests -p test_clipboard_guard.py -v
 ```
 
 The second test keeps the Wine session alive across successive host copies,
@@ -200,6 +239,12 @@ checks repeated and multiline Unicode copies, excludes bridge-owned input,
 and verifies that invalid UTF-8, embedded NUL, and oversized input leave the
 previous clipboard intact. All probes use temporary X displays and a
 temporary Wine prefix. They do not read the user's desktop clipboard.
+
+The guard test exercises the full UTF-16 → UTF-8 → UTF-16 conversion,
+including the separate size query, invalid UTF-16, size limits, missing
+terminators, unrelated call contexts, normal ANSI readers, and temporary
+allocation/marker lifetime. Its controlled stack frames exercise the route
+predicate; the installed vendor build still needs a real-client copy test.
 
 This verifies the local Windows clipboard boundary, not every remote client's
 clipboard policy. Test copy/paste in both directions through the real UU client

@@ -42,6 +42,8 @@ case "$release_version" in
 esac
 freerdp="$wine_prefix/drive_c/Program Files/FreeRDP/sdl-freerdp.exe"
 cursor_guard="$wine_prefix/compat/uu-cursor-guard.dll"
+clipboard_guard="$wine_prefix/compat/uu-clipboard-guard.dll"
+clipboard_guard_log="$wine_prefix/drive_c/users/$bridge_user/AppData/Local/Temp/uu-clipboard-guard.log"
 cursor_guard_log="$wine_prefix/drive_c/users/$bridge_user/Temp/uu-cursor-guard.log"
 cursor_reader_guard_log="$wine_prefix/drive_c/users/$bridge_user/AppData/Local/Temp/uu-cursor-guard.log"
 libei_backport="$wine_prefix/compat/libei/libei.so.1.2.1"
@@ -510,6 +512,52 @@ else
 fi
 
 relay_pid="$(pgrep -n -u "$UID" -x 'sdl-freerdp.exe' || true)"
+# Check only when the outbound helper is actually running. It may have been
+# enabled by a systemd drop-in rather than the saved environment file.
+if pgrep -u "$UID" -f '^/usr/bin/python3 .*/uu-host-clipboard ' >/dev/null; then
+    if /usr/bin/python3 - "$wine_prefix" "$clipboard_guard" "$clipboard_guard_log" <<'PY'
+import os
+from pathlib import Path
+import sys
+
+prefix, guard, log = map(Path, sys.argv[1:])
+app = str(prefix / 'drive_c/Program Files/Netease/GameViewer/bin/GameViewer.exe')
+try:
+    lines = log.read_text().splitlines()
+    initializations = [line for line in lines if any(
+        f'result={value}' in line for value in ('ready', 'skipped', 'failed'))]
+    if not initializations or 'result=ready' not in initializations[-1]:
+        raise ValueError('no current success receipt')
+    boot = next(int(line.split()[1]) for line in Path('/proc/stat').read_text().splitlines()
+                if line.startswith('btime '))
+    ticks = os.sysconf('SC_CLK_TCK')
+    for proc in Path('/proc').iterdir():
+        if not proc.name.isdigit():
+            continue
+        try:
+            if proc.stat().st_uid != os.getuid():
+                continue
+            maps = (proc / 'maps').read_text()
+            paths = {line.split(None, 5)[5].strip() for line in maps.splitlines()
+                     if len(line.split(None, 5)) == 6}
+            if app not in paths or str(guard) not in paths:
+                continue
+            fields = (proc / 'stat').read_text().rsplit(')', 1)[1].split()
+            started = boot + int(fields[19]) / ticks
+            if log.stat().st_mtime >= started - 1:
+                sys.exit(0)
+        except (OSError, ValueError):
+            continue
+except (OSError, ValueError, StopIteration):
+    pass
+sys.exit(1)
+PY
+    then
+        pass 'outbound mobile clipboard Unicode guard is loaded with a fresh receipt'
+    else
+        fail 'outbound mobile clipboard guard is absent, stale, or the UU build is unreviewed'
+    fi
+fi
 cursor_server_pid="$(
     pgrep -o -u "$UID" -f 'GameViewerServer\.exe' || true
 )"
