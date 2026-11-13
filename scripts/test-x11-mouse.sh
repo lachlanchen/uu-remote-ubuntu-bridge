@@ -7,6 +7,7 @@ temporary_dir="$(mktemp -d "${TMPDIR:-/tmp}/uurb-x11-mouse.XXXXXX")"
 wine_prefix="$temporary_dir/wine"
 ready_file="$temporary_dir/x11-input.port"
 broker_log="$temporary_dir/input-broker.log"
+bridge_log="$temporary_dir/input-bridge.log"
 token="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
 xvfb_pid=""
 xev_pid=""
@@ -58,7 +59,7 @@ fi
 "$repo_dir/scripts/build-compat.sh" "$temporary_dir/compat" >/dev/null
 x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \
     -o "$temporary_dir/uu-mouse-probe.exe" \
-    "$repo_dir/tests/probes/uu_mouse_probe.c"
+    "$repo_dir/tests/probes/uu_mouse_probe.c" -luser32
 
 Xvfb "$display" -screen 0 800x600x24 -ac -nolisten tcp \
     >"$temporary_dir/xvfb.log" 2>&1 &
@@ -95,6 +96,10 @@ DISPLAY="$display" WINEPREFIX="$wine_prefix" WINEDEBUG=-all \
     /opt/wine-stable/bin/wineboot -u >/dev/null 2>&1
 broker_log_windows="$(DISPLAY="$display" WINEPREFIX="$wine_prefix" \
     WINEDEBUG=-all /opt/wine-stable/bin/winepath -w "$broker_log")"
+bridge_log_windows="$(DISPLAY="$display" WINEPREFIX="$wine_prefix" \
+    WINEDEBUG=-all /opt/wine-stable/bin/winepath -w "$bridge_log")"
+bridge_dll_windows="$(DISPLAY="$display" WINEPREFIX="$wine_prefix" \
+    WINEDEBUG=-all /opt/wine-stable/bin/winepath -w "$temporary_dir/compat/uu-input-bridge.dll")"
 DISPLAY="$display" WINEPREFIX="$wine_prefix" WINEDEBUG=-all \
     WINEDLLOVERRIDES='mscoree,mshtml=' \
     UU_INPUT_BROKER_LOG="$broker_log_windows" \
@@ -107,7 +112,8 @@ sleep 0.5
 
 DISPLAY="$display" WINEPREFIX="$wine_prefix" WINEDEBUG=-all \
     WINEDLLOVERRIDES='mscoree,mshtml=' \
-    /opt/wine-stable/bin/wine "$temporary_dir/uu-mouse-probe.exe"
+    UU_INPUT_BRIDGE_LOG="$bridge_log_windows" \
+    /opt/wine-stable/bin/wine "$temporary_dir/uu-mouse-probe.exe" "$bridge_dll_windows"
 sleep 0.2
 
 python3 - "$display" "$temporary_dir/xev.log" <<'PY'
@@ -153,4 +159,8 @@ if ! rg -q 'category=mouse .*route=x11-mouse .*result=6 error=0' \
     exit 1
 fi
 printf 'broker-route=x11-mouse result=6 error=0\n'
+if ! rg -q 'category=mouse .*route=broker .*result=6 error=0' "$bridge_log"; then
+    printf 'mouse events bypassed the native broker at the DLL entry\n' >&2
+    exit 1
+fi
 printf 'isolated mouse acceptance passed\n'

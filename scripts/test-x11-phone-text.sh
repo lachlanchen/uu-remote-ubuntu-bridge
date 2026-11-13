@@ -64,6 +64,9 @@ x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \
 x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \
     -o "$temporary_dir/uu-long-text-probe.exe" \
     "$repo_dir/tests/probes/uu_long_text_probe.c" -luser32
+x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \
+    -o "$temporary_dir/uu-editing-keys-probe.exe" \
+    "$repo_dir/tests/probes/uu_editing_keys_probe.c" -luser32
 
 Xvfb "$display" -screen 0 800x600x24 -ac -nolisten tcp \
     >"$temporary_dir/xvfb.log" 2>&1 &
@@ -181,4 +184,42 @@ if ! rg -q \
     exit 1
 fi
 printf 'long-phone-text=2000/2000 one-batch order=exact\n'
+
+# Do not stop at broker-only fixtures: Wine may acknowledge these keys on
+# the wrong desktop. The real DLL entry must choose the native broker too.
+DISPLAY="$display" WINEPREFIX="$wine_prefix" WINEDEBUG=-all \
+    WINEDLLOVERRIDES='mscoree,mshtml=' \
+    UU_INPUT_BRIDGE_LOG="$bridge_log_windows" \
+    /opt/wine-stable/bin/wine "$temporary_dir/uu-editing-keys-probe.exe" \
+    "$bridge_dll_windows"
+sleep 0.3
+python3 - "$xev_log" <<'PY'
+import re, sys
+from pathlib import Path
+events = []
+for block in re.split(r"(?=Key(?:Press|Release) event,)", Path(sys.argv[1]).read_text()):
+    event = re.match(r"(KeyPress|KeyRelease) event,", block)
+    symbol = re.search(r"keysym 0x[0-9a-f]+, ([^)]+)\)", block)
+    if event and symbol:
+        events.append((event[1], symbol[1]))
+expected = []
+def pair(symbol):
+    expected.extend((("KeyPress", symbol), ("KeyRelease", symbol)))
+for symbol in ("BackSpace", "Return", "Tab", "Escape", "Delete", "Left",
+               "Right", "Up", "Down", "Home", "End", "Prior", "Next", "Insert"):
+    pair(symbol)
+for modifier, symbol in (("Shift_L", "Left"), ("Control_L", "a"),
+                          ("Control_L", "Left"), ("Shift_L", "A")):
+    expected.append(("KeyPress", modifier)); pair(symbol)
+    expected.append(("KeyRelease", modifier))
+pair("BackSpace")
+if events[2052:] != expected:
+    raise SystemExit(f"editing-key order mismatch: {events[2052:]!r}")
+print(f"editing-keys={len(expected)}/{len(expected)} ordered transitions; modifiers released")
+PY
+if ! rg -q 'category=keyboard .*route=broker .*result=1 error=0' "$bridge_log" ||
+   ! rg -q 'category=keyboard .*route=x11 .*result=1 error=0' "$broker_log"; then
+    printf 'editing keys did not cross both DLL and native broker boundaries\n' >&2
+    exit 1
+fi
 printf 'isolated phone-text acceptance passed\n'

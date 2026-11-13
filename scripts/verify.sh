@@ -686,6 +686,11 @@ elif [[ "$active_keyboard_route" == x11 ]]; then
     else
         fail 'input broker reports X11 routing but its native helper is unavailable'
     fi
+    if [[ "$broker_configuration" == *"native-route=advertised"* ]]; then
+        pass 'native input route is advertised to the service-created UU process'
+    else
+        fail 'native route advertisement is missing; Wine acceptance alone is insufficient'
+    fi
 else
     pass 'compatible RDP physical-key route is active'
 fi

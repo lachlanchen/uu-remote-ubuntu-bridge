@@ -59,6 +59,7 @@ typedef enum phone_text_mode {
 } phone_text_mode;
 
 static HANDLE log_file = INVALID_HANDLE_VALUE;
+static HANDLE native_route_event;
 static volatile LONG input_call_count;
 static volatile LONG keyboard_call_count;
 static volatile LONG mouse_call_count;
@@ -1170,11 +1171,23 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous,
     x11_input_configured = configure_x11_input();
     x11_input_semantic_only = x11_input_configured &&
                               configure_x11_semantic_only();
+    if (x11_input_configured && !x11_input_semantic_only) {
+        native_route_event = CreateEventW(NULL, TRUE, TRUE,
+                                         UURB_NATIVE_INPUT_EVENT);
+        if (native_route_event == NULL) {
+            write_log("UU native input route advertisement failed\r\n");
+            flush_log();
+            return 1;
+        }
+        /* Keep ownership for this broker's lifetime. The OS removes the
+         * marker when the broker exits; readers never retain a handle. */
+        write_log("UU native input route advertisement active\r\n");
+    }
     {
         char line[256];
 
         _snprintf(line, sizeof(line),
-                  "UU input broker active text-delay-ms=%lu physical-delay-ms=%lu focus-timeout-ms=%lu keyboard-route=%s phone-text-mode=%s semantic-clipboard=%s\r\n",
+                  "UU input broker active text-delay-ms=%lu physical-delay-ms=%lu focus-timeout-ms=%lu keyboard-route=%s phone-text-mode=%s semantic-clipboard=%s native-route=%s\r\n",
                   (unsigned long)text_key_delay_ms,
                   (unsigned long)physical_key_delay_ms,
                   (unsigned long)INPUT_BRIDGE_FOCUS_TIMEOUT_MS,
@@ -1183,7 +1196,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous,
                   phone_text_mode_name(configured_phone_text_mode),
                   x11_input_configured ?
                       (x11_input_semantic_only ? "relay" : "direct") :
-                      "unavailable");
+                      "unavailable",
+                  native_route_event != NULL ? "advertised" : "off");
         line[sizeof(line) - 1] = '\0';
         write_log(line);
         flush_log();
