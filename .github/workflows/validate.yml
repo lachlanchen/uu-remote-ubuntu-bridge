@@ -47,7 +47,7 @@ jobs:
             gcc-mingw-w64-x86-64-win32 \
             wine wine64 wine64-tools \
             x11-utils xclip xvfb libglib2.0-bin desktop-file-utils \
-            x11vnc xdotool openbox tigervnc-viewer python3-gi gir1.2-gtk-3.0
+            x11vnc xdotool openbox tigervnc-viewer python3-gi gir1.2-gtk-3.0 python3-xlib
 
       - name: Run unit and documentation tests
         env:
@@ -72,3 +72,10 @@ jobs:
 
       - name: Validate approved manifests
         run: python3 scripts/patch-gameviewer.py manifests
+
+      - name: Exercise host-to-Wine Unicode clipboard publication
+        env:
+          UURB_TEST_WINE: "1"
+          UURB_WINE_BIN: /usr/bin/wine
+          UURB_WINESERVER_BIN: /usr/bin/wineserver
+        run: python3 -m unittest discover -s tests -p test_host_clipboard_win32.py -v

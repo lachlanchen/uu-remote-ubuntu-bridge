@@ -157,13 +157,26 @@ specific drop-in and restarting that service. Both operations briefly
 disconnect UU. Other desktop clients and open applications remain running.
 
 The return helper listens for fresh X11 CLIPBOARD ownership changes. XRes
-identifies the actual local owner process; same-user application copies may
-be served on the private Wine clipboard. Owners descended from the bridge
+identifies the actual local owner process; same-user application copies are
+published directly as Win32 `CF_UNICODETEXT` in the private Wine session.
+The existing clipboard companion's `--set-host-text` mode accepts bounded
+UTF-8 through stdin and creates a hidden, message-only clipboard owner. It
+never changes the foreground window. Owners descended from the bridge
 are excluded, including incoming clipboard and dictation `xclip` children.
 It does not replay startup content, inspect PRIMARY, synthesize a paste, or
 log/persist copied text. UTF-8 text is bounded to 60 KiB; unsupported, oversized,
 invalid, or timed-out conversions leave the previous destination unchanged.
 Images and files are not supported by this return helper.
+
+Direct Win32 publication avoids relying solely on X11 selection ownership
+to refresh a running Wine application's clipboard. In a reported outbound
+Chinese failure, the private X11 selection contained valid Unicode while the
+Win32 clipboard still contained question marks. A direct Unicode write
+preserved Chinese, Japanese, emoji, and quotes at the Win32 boundary. This
+change does not set a global Wine ANSI code page or reinterpret UTF-8 as
+legacy `CF_TEXT`. A remote client that requests a lossy ANSI format still
+needs separate investigation; local Unicode validation alone is not proof
+of that client's paste result.
 
 When enabled, the private VNC viewer's ClientCutText channel is disabled;
 the existing authenticated GameViewer companion still supplies the inbound
@@ -178,7 +191,15 @@ Wine CF_UNICODETEXT (with normal Windows CRLF conversion):
 ```bash
 UURB_TEST_X11=1 UURB_TEST_WINE=1 python3 -m unittest discover \
   -s tests -p test_host_clipboard.py -v
+UURB_TEST_WINE=1 python3 -m unittest discover \
+  -s tests -p test_host_clipboard_win32.py -v
 ```
+
+The second test keeps the Wine session alive across successive host copies,
+checks repeated and multiline Unicode copies, excludes bridge-owned input,
+and verifies that invalid UTF-8, embedded NUL, and oversized input leave the
+previous clipboard intact. All probes use temporary X displays and a
+temporary Wine prefix. They do not read the user's desktop clipboard.
 
 This verifies the local Windows clipboard boundary, not every remote client's
 clipboard policy. Test copy/paste in both directions through the real UU client
