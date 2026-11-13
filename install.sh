@@ -664,6 +664,7 @@ if [[ ! "$release_manifest" -ef "$installed_manifest" ]]; then
 fi
 install -m 0755 \
     "$compat_build/uu-cursor-guard.dll" \
+    "$compat_build/uu-clipboard-unicode.dll" \
     "$compat_build/uu-input-bridge.dll" \
     "$compat_build/uu-input-broker.exe" \
     "$compat_build/uu-injector.exe" \

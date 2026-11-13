@@ -78,4 +78,6 @@ jobs:
           UURB_TEST_WINE: "1"
           UURB_WINE_BIN: /usr/bin/wine
           UURB_WINESERVER_BIN: /usr/bin/wineserver
-        run: python3 -m unittest discover -s tests -p test_host_clipboard_win32.py -v
+        run: |
+          python3 -m unittest discover -s tests -p test_host_clipboard_win32.py -v
+          python3 -m unittest discover -s tests -p test_clipboard_guard.py -v
