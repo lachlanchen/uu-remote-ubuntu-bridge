@@ -178,6 +178,10 @@ alone is not proof of the remote client's paste result.
 
 #### UU 4.44 mobile export
 
+The [outbound Unicode repair record](outbound-mobile-unicode-clipboard.md)
+documents the 13 November 2026 phone confirmation, the three conversion
+boundaries, the failed thread-local approach and the cross-thread regression.
+
 UU 4.44.1.3978 has a separate text-only export path that explicitly requests
 `CF_TEXT`, even when `CF_UNICODETEXT` is available. With Wine's Western ANSI
 code page, that read replaces Chinese, Japanese and emoji with question marks.
