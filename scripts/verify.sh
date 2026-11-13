@@ -42,7 +42,7 @@ case "$release_version" in
 esac
 freerdp="$wine_prefix/drive_c/Program Files/FreeRDP/sdl-freerdp.exe"
 cursor_guard="$wine_prefix/compat/uu-cursor-guard.dll"
-clipboard_guard="$wine_prefix/compat/uu-clipboard-guard.dll"
+clipboard_guard="$wine_prefix/compat/uu-clipboard-unicode.dll"
 clipboard_guard_log="$wine_prefix/drive_c/users/$bridge_user/AppData/Local/Temp/uu-clipboard-guard.log"
 cursor_guard_log="$wine_prefix/drive_c/users/$bridge_user/Temp/uu-cursor-guard.log"
 cursor_reader_guard_log="$wine_prefix/drive_c/users/$bridge_user/AppData/Local/Temp/uu-cursor-guard.log"

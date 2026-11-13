@@ -185,14 +185,21 @@ The same path then decodes its byte string as ANSI before sending UTF-8.
 Correcting only the initial read produces mojibake such as `ä¸­` for `中`.
 
 When host clipboard forwarding is enabled, the launcher attaches
-`uu-clipboard-guard.dll` to `GameViewer.exe` during account bootstrap. For
+`uu-clipboard-unicode.dll` to `GameViewer.exe` during account bootstrap. For
 the reviewed mobile export only, it reads the Unicode clipboard, builds a
 bounded UTF-8 snapshot, and tells that export's following conversion to
 decode the snapshot as UTF-8. Both the length probe and actual conversion
-use the same encoding. UU queues this conversion through a Qt callback on its
-GUI thread: it is no longer on the original clipboard reader's call stack.
-A per-thread marker survives that boundary and is consumed after conversion;
-the temporary clipboard allocation is released on `CloseClipboard`.
+use the same encoding. UU queues this conversion through a Qt callback: the
+reader's call stack and thread-local state cannot identify the later conversion.
+A process-wide bounded table retains the exact exported bytes until conversion
+consumes the matching entry. Copies can be decoded on another thread and out
+of order. Unmatched data keeps its original code page.
+
+The table holds at most 16 copies of at most 60 KiB each, in memory only.
+Consumed entries are zeroed and freed; entries older than 30 seconds are
+discarded when another copy arrives. If the table is full, the reader keeps
+the original behavior and logs a bounded fallback rather than growing memory.
+The separate temporary clipboard handle is released on `CloseClipboard`.
 
 The guard checks the executable's PE metadata and instruction signatures,
 the clipboard-read call site, the conversion call sites, and the corresponding
@@ -240,11 +247,14 @@ and verifies that invalid UTF-8, embedded NUL, and oversized input leave the
 previous clipboard intact. All probes use temporary X displays and a
 temporary Wine prefix. They do not read the user's desktop clipboard.
 
-The guard test exercises the full UTF-16 → UTF-8 → UTF-16 conversion,
-including the separate size query, invalid UTF-16, size limits, missing
-terminators, unrelated call contexts, normal ANSI readers, and temporary
-allocation/marker lifetime. Its controlled stack frames exercise the route
-predicate; the installed vendor build still needs a real-client copy test.
+The guard test reads the Win32 clipboard on a real worker thread, closes it,
+queues a second copy, and decodes both on the main thread in reverse order.
+It checks the size query and full UTF-16 → UTF-8 → UTF-16 conversion, exact
+matching, invalid UTF-16, size limits, missing terminators, unrelated ANSI
+data, queue capacity, expired entries, and temporary allocation lifetime.
+Its controlled stack frames exercise the route predicate; the installed
+vendor build still needs a real-client copy test. A same-thread conversion
+test alone cannot validate this asynchronous boundary.
 
 This verifies the local Windows clipboard boundary, not every remote client's
 clipboard policy. Test copy/paste in both directions through the real UU client

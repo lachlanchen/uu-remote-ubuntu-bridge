@@ -33,10 +33,50 @@ static void set_fixture(const WCHAR *text, SIZE_T bytes)
     GlobalUnlock(fixture);
 }
 
+struct read_result {
+    char text[256];
+    int bytes;
+    DWORD thread;
+};
+
+static DWORD WINAPI read_on_worker(void *argument)
+{
+    struct read_result *result = argument;
+    HGLOBAL snapshot;
+    const char *text;
+    result->thread = GetCurrentThreadId();
+    if (!OpenClipboard(NULL))
+        return 40;
+    snapshot = guarded_data(CF_TEXT);
+    if (!snapshot || TlsGetValue(scratch_slot) != snapshot)
+        return 41;
+    result->bytes = (int)GlobalSize(snapshot);
+    text = GlobalLock(snapshot);
+    if (!text || result->bytes > (int)sizeof(result->text))
+        return 42;
+    memcpy(result->text, text, result->bytes);
+    GlobalUnlock(snapshot);
+    if (!guarded_close() || TlsGetValue(scratch_slot))
+        return 43;
+    return 0;
+}
+
+static int collect_on_worker(struct read_result *result)
+{
+    DWORD status;
+    HANDLE worker = CreateThread(NULL, 0, read_on_worker, result, 0, NULL);
+    if (!worker || WaitForSingleObject(worker, 10000) != WAIT_OBJECT_0 ||
+        !GetExitCodeThread(worker, &status))
+        return 44;
+    CloseHandle(worker);
+    return status || result->thread == GetCurrentThreadId() ? 45 : 0;
+}
+
 int main(void)
 {
     static const WCHAR text[] = L"中文测试 日本語 😀 “引号”\r\nsecond line";
     static const char expected[] = "中文测试 日本語 😀 “引号”\r\nsecond line";
+    static const WCHAR second[] = L"第二条 ' @ 😀";
     const WCHAR invalid[] = {0xd800, 0};
     const WCHAR unterminated[] = {L'a', L'b'};
     WCHAR *large;
@@ -47,7 +87,7 @@ int main(void)
     HWND owner;
     HANDLE native;
     WCHAR decoded[128];
-    char exported[256];
+    struct read_result first_read, second_read;
     int units;
     (void)initialize_guard; /* Test the same implementation without DLL entry. */
 
@@ -113,7 +153,6 @@ int main(void)
     original_close = CloseClipboard;
     original_multibyte = MultiByteToWideChar;
     scratch_slot = TlsAlloc();
-    utf8_slot = TlsAlloc();
     owner = CreateWindowExW(0, L"STATIC", L"isolated clipboard guard probe", 0,
                             0, 0, 0, 0, HWND_MESSAGE, NULL, NULL, NULL);
     if (!owner || scratch_slot == TLS_OUT_OF_INDEXES || !OpenClipboard(owner) ||
@@ -128,35 +167,61 @@ int main(void)
     if (guarded_data(CF_TEXT) != GetClipboardData(CF_TEXT) ||
         guarded_data(CF_UNICODETEXT) != GetClipboardData(CF_UNICODETEXT))
         return 32;
+    CloseClipboard();
     image = (BYTE *)0x140000000;
     probe_caller = image + DATA_RETURN_RVA;
     probe_frame = image + EXPORT_RETURN_RVA;
-    snapshot = guarded_data(CF_TEXT);
-    if (!snapshot || !TlsGetValue(utf8_slot) || guarded_data(CF_TEXT) != snapshot)
+    if (collect_on_worker(&first_read) || strcmp(first_read.text, expected) ||
+        !matching_export(first_read.text, first_read.bytes))
         return 33;
-    utf8 = GlobalLock(snapshot);
-    if (!utf8 || strcmp(utf8, expected))
+    /* Queue another copy BEFORE the first is decoded. The callback runs on
+     * a different thread and may consume copies out of order. */
+    if (!OpenClipboard(owner) || !EmptyClipboard())
         return 34;
-    memcpy(exported, utf8, sizeof(expected));
-    GlobalUnlock(snapshot);
-    if (!guarded_close() || TlsGetValue(scratch_slot) || !TlsGetValue(utf8_slot))
+    native = GlobalAlloc(GMEM_MOVEABLE, sizeof(second));
+    memcpy(GlobalLock(native), second, sizeof(second));
+    GlobalUnlock(native);
+    if (!SetClipboardData(CF_UNICODETEXT, native) || !CloseClipboard() ||
+        collect_on_worker(&second_read))
         return 35;
     probe_frame = image + DECODE_RETURN_RVA;
     probe_caller = image + 0x1a2b6d3;
-    units = guarded_multibyte(CP_ACP, 0, exported, sizeof(expected), NULL, 0);
-    if (units != sizeof(text) / sizeof(WCHAR) || !TlsGetValue(utf8_slot))
+    /* Context alone must not reinterpret arbitrary ANSI bytes as UTF-8. */
+    if (guarded_multibyte(CP_ACP, 0, "\xc3\xa9", 2, NULL, 0) !=
+        MultiByteToWideChar(CP_ACP, 0, "\xc3\xa9", 2, NULL, 0))
         return 36;
-    probe_caller = image + 0x1a2b710;
-    if (guarded_multibyte(CP_ACP, 0, exported, sizeof(expected), decoded, 128) != units ||
-        wcscmp(decoded, text) || TlsGetValue(utf8_slot))
-        return 37;
-    /* No marker: the same conversion helper must retain native ACP behavior. */
-    if (guarded_multibyte(CP_ACP, 0, exported, sizeof(expected), NULL, 0) !=
-        MultiByteToWideChar(CP_ACP, 0, exported, sizeof(expected), NULL, 0))
-        return 38;
+    for (unsigned i = 0; i < 2; i++) {
+        struct read_result *read = i == 0 ? &second_read : &first_read;
+        const WCHAR *wanted = i == 0 ? second : text;
+        probe_caller = image + 0x1a2b6d3;
+        units = guarded_multibyte(CP_ACP, 0, read->text, read->bytes, NULL, 0);
+        if (units != (int)wcslen(wanted) + 1 || !matching_export(read->text, read->bytes))
+            return 37;
+        probe_caller = image + 0x1a2b710;
+        if (guarded_multibyte(CP_ACP, 0, read->text, read->bytes, decoded, 128) != units ||
+            wcscmp(decoded, wanted) || matching_export(read->text, read->bytes))
+            return 38;
+    }
+    /* No pending export: retain native ACP behavior even at this call site. */
+    if (guarded_multibyte(CP_ACP, 0, first_read.text, first_read.bytes, NULL, 0) !=
+        MultiByteToWideChar(CP_ACP, 0, first_read.text, first_read.bytes, NULL, 0))
+        return 39;
+    snapshot = GlobalAlloc(GMEM_MOVEABLE, sizeof(expected));
+    memcpy(GlobalLock(snapshot), expected, sizeof(expected));
+    GlobalUnlock(snapshot);
+    for (unsigned i = 0; i < PENDING_EXPORTS; i++)
+        if (!remember_export(snapshot))
+            return 50;
+    if (remember_export(snapshot))
+        return 51;
+    pending[0].created = GetTickCount64() - PENDING_MILLISECONDS - 1;
+    if (!remember_export(snapshot))
+        return 52;
+    for (unsigned i = 0; i < PENDING_EXPORTS; i++)
+        clear_pending(&pending[i]);
+    GlobalFree(snapshot);
     DestroyWindow(owner);
     TlsFree(scratch_slot);
-    TlsFree(utf8_slot);
-    puts("PASS: full export/decode round-trip, bounds, invalid data, call-site isolation and scratch lifetime");
+    puts("PASS: cross-thread queued copies, out-of-order decode, exact matching, bounds, call-site isolation and lifetime");
     return 0;
 }

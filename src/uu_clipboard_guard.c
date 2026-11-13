@@ -15,13 +15,25 @@
 /* The conversion runs later through Qt's queued callback, after the clipboard
  * reader returned. The reader's original stack is no longer present here. */
 #define DECODE_RETURN_RVA 0x2dc72bU
+#define PENDING_EXPORTS 16U
+#define PENDING_MILLISECONDS 30000U
 
 static HANDLE (WINAPI *original_data)(UINT);
 static BOOL (WINAPI *original_close)(void);
 static int (WINAPI *original_multibyte)(UINT, DWORD, LPCCH, int, LPWSTR, int);
 static BYTE *image;
 static DWORD scratch_slot = TLS_OUT_OF_INDEXES;
-static DWORD utf8_slot = TLS_OUT_OF_INDEXES;
+/* The reader and Qt receiver need not be on the same thread. Retain a bounded
+ * exact byte match until the queued conversion consumes it; no heuristics or
+ * global code-page changes. This is memory only, never clipboard logging. */
+static struct pending_export {
+    char *text;
+    SIZE_T bytes;
+    ULONGLONG created;
+    ULONGLONG serial;
+} pending[PENDING_EXPORTS];
+static SRWLOCK pending_lock = SRWLOCK_INIT;
+static ULONGLONG next_serial;
 static HANDLE log_handle = INVALID_HANDLE_VALUE;
 static SRWLOCK log_lock = SRWLOCK_INIT;
 static volatile LONG report_count;
@@ -36,6 +48,14 @@ static void report(const char *message)
         ReleaseSRWLockExclusive(&log_lock);
     }
     SetLastError(saved);
+}
+
+static void report_thread(const char *result)
+{
+    char message[160];
+    snprintf(message, sizeof(message),
+             "mobile-clipboard result=%s thread=%lu\r\n", result, GetCurrentThreadId());
+    report(message);
 }
 
 static BOOL export_context(void *caller, void **frames, USHORT count)
@@ -61,25 +81,97 @@ static BOOL decode_context(UINT codepage, void *caller, void **frames, USHORT co
     return FALSE;
 }
 
+static void clear_pending(struct pending_export *entry)
+{
+    if (entry->text) {
+        SecureZeroMemory(entry->text, entry->bytes + 1);
+        free(entry->text);
+    }
+    memset(entry, 0, sizeof(*entry));
+}
+
+static BOOL remember_export(HGLOBAL snapshot)
+{
+    const char *text = GlobalLock(snapshot);
+    SIZE_T allocation = GlobalSize(snapshot);
+    ULONGLONG now = GetTickCount64();
+    BOOL saved = FALSE;
+    if (!text)
+        return FALSE;
+    AcquireSRWLockExclusive(&pending_lock);
+    for (unsigned i = 0; i < PENDING_EXPORTS; i++)
+        if (pending[i].text && now - pending[i].created > PENDING_MILLISECONDS)
+            clear_pending(&pending[i]);
+    for (unsigned i = 0; i < PENDING_EXPORTS; i++) {
+        if (pending[i].text)
+            continue;
+        pending[i].text = malloc(allocation);
+        if (!pending[i].text)
+            break;
+        memcpy(pending[i].text, text, allocation);
+        pending[i].bytes = allocation - 1;
+        pending[i].created = now;
+        pending[i].serial = ++next_serial;
+        saved = TRUE;
+        break;
+    }
+    ReleaseSRWLockExclusive(&pending_lock);
+    GlobalUnlock(snapshot);
+    return saved;
+}
+
+static ULONGLONG matching_export(LPCCH text, int bytes)
+{
+    ULONGLONG serial = 0;
+    if (!text || bytes <= 0 || bytes > (int)MAX_UTF8_BYTES + 1)
+        return 0;
+    AcquireSRWLockShared(&pending_lock);
+    for (unsigned i = 0; i < PENDING_EXPORTS; i++) {
+        struct pending_export *entry = &pending[i];
+        if (!entry->text ||
+            ((SIZE_T)bytes != entry->bytes && (SIZE_T)bytes != entry->bytes + 1))
+            continue;
+        if (!memcmp(text, entry->text, (SIZE_T)bytes)) {
+            serial = entry->serial;
+            break;
+        }
+    }
+    ReleaseSRWLockShared(&pending_lock);
+    return serial;
+}
+
+static void consume_export(ULONGLONG serial)
+{
+    AcquireSRWLockExclusive(&pending_lock);
+    for (unsigned i = 0; i < PENDING_EXPORTS; i++)
+        if (pending[i].serial == serial) {
+            clear_pending(&pending[i]);
+            break;
+        }
+    ReleaseSRWLockExclusive(&pending_lock);
+}
+
 static int WINAPI guarded_multibyte(UINT codepage, DWORD flags, LPCCH text,
                                      int bytes, LPWSTR output, int capacity)
 {
     void *frames[32];
-    BOOL converted = FALSE;
+    ULONGLONG serial = 0;
     int result;
-    if (codepage == CP_ACP && utf8_slot != TLS_OUT_OF_INDEXES &&
-        TlsGetValue(utf8_slot)) {
+    if (codepage == CP_ACP) {
         USHORT count = CaptureStackBackTrace(0, 32, frames, NULL);
         if (decode_context(codepage, __builtin_return_address(0), frames, count)) {
-            codepage = CP_UTF8;
-            converted = TRUE;
+            serial = matching_export(text, bytes);
+            if (serial)
+                codepage = CP_UTF8;
+            else if (!output)
+                report_thread("unchanged reason=no-pending-match");
         }
     }
     result = original_multibyte(codepage, flags, text, bytes, output, capacity);
-    if (converted && output && capacity > 0) {
+    if (serial && result > 0 && output && capacity > 0) {
         DWORD saved = GetLastError();
-        TlsSetValue(utf8_slot, NULL);
-        report("mobile-clipboard result=decoded encoding=utf8\r\n");
+        consume_export(serial);
+        report_thread("decoded encoding=utf8");
         SetLastError(saved);
     }
     return result;
@@ -146,11 +238,9 @@ static HANDLE WINAPI guarded_data(UINT format)
     count = CaptureStackBackTrace(0, 16, frames, NULL);
     if (!export_context(__builtin_return_address(0), frames, count))
         return original_data(format);
-    TlsSetValue(utf8_slot, NULL);
     scratch = TlsGetValue(scratch_slot);
     if (scratch) {
-        TlsSetValue(utf8_slot, (void *)1);
-        return scratch;
+        return remember_export(scratch) ? scratch : original_data(format);
     }
     scratch = unicode_snapshot();
     if (!scratch || !TlsSetValue(scratch_slot, scratch)) {
@@ -159,8 +249,13 @@ static HANDLE WINAPI guarded_data(UINT format)
         report("mobile-clipboard result=fallback reason=unicode-unavailable\r\n");
         return original_data(format);
     }
-    TlsSetValue(utf8_slot, (void *)1);
-    report("mobile-clipboard result=exported encoding=utf8\r\n");
+    if (!remember_export(scratch)) {
+        TlsSetValue(scratch_slot, NULL);
+        GlobalFree(scratch);
+        report("mobile-clipboard result=fallback reason=pending-limit\r\n");
+        return original_data(format);
+    }
+    report_thread("exported encoding=utf8");
     return scratch;
 }
 
@@ -283,8 +378,7 @@ static DWORD WINAPI initialize_guard(void *unused)
     close_slot = import_slot("USER32.dll", "CloseClipboard");
     multibyte_slot = import_slot("KERNEL32.dll", "MultiByteToWideChar");
     if (!data_slot || !close_slot || !multibyte_slot ||
-        (scratch_slot = TlsAlloc()) == TLS_OUT_OF_INDEXES ||
-        (utf8_slot = TlsAlloc()) == TLS_OUT_OF_INDEXES)
+        (scratch_slot = TlsAlloc()) == TLS_OUT_OF_INDEXES)
         return 1;
     /* Capture originals before installing either pointer. Preserve other
      * shims; the deployment verifier requires a fresh process's receipt. */
@@ -307,7 +401,7 @@ static DWORD WINAPI initialize_guard(void *unused)
     {
         char message[128];
         snprintf(message, sizeof(message),
-                 "mobile-clipboard result=ready pid=%lu build=4.44.1.3978\r\n",
+                 "mobile-clipboard result=ready pid=%lu build=4.44.1.3978 mode=queued-bytes\r\n",
                  GetCurrentProcessId());
         report(message);
     }
