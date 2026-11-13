@@ -1,10 +1,12 @@
 # Fixing question marks and garbled Unicode in UU's mobile clipboard
 
-Validated on 13 November 2026 with UU **4.44.1.3978**, Wine 10 and the
+Validated on 13 November 2026 with UU **4.44.1.3978**, Wine 11 and the
 Ubuntu X11/VNC desktop relay. The affected direction was **copy on Ubuntu,
 paste on a phone**. The phone confirmed readable Chinese, Japanese and emoji
 after the final correction. This does not establish support for every client,
-file/image transfer or a different UU release.
+file/image transfer or a different UU release. The subsequent
+[4.47 review](releases/4.47.0.5146-review.md) adds that build's exact call sites
+and fixes startup attachment when the launcher and GUI share an executable name.
 
 ## Three boundaries, three different failures
 

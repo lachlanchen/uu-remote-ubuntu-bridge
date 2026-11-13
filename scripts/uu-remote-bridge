@@ -1518,7 +1518,7 @@ fi
     >/dev/null 2>&1 || true
 
 bootstrap_account() {
-    local attempt clipboard_guard_windows_path
+    local attempt clipboard_guard_windows_path clipboard_client_windows_path
     /opt/wine-stable/bin/wine "$service_control_exe" \
         GameViewerService 133 \
         >>"$state_dir/service-control.log" 2>&1 || true
@@ -1534,13 +1534,19 @@ bootstrap_account() {
             clipboard_guard_windows_path="$(
                 /usr/bin/timeout 5 /opt/wine-stable/bin/winepath -w "$clipboard_guard_dll" \
                     2>>"$state_dir/clipboard-guard-injector.log"
-            )" && [[ -n "$clipboard_guard_windows_path" ]]; then
+            )" && [[ -n "$clipboard_guard_windows_path" ]] &&
+            clipboard_client_windows_path="$(
+                /usr/bin/timeout 5 /opt/wine-stable/bin/winepath -w "$uu_app_dir/bin/GameViewer.exe" \
+                    2>>"$state_dir/clipboard-guard-injector.log"
+            )" && [[ -n "$clipboard_client_windows_path" ]]; then
         # One bounded startup attachment, not a periodic injection loop.
         # The DLL independently rejects unreviewed vendor builds. Failure
         # leaves remote access available; verify.sh reports missing support.
+        # The outer launcher has the SAME name. Match the full bin/GUI path
+        # so an early successful load into the launcher cannot end this retry.
         for attempt in {1..8}; do
             if /usr/bin/timeout 15 /opt/wine-stable/bin/wine "$input_injector_exe" \
-                "$clipboard_guard_windows_path" GameViewer.exe \
+                "$clipboard_guard_windows_path" "$clipboard_client_windows_path" \
                 >>"$state_dir/clipboard-guard-injector.log" 2>&1; then
                 break
             fi

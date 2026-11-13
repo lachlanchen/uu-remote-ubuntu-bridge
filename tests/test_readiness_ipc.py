@@ -18,7 +18,7 @@ class ReadinessTests(unittest.TestCase):
             wine = root / 'wine'
             wine.write_text('''#!/bin/bash
 if [[ "$2" == version || "$2" == --version ]]; then
-    if [[ "$TEST_VERSION" == 4.44.1.3978 && "$2" == version ]]; then
+    if [[ "$TEST_VERSION" == 4.4[47].* && "$2" == version ]]; then
         printf 'cliVersion: %s\nmessage: Main application is not running\n' "$TEST_REPORTED"
         exit
     fi
@@ -30,7 +30,7 @@ elif [[ "$2" == echo ]]; then
     [[ "$MODE" != missing-ipc ]] || exit 1
     [[ "$MODE" != delayed || "$n" -ge 2 ]] || exit 1
     [[ "$MODE" != wrong-echo ]] || { echo stale; exit; }
-    if [[ "$TEST_VERSION" == 4.44.1.3978 && "$MODE" != unformatted-echo ]]; then
+    if [[ "$TEST_VERSION" == 4.4[47].* && "$MODE" != unformatted-echo ]]; then
         printf 'echo: %s\\r\\n' "$3"
     else
         echo "$3"
@@ -54,6 +54,7 @@ sleep() { :; }
             for (version, reported), (mode, success, calls) in product((
                 ('4.42.1.2835', '4.42.0.2770'),
                 ('4.44.1.3978', '4.44.1.3978'),
+                ('4.47.0.5146', '4.47.0.5146'),
             ), (
                 ('ready', True, 1), ('delayed', True, 3),
                 ('wrong-version', False, 0), ('missing-ipc', False, 10),
@@ -61,7 +62,7 @@ sleep() { :; }
                 ('unformatted-echo', False, 10),
             )):
                 with self.subTest(version=version, mode=mode):
-                    if mode == 'unformatted-echo' and version != '4.44.1.3978':
+                    if mode == 'unformatted-echo' and version not in ('4.44.1.3978', '4.47.0.5146'):
                         success, calls = True, 1
                     counter = root / 'counter'
                     counter.unlink(missing_ok=True)

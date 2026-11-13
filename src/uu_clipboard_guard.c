@@ -1,4 +1,4 @@
-/* UU 4.44.1.3978 mobile text export asks for CF_TEXT even when Unicode is
+/* Reviewed UU mobile text exports ask for CF_TEXT even when Unicode is
  * available. Convert only that audited export to UTF-8; never redefine the
  * system clipboard's ANSI format or affect incoming text / keyboard input. */
 #define WIN32_LEAN_AND_MEAN
@@ -10,11 +10,13 @@
 #include <wchar.h>
 
 #define MAX_UTF8_BYTES 61440U
-#define EXPORT_RETURN_RVA 0xf72d69U
-#define DATA_RETURN_RVA 0xf71493U
+#include "uu_clipboard_builds.h"
+static const struct clipboard_build *active_build = &clipboard_builds[0];
+#define EXPORT_RETURN_RVA (active_build->export_return)
+#define DATA_RETURN_RVA (active_build->data_return)
 /* The conversion runs later through Qt's queued callback, after the clipboard
  * reader returned. The reader's original stack is no longer present here. */
-#define DECODE_RETURN_RVA 0x2dc72bU
+#define DECODE_RETURN_RVA (active_build->decode_return)
 #define PENDING_EXPORTS 16U
 #define PENDING_MILLISECONDS 30000U
 
@@ -73,7 +75,8 @@ static BOOL decode_context(UINT codepage, void *caller, void **frames, USHORT co
 {
     USHORT index;
     if (!image || codepage != CP_ACP ||
-        (caller != image + 0x1a2b6d3 && caller != image + 0x1a2b710))
+        (caller != image + active_build->convert_return[0] &&
+         caller != image + active_build->convert_return[1]))
         return FALSE;
     for (index = 0; index < count; index++)
         if (frames[index] == image + DECODE_RETURN_RVA)
@@ -274,40 +277,41 @@ static BOOL WINAPI guarded_close(void)
     return result;
 }
 
-/* Reviewed unmodified GameViewer.exe SHA256:
- * 35d8f6bd659870e432a9f80facc964bcead0d5dc42b6170bd12ebc52790a5c08
- * Check PE metadata AND the actual call sites. Unknown versions are left alone. */
+/* Match the metadata and every reviewed instruction sequence before selecting
+ * a build. A similar-looking or future binary must never inherit old offsets. */
 static BOOL supported_image(BYTE *base)
 {
-    static const BYTE priority[] = {
-        0xc7,0x44,0x24,0x30,1,0,0,0,0xba,1,0,0,0,
-        0x48,0x8d,0x4c,0x24,0x30,0xff,0x15,0x6c,0xdd,0x60,3,0x83,0xf8,1
-    };
-    static const BYTE export_call[] = {
-        0xba,1,0,0,0,0xe8,0xff,0x20,0x0d,0xff,0x84,0xc0,0x74,0x24,0x48,0x83
-    };
-    static const BYTE data_call[] = {0x8b,0xce,0xff,0x15,0xc5,0xf5,0x60,3};
-    static const BYTE decode_call[] = {
-        0x45,0x33,0xc0,0x48,0x8d,0x55,0xd7,0x48,0x8d,0x4d,0x07,
-        0xe8,0x52,0x67,0xdc,0xff
-    };
     IMAGE_DOS_HEADER *dos = (void *)base;
     IMAGE_NT_HEADERS *nt;
     if (dos->e_magic != IMAGE_DOS_SIGNATURE || dos->e_lfanew < 0 ||
         dos->e_lfanew > 4096)
         return FALSE;
     nt = (void *)(base + dos->e_lfanew);
-    return nt->Signature == IMAGE_NT_SIGNATURE &&
-        nt->FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64 &&
-        nt->OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC &&
-        nt->FileHeader.TimeDateStamp == 0x6ad9f0ae &&
-        nt->OptionalHeader.SizeOfImage == 0x4673000 &&
-        !memcmp(base + 0xf72cfc, priority, sizeof(priority)) &&
-        !memcmp(base + 0xf72d5f, export_call, sizeof(export_call)) &&
-        !memcmp(base + 0xf7148b, data_call, sizeof(data_call)) &&
-        !memcmp(base + 0x2dc71b, decode_call, sizeof(decode_call)) &&
-        !memcmp(base + 0x1a2b6cd, "\xff\x15\x65\xe0\xb4\x02", 6) &&
-        !memcmp(base + 0x1a2b70a, "\xff\x15\x28\xe0\xb4\x02", 6);
+    if (nt->Signature != IMAGE_NT_SIGNATURE ||
+        nt->FileHeader.Machine != IMAGE_FILE_MACHINE_AMD64 ||
+        nt->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC)
+        return FALSE;
+    for (SIZE_T i = 0; i < sizeof(clipboard_builds) / sizeof(clipboard_builds[0]); i++) {
+        const struct clipboard_build *build = &clipboard_builds[i];
+        BOOL matches = TRUE;
+        if (nt->FileHeader.TimeDateStamp != build->timestamp ||
+            nt->OptionalHeader.SizeOfImage != build->image_size)
+            continue;
+        for (SIZE_T j = 0; j < 6; j++) {
+            const struct clipboard_signature *sig = &build->signatures[j];
+            if (sig->rva > build->image_size ||
+                sig->length > build->image_size - sig->rva ||
+                memcmp(base + sig->rva, sig->bytes, sig->length)) {
+                matches = FALSE;
+                break;
+            }
+        }
+        if (matches) {
+            active_build = build;
+            return TRUE;
+        }
+    }
+    return FALSE;
 }
 
 static PVOID volatile *import_slot(const char *dll_name, const char *name)
@@ -401,8 +405,8 @@ static DWORD WINAPI initialize_guard(void *unused)
     {
         char message[128];
         snprintf(message, sizeof(message),
-                 "mobile-clipboard result=ready pid=%lu build=4.44.1.3978 mode=queued-bytes\r\n",
-                 GetCurrentProcessId());
+                 "mobile-clipboard result=ready pid=%lu build=%s mode=queued-bytes\r\n",
+                 GetCurrentProcessId(), active_build->version);
         report(message);
     }
     return 0;

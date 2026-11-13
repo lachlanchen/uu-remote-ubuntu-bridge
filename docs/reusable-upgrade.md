@@ -52,7 +52,20 @@ cd ~/ProjectsLFS/uu-remote-ubuntu-bridge
 ./scripts/upgrade-uu-remote.sh apply --now
 ```
 
-## Current production gate
+## Current release review
+
+UU **4.47.0.5146** was reviewed on **13 November 2026** with exact-hash input
+patches and separate clipboard call-site signatures. Its stopped-prefix
+candidate retained login, passed a fresh start and the 270-second stability
+check, and was installed at the normal production path. See the
+[4.47 review and feature evidence](releases/4.47.0.5146-review.md).
+
+This is a host-qualified installation, not an automatic-promotion grant. The
+manifest has no `acceptance` object; `upgrade apply` must not bypass that gate.
+Real controller acceptance remains distinct from isolated input tests. The
+fresh-install default and older release manifests are unchanged.
+
+## Earlier production gate: July 2026
 
 As of 2026-07-27, the production prefix is back on the approved
 `4.33.0.8907` client. The guarded `4.34.0.8979` promotion completed its warm
