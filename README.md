@@ -26,6 +26,8 @@
 
 </div>
 
+[UU 4.47.0.5146 compatibility review](docs/releases/4.47.0.5146-review.md): exact-hash input patches, Unicode clipboard preservation and a startup fix for the two identically named UU processes. Read the test scope and remaining client checks before upgrading; the fresh-install default is unchanged.
+
 An experimental compatibility bridge that runs the official Windows UU client
 in an isolated Wine prefix, presents the real GNOME desktop through a
 local RDP relay (or the optional local VNC relay on X11), with mouse, keyboard,

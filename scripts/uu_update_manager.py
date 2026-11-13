@@ -637,14 +637,29 @@ class Manager:
         total = 0
         try:
             with urllib.request.urlopen(request, timeout=60) as response, part.open("wb") as stream:
+                # The rolling endpoint can change between HEAD and GET. Never
+                # label a different response as the probed release or cache it
+                # with the HEAD metadata. Exact binary review is still required.
+                actual_url = sanitize_url(response.geturl())
+                filename = disposition_filename(response.headers.get("Content-Disposition", ""))
+                actual_version = release_version(filename, urllib.parse.urlsplit(actual_url).path)
+                if actual_version != version or (
+                    metadata.get("final_url") and actual_url != metadata["final_url"]
+                ):
+                    raise UpdateError("official release changed between probe and download; retry a fresh check")
                 declared = response.headers.get("Content-Length", "")
                 if declared.isdigit() and int(declared) > self.config.max_download_bytes:
                     raise UpdateError("the reported UU installer exceeds the configured size limit")
+                expected = int(metadata.get("content_length", 0))
+                if expected and declared.isdigit() and int(declared) != expected:
+                    raise UpdateError("official installer size changed between probe and download")
                 for block in iter(lambda: response.read(1024 * 1024), b""):
                     total += len(block)
                     if total > self.config.max_download_bytes:
                         raise UpdateError("the UU installer exceeded the configured size limit")
                     stream.write(block)
+                if (expected and total != expected) or (declared.isdigit() and total != int(declared)):
+                    raise UpdateError("official installer download is incomplete or differs from the probe")
                 stream.flush()
                 os.fsync(stream.fileno())
         except Exception:

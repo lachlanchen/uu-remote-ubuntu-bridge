@@ -18,6 +18,8 @@
 
 </div>
 
+[Revisión de compatibilidad de UU 4.47.0.5146](../docs/releases/4.47.0.5146-review.md): parches de entrada vinculados al hash exacto, conservación del portapapeles Unicode y corrección del inicio con dos procesos UU del mismo nombre. Consulte las pruebas y las comprobaciones pendientes del cliente antes de actualizar; la versión predeterminada para nuevas instalaciones no cambia.
+
 Este puente experimental ejecuta el cliente oficial de Windows en un prefijo
 Wine aislado y comparte el escritorio GNOME existente mediante RDP local o el
 enlace VNC local opcional para X11.

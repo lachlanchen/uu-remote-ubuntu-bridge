@@ -18,6 +18,8 @@
 
 </div>
 
+[Đánh giá khả năng tương thích UU 4.47.0.5146](../docs/releases/4.47.0.5146-review.md): bản vá nhập liệu theo đúng mã băm, giữ nguyên bảng nhớ tạm Unicode và sửa lỗi khởi động khi hai tiến trình UU trùng tên. Đọc phạm vi thử nghiệm và các mục cần kiểm tra trên máy khách trước khi nâng cấp; phiên bản mặc định cho cài đặt mới không thay đổi.
+
 Cầu nối thử nghiệm chạy ứng dụng Windows chính thức trong Wine prefix riêng,
 chia sẻ màn hình GNOME hiện có qua RDP cục bộ hoặc chuyển tiếp VNC cục bộ tùy
 chọn dành cho X11.

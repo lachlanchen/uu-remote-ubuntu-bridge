@@ -18,6 +18,8 @@
 
 </div>
 
+[Revue de compatibilité UU 4.47.0.5146](../docs/releases/4.47.0.5146-review.md) : correctifs de saisie liés aux empreintes exactes, préservation du presse-papiers Unicode et correction du démarrage avec deux processus UU homonymes. Consultez la portée des tests et les vérifications client restantes avant la mise à niveau ; la version par défaut des nouvelles installations reste inchangée.
+
 Cette passerelle expérimentale exécute le client Windows officiel dans un
 préfixe Wine isolé et partage le bureau GNOME existant par RDP local ou par le
 relais VNC local facultatif pour X11.

@@ -26,12 +26,13 @@ class ClipboardGuardTests(unittest.TestCase):
                        XAUTHORITY='', WINEPREFIX=tmp + '/wine', WINEDEBUG='-all',
                        WINEDLLOVERRIDES='mscoree,mshtml=')
             try:
-                result = subprocess.run([wine, probe], env=env, capture_output=True,
-                                        timeout=90)
-                self.assertEqual(result.returncode, 0,
-                                 result.stdout.decode(errors='replace') +
-                                 result.stderr.decode(errors='replace'))
-                self.assertIn(b'PASS:', result.stdout)
+                for version in ("4.44", "4.47"):
+                    result = subprocess.run([wine, probe, version], env=env, capture_output=True,
+                                            timeout=90)
+                    self.assertEqual(result.returncode, 0,
+                                     result.stdout.decode(errors='replace') +
+                                     result.stderr.decode(errors='replace'))
+                    self.assertIn(b'PASS:', result.stdout)
             finally:
                 subprocess.run([wineserver, '-k'], env=env, capture_output=True, timeout=10)
                 xvfb.terminate()

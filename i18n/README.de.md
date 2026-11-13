@@ -18,6 +18,8 @@
 
 </div>
 
+[Kompatibilitätsprüfung für UU 4.47.0.5146](../docs/releases/4.47.0.5146-review.md): an exakte Dateihashes gebundene Eingabepatches, Unicode-Zwischenablage und eine Startkorrektur für die beiden gleichnamigen UU-Prozesse. Vor dem Upgrade Testumfang und ausstehende Clientprüfungen lesen; die Standardversion für Neuinstallationen bleibt unverändert.
+
 Diese experimentelle Brücke startet den offiziellen Windows-Client in einem
 isolierten Wine-Präfix und teilt den bestehenden GNOME-Desktop über lokales RDP
 oder den optionalen lokalen VNC-Relay für X11.

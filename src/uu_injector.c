@@ -9,6 +9,19 @@ static DWORD find_process(const wchar_t *name)
     PROCESSENTRY32W entry;
     HANDLE snapshot;
     DWORD process_id = 0;
+    const wchar_t *basename = wcsrchr(name, L'\\');
+    BOOL exact_path = basename != NULL || wcschr(name, L'/') != NULL;
+    wchar_t wanted[32768];
+
+    if (exact_path) {
+        DWORD length = GetFullPathNameW(name, 32768, wanted, NULL);
+        if (!length || length >= 32768)
+            return 0;
+        basename = wcsrchr(wanted, L'\\');
+        basename = basename ? basename + 1 : wanted;
+    } else {
+        basename = name;
+    }
 
     snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snapshot == INVALID_HANDLE_VALUE)
@@ -18,7 +31,19 @@ static DWORD find_process(const wchar_t *name)
     entry.dwSize = sizeof(entry);
     if (Process32FirstW(snapshot, &entry)) {
         do {
-            if (_wcsicmp(entry.szExeFile, name) == 0) {
+            if (_wcsicmp(entry.szExeFile, basename) == 0) {
+                if (exact_path) {
+                    wchar_t observed[32768];
+                    DWORD length = 32768;
+                    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,
+                                                 FALSE, entry.th32ProcessID);
+                    BOOL matches = process && QueryFullProcessImageNameW(
+                        process, 0, observed, &length) && !_wcsicmp(wanted, observed);
+                    if (process)
+                        CloseHandle(process);
+                    if (!matches)
+                        continue;
+                }
                 process_id = entry.th32ProcessID;
                 break;
             }

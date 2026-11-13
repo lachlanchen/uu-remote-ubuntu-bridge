@@ -1,10 +1,12 @@
 # What works, what is conditional, and what remains unverified
 
-Reviewed: **4 October 2026**. This is the Ubuntu bridge's feature status, not a
+Reviewed: **13 November 2026**. This is the Ubuntu bridge's feature status, not a
 copy of the native Windows UU feature list. The operator reports ordinary
 clipboard, dictation, multilingual input and mouse control working in daily use.
 The release records below identify narrower, reproducible checks. A working
 route or test fixture does not establish support for every controller or app.
+The [4.47 review](releases/4.47.0.5146-review.md) records the latest X11 host
+qualification, preserved login, isolated input tests and clipboard startup fix.
 
 ## Feature status
 
@@ -104,7 +106,7 @@ all-device availability sweep or an interactive native UU acceptance test.
 ## Installation scope and updates
 
 The baseline is x86-64 Ubuntu 24.04, GNOME 46 and Wine 11. A fresh install remains
-pinned to `4.33.0.8907`; `4.42.1.2835` has a separate exact-hash manifest and
+pinned to `4.42.1.2835`; that release has an exact-hash manifest and
 two host-specific acceptance records. Unknown binaries are rejected. Read
 [host compatibility](compatibility.md) and the release record for your route;
 upgrading a README does not deploy a binary or change a running service.

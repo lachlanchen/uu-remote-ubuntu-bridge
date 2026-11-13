@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import re
@@ -19,6 +20,7 @@ sys.path.insert(0, str(REPO_DIR / "scripts"))
 from uu_update_manager import (
     Config,
     Manager,
+    UpdateError,
     SYSTEMD_RESTART_MESSAGE_ID,
     codex_budget_from_rate_limits,
     promotion_acceptance,
@@ -29,6 +31,36 @@ from uu_update_manager import (
 
 
 class UpdateManagerTests(unittest.TestCase):
+    def test_download_rejects_changed_or_truncated_response_before_caching(self):
+        class Response(io.BytesIO):
+            def __init__(self, payload, url, length):
+                super().__init__(payload)
+                self.url = url
+                self.headers = {"Content-Length": str(length)}
+
+            def geturl(self):
+                return self.url
+
+        url = "https://example.invalid/UU_4.47.0.5146.exe"
+        metadata = {"version": "4.47.0.5146", "final_url": url, "content_length": 5}
+        cases = [
+            (b"valid", url, 5, True),
+            (b"valid", url.replace("4.47", "4.45"), 5, False),
+            (b"valid", url + "/other-4.47.0.5146.exe", 5, False),
+            (b"valid", url, 6, False),
+            (b"bad", url, 5, False),
+        ]
+        for payload, actual_url, length, success in cases:
+            with self.subTest(url=actual_url, length=length, payload=payload), tempfile.TemporaryDirectory() as tmp:
+                manager = Manager(self.config(Path(tmp)))
+                with patch("urllib.request.urlopen", return_value=Response(payload, actual_url, length)):
+                    if success:
+                        self.assertEqual(manager.download_release(metadata).read_bytes(), payload)
+                    else:
+                        with self.assertRaises(UpdateError):
+                            manager.download_release(metadata)
+                        self.assertFalse(any(manager.downloads_dir.glob("*.exe*")))
+
     def config(self, state_dir: Path) -> Config:
         return Config(
             path=state_dir / "config.json",

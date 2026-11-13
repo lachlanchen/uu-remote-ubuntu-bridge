@@ -72,7 +72,7 @@ static int collect_on_worker(struct read_result *result)
     return status || result->thread == GetCurrentThreadId() ? 45 : 0;
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
     static const WCHAR text[] = L"中文测试 日本語 😀 “引号”\r\nsecond line";
     static const char expected[] = "中文测试 日本語 😀 “引号”\r\nsecond line";
@@ -91,6 +91,8 @@ int main(void)
     int units;
     (void)initialize_guard; /* Test the same implementation without DLL entry. */
 
+    if (argc == 2 && !strcmp(argv[1], "4.47"))
+        active_build = &clipboard_builds[1];
     original_data = fixture_data;
     set_fixture(text, sizeof(text));
     snapshot = unicode_snapshot();
@@ -134,20 +136,53 @@ int main(void)
         export_context(image + DATA_RETURN_RVA, frames + 1, 1))
         return 20;
     frames[0] = image + DECODE_RETURN_RVA;
-    if (!decode_context(CP_ACP, image + 0x1a2b6d3, frames, 2) ||
-        !decode_context(CP_ACP, image + 0x1a2b710, frames, 2) ||
-        decode_context(CP_UTF8, image + 0x1a2b710, frames, 2) ||
-        decode_context(CP_ACP, image + 0x1a2b710, frames + 1, 1) ||
+    if (!decode_context(CP_ACP, image + active_build->convert_return[0], frames, 2) ||
+        !decode_context(CP_ACP, image + active_build->convert_return[1], frames, 2) ||
+        decode_context(CP_UTF8, image + active_build->convert_return[1], frames, 2) ||
+        decode_context(CP_ACP, image + active_build->convert_return[1], frames + 1, 1) ||
         decode_context(CP_ACP, image + 0x1234, frames, 2))
         return 23;
     image = NULL;
-    if (export_context((void *)DATA_RETURN_RVA, frames, 2) || supported_image(header))
+    if (export_context((void *)(uintptr_t)DATA_RETURN_RVA, frames, 2) || supported_image(header))
         return 21;
     ((IMAGE_DOS_HEADER *)header)->e_magic = IMAGE_DOS_SIGNATURE;
     ((IMAGE_DOS_HEADER *)header)->e_lfanew = 128;
     ((IMAGE_NT_HEADERS *)(header + 128))->Signature = IMAGE_NT_SIGNATURE;
     if (supported_image(header))
         return 22;
+
+    /* Every instruction gate is required; a future PE header or one altered
+     * call must be rejected before any import hook can be installed. */
+    {
+        const struct clipboard_build *wanted = active_build;
+        BYTE *mapped = calloc(1, wanted->image_size);
+        IMAGE_NT_HEADERS *nt;
+        if (!mapped)
+            return 60;
+        ((IMAGE_DOS_HEADER *)mapped)->e_magic = IMAGE_DOS_SIGNATURE;
+        ((IMAGE_DOS_HEADER *)mapped)->e_lfanew = 128;
+        nt = (void *)(mapped + 128);
+        nt->Signature = IMAGE_NT_SIGNATURE;
+        nt->FileHeader.Machine = IMAGE_FILE_MACHINE_AMD64;
+        nt->FileHeader.TimeDateStamp = wanted->timestamp;
+        nt->OptionalHeader.Magic = IMAGE_NT_OPTIONAL_HDR64_MAGIC;
+        nt->OptionalHeader.SizeOfImage = wanted->image_size;
+        for (SIZE_T i = 0; i < 6; i++)
+            memcpy(mapped + wanted->signatures[i].rva,
+                   wanted->signatures[i].bytes, wanted->signatures[i].length);
+        if (!supported_image(mapped) || active_build != wanted)
+            return 61;
+        for (SIZE_T i = 0; i < 6; i++) {
+            mapped[wanted->signatures[i].rva] ^= 1;
+            if (supported_image(mapped))
+                return 62;
+            mapped[wanted->signatures[i].rva] ^= 1;
+        }
+        nt->FileHeader.TimeDateStamp++;
+        if (supported_image(mapped))
+            return 63;
+        free(mapped);
+    }
 
     original_data = GetClipboardData;
     original_close = CloseClipboard;
@@ -185,7 +220,7 @@ int main(void)
         collect_on_worker(&second_read))
         return 35;
     probe_frame = image + DECODE_RETURN_RVA;
-    probe_caller = image + 0x1a2b6d3;
+    probe_caller = image + active_build->convert_return[0];
     /* Context alone must not reinterpret arbitrary ANSI bytes as UTF-8. */
     if (guarded_multibyte(CP_ACP, 0, "\xc3\xa9", 2, NULL, 0) !=
         MultiByteToWideChar(CP_ACP, 0, "\xc3\xa9", 2, NULL, 0))
@@ -193,11 +228,11 @@ int main(void)
     for (unsigned i = 0; i < 2; i++) {
         struct read_result *read = i == 0 ? &second_read : &first_read;
         const WCHAR *wanted = i == 0 ? second : text;
-        probe_caller = image + 0x1a2b6d3;
+        probe_caller = image + active_build->convert_return[0];
         units = guarded_multibyte(CP_ACP, 0, read->text, read->bytes, NULL, 0);
         if (units != (int)wcslen(wanted) + 1 || !matching_export(read->text, read->bytes))
             return 37;
-        probe_caller = image + 0x1a2b710;
+        probe_caller = image + active_build->convert_return[1];
         if (guarded_multibyte(CP_ACP, 0, read->text, read->bytes, decoded, 128) != units ||
             wcscmp(decoded, wanted) || matching_export(read->text, read->bytes))
             return 38;
