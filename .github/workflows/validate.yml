@@ -82,3 +82,4 @@ jobs:
           python3 -m unittest discover -s tests -p test_host_clipboard_win32.py -v
           python3 -m unittest discover -s tests -p test_clipboard_guard.py -v
           python3 -m unittest discover -s tests -p test_injector_targeting.py -v
+          python3 -m unittest discover -s tests -p test_input_routing.py -v

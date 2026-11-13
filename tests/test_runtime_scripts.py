@@ -1199,7 +1199,7 @@ terminal_bridge_pid= host_clipboard_pid=
     def test_routine_input_retains_proven_broker_fallback(self):
         bridge = (REPOSITORY / "src" / "uu_input_bridge.c").read_text()
 
-        self.assertIn("if (unicode_keyboard)", bridge)
+        self.assertIn("if (unicode_keyboard || native_broker_route())", bridge)
         fallback_condition = bridge.index("if (result != count) {")
         broker_call = bridge.index(
             "result = send_through_broker", fallback_condition

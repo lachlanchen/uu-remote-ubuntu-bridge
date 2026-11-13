@@ -8,6 +8,10 @@
 #define UURB_X11_INPUT_MAX_EVENTS UINT32_C(2048)
 #define UURB_X11_INPUT_TOKEN_SIZE 64
 #define UURB_BACKSPACE_SETTLE_MS UINT32_C(5)
+/* Broker-owned, prefix-local Windows object. Service-created UU processes
+ * do not inherit the launcher's custom environment, so route discovery must
+ * cross that boundary without changing global Wine input behavior. */
+#define UURB_NATIVE_INPUT_EVENT L"Local\\uurb-native-input-v1"
 
 #define UURB_KEYEVENTF_EXTENDED UINT32_C(0x0001)
 #define UURB_KEYEVENTF_KEYUP UINT32_C(0x0002)

@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include "x11_input_protocol.h"
 
 typedef UINT(WINAPI *send_input_fn)(UINT, LPINPUT, int);
 
@@ -85,6 +86,18 @@ static void open_log(void)
 static HWND find_relay_window(void)
 {
     return FindWindowW(NULL, L"Ubuntu-Desktop-Relay");
+}
+
+static BOOL native_broker_route(void)
+{
+    HANDLE route = OpenEventW(SYNCHRONIZE, FALSE, UURB_NATIVE_INPUT_EVENT);
+    BOOL ready;
+
+    if (route == NULL)
+        return FALSE;
+    ready = WaitForSingleObject(route, 0) == WAIT_OBJECT_0;
+    CloseHandle(route);
+    return ready;
 }
 
 static BOOL write_all(HANDLE handle, const void *buffer, DWORD size)
@@ -255,7 +268,11 @@ static UINT WINAPI bridged_send_input(UINT count, LPINPUT inputs, int size)
                                             INPUT_KEYBOARD);
     mouse_input = !unicode_keyboard && !physical_keyboard &&
                   contains_input_type(count, inputs, size, INPUT_MOUSE);
-    if (unicode_keyboard) {
+    /* Wine can accept a physical key on the private desktop without ever
+     * delivering it to the native VNC target. Use the actual broker's route,
+     * not SendInput's success count. RDP-only brokers publish no marker and
+     * retain their established direct/fallback path. */
+    if (unicode_keyboard || native_broker_route()) {
         broker_started_ms = GetTickCount64();
         result = send_through_broker(count, inputs, size, &error);
         broker_ms = (DWORD)(GetTickCount64() - broker_started_ms);

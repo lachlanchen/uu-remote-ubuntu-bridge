@@ -48,7 +48,7 @@ static BOOL read_all(HANDLE handle, void *buffer, DWORD size)
     return TRUE;
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
     input_bridge_request request;
     input_bridge_response response;
@@ -74,6 +74,15 @@ int main(void)
     inputs[5].type = INPUT_MOUSE;
     inputs[5].mi.mouseData = (DWORD)-WHEEL_DELTA;
     inputs[5].mi.dwFlags = MOUSEEVENTF_HWHEEL;
+
+    if (argc == 2) {
+        if (!LoadLibraryA(argv[1])) return 2;
+        Sleep(500);
+        UINT sent = SendInput(ACCEPTANCE_INPUTS, inputs, sizeof(INPUT));
+        printf("hooked mouse requested=%lu result=%u\n", ACCEPTANCE_INPUTS, sent);
+        return sent == ACCEPTANCE_INPUTS ? 0 : 1;
+    }
+    if (argc != 1) return 2;
 
     if (!WaitNamedPipeW(INPUT_BRIDGE_PIPE, 5000)) {
         fprintf(stderr, "input broker pipe was not ready: %lu\n",
