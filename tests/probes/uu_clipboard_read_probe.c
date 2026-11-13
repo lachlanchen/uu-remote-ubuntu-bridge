@@ -3,9 +3,10 @@
 #include <stdio.h>
 #include <wchar.h>
 
-int wmain(void)
+int wmain(int argc, wchar_t **argv)
 {
-    const wchar_t expected[] = L"Copied from Ubuntu 中文\nsecond line “quote” 😀";
+    const wchar_t *expected = argc == 2 ? argv[1] :
+        L"Copied from Ubuntu 中文\nsecond line “quote” 😀";
     for (unsigned int attempt = 0; attempt < 100; attempt++) {
         if (OpenClipboard(NULL)) {
             HANDLE handle = GetClipboardData(CF_UNICODETEXT);

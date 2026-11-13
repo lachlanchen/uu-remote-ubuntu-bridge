@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
+#include <io.h>
+#include <fcntl.h>
 
 #include "x11_clipboard_protocol.h"
 
@@ -323,10 +325,77 @@ cleanup:
     return sent;
 }
 
-int wmain(void)
+/* Fresh host copies must update the Win32 clipboard itself. Merely owning
+ * the X selection can leave a long-running Wine client using cached formats.
+ * This mode is called with bounded UTF-8 on stdin; no text is logged. */
+static int set_host_text(void)
+{
+    char input[61440 + 1];
+    size_t size;
+    int units;
+    wchar_t *wide;
+    HGLOBAL memory;
+    HWND owner;
+    unsigned int attempt;
+    int result = 1;
+
+    _setmode(_fileno(stdin), _O_BINARY);
+    size = fread(input, 1, sizeof(input), stdin);
+    if (ferror(stdin) || size == 0 || size > 61440 || memchr(input, 0, size))
+        return 2;
+    units = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, input,
+                                (int)size, NULL, 0);
+    if (units <= 0)
+        return 2;
+    memory = GlobalAlloc(GMEM_MOVEABLE, ((SIZE_T)units + 1) * sizeof(wchar_t));
+    if (!memory)
+        return 3;
+    wide = GlobalLock(memory);
+    if (!wide) {
+        GlobalFree(memory);
+        return 3;
+    }
+    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, input,
+                             (int)size, wide, units) != units) {
+        GlobalUnlock(memory);
+        GlobalFree(memory);
+        return 2;
+    }
+    wide[units] = 0;
+    GlobalUnlock(memory);
+    /* Hidden message-only window: never steals focus or emits a paste key. */
+    owner = CreateWindowExW(0, L"STATIC", L"UU host Unicode clipboard", 0,
+                            0, 0, 0, 0, HWND_MESSAGE, NULL,
+                            GetModuleHandleW(NULL), NULL);
+    if (!owner) {
+        GlobalFree(memory);
+        return 3;
+    }
+    for (attempt = 0; attempt < 30; attempt++) {
+        if (OpenClipboard(owner)) {
+            if (EmptyClipboard() && SetClipboardData(CF_UNICODETEXT, memory)) {
+                memory = NULL; /* Clipboard now owns the allocation. */
+                result = 0;
+            }
+            CloseClipboard();
+            break;
+        }
+        Sleep(25);
+    }
+    if (memory)
+        GlobalFree(memory);
+    DestroyWindow(owner);
+    return result;
+}
+
+int wmain(int argc, wchar_t **argv)
 {
     DWORD delivered_sequence;
 
+    if (argc == 2 && wcscmp(argv[1], L"--set-host-text") == 0)
+        return set_host_text();
+    if (argc != 1)
+        return 2;
     if (!configure_bridge())
         return 2;
     /* Do not replay whatever happened to be in GameViewer's clipboard before

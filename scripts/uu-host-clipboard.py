@@ -80,7 +80,20 @@ def read_text(env):
     return None
 
 
+def publish_windows_text(writer, content, env):
+    """Update Win32 Unicode without lossy code pages or keyboard injection."""
+    try:
+        wine = env.get('UURB_WINE_BIN', '/opt/wine-stable/bin/wine')
+        result = subprocess.run([wine, writer, '--set-host-text'],
+                                input=content, env=env, stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL, timeout=4)
+        return result.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 def run(args):
+    private_env = dict(os.environ)
     private = display.Display()  # Inherited private DISPLAY/XAUTHORITY.
     host_env = dict(os.environ, DISPLAY=args.host_display, XAUTHORITY=args.host_authority)
     os.environ.update(DISPLAY=args.host_display, XAUTHORITY=args.host_authority)
@@ -130,6 +143,13 @@ def run(args):
                             if (content is None or host.get_selection_owner(host_clipboard) != owner
                                     or owner_pid(host, owner) != pid):
                                 continue
+                            if args.wine_clipboard_writer:
+                                # Publish each fresh copy, including repeated text: a
+                                # remote copy may have changed the Windows clipboard.
+                                if not publish_windows_text(args.wine_clipboard_writer,
+                                                            content, private_env):
+                                    print('Host Unicode clipboard publication failed.', flush=True)
+                                continue
                             if (content == last_text and
                                     private.get_selection_owner(clipboard) == private_window):
                                 continue
@@ -165,6 +185,7 @@ def run(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--wine-clipboard-writer')
     parser.add_argument('--host-display', required=True)
     parser.add_argument('--host-authority', required=True)
     parser.add_argument('--bridge-pid', required=True, type=int)

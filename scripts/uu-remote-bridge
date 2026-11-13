@@ -1328,6 +1328,7 @@ if [[ "${UURB_HOST_CLIPBOARD:-off}" == on && "$desktop_relay" == vnc &&
       -n "$x11_clipboard_port" && -n "$wine_clipboard_bridge_pid" ]]; then
     /usr/bin/env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" \
         /usr/bin/python3 "$HOME/.local/libexec/uu-host-clipboard" \
+        --wine-clipboard-writer "$wine_clipboard_bridge_exe" \
         --host-display "$desktop_display" \
         --host-authority "$desktop_xauthority" --bridge-pid "$$" \
         >>"$state_dir/host-clipboard.log" 2>&1 &
