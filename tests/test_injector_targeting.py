@@ -9,6 +9,22 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def run_wine(argv, *, env, timeout, check=False):
+    # Wine services can inherit anonymous capture pipes after the requested
+    # process exits. Regular files let communicate() wait for that process,
+    # while retaining stdout/stderr for the existing assertions.
+    with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+        result = subprocess.run(argv, env=env, stdout=stdout, stderr=stderr,
+                                timeout=timeout)
+        stdout.seek(0)
+        stderr.seek(0)
+        result.stdout = stdout.read()
+        result.stderr = stderr.read()
+        if check:
+            result.check_returncode()
+        return result
+
+
 @unittest.skipUnless(os.environ.get('UURB_TEST_WINE') == '1', 'isolated Wine test')
 class InjectorTargetTests(unittest.TestCase):
     def test_exact_path_ignores_same_named_launcher_and_missing_target(self):
@@ -47,27 +63,27 @@ BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID reserved) {
             apps = []
             winpath = lambda p: 'Z:' + str(p).replace('/', '\\')
             try:
-                subprocess.run([wine, 'wineboot', '-u'], env=env, capture_output=True, timeout=60, check=True)
+                run_wine([wine, 'wineboot', '-u'], env=env, timeout=60, check=True)
                 for target in (root / 'GameViewer.exe', root / 'bin/GameViewer.exe'):
                     apps.append(subprocess.Popen([wine, str(target)], env=env,
                                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
                 base = [wine, str(root / 'injector.exe'), winpath(root / 'marker.dll')]
                 result = None
                 for _ in range(30):
-                    result = subprocess.run(base + [winpath(root / 'bin/GameViewer.exe')], env=env,
-                                            capture_output=True, timeout=10)
+                    result = run_wine(base + [winpath(root / 'bin/GameViewer.exe')],
+                                      env=env, timeout=10)
                     if result.returncode == 0:
                         break
                     time.sleep(.1)
                 self.assertEqual(result.returncode, 0, result.stderr.decode(errors='replace'))
                 self.assertEqual((root / 'bin/GameViewer.exe.attached').read_text(), 'attached')
                 self.assertFalse((root / 'GameViewer.exe.attached').exists())
-                result = subprocess.run(base + [winpath(root / 'missing/GameViewer.exe')],
-                                        env=env, capture_output=True, timeout=10)
+                result = run_wine(base + [winpath(root / 'missing/GameViewer.exe')],
+                                  env=env, timeout=10)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse((root / 'GameViewer.exe.attached').exists())
             finally:
-                subprocess.run([wineserver, '-k'], env=env, capture_output=True, timeout=10)
+                run_wine([wineserver, '-k'], env=env, timeout=10)
                 for app in apps:
                     app.wait(timeout=10)
                 xvfb.terminate()
